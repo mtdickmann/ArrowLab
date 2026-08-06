@@ -27,6 +27,7 @@ namespace ArrowLabUI
     void setCalibrationCallback(CalibrationCallback callback);
     void setCalibrationReferenceGrams(float grams);
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
+    void setSensorHealth(bool leftLive, bool rightLive);
 
     /**
      * Update the displayed raw reading for the left sensor.
