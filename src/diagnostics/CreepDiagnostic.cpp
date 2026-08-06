@@ -69,7 +69,7 @@ bool CreepDiagnostic::start(
             ? left
             : right;
 
-    sensor.startUserTare();
+    sensor.startDiagnosticTare();
 
     Serial.printf(
         "AL_DIAG,EVENT,%s,%.3f,TARE_STARTED\n",
