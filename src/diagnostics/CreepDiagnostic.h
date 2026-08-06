@@ -22,6 +22,7 @@ public:
         Complete
     };
 
+    static constexpr uint32_t INITIAL_REFERENCE_SAMPLE_MS = 10000;
     static constexpr uint32_t SAMPLE_INTERVAL_MS = 30000;
     static constexpr uint32_t RUN_DURATION_MS = 30UL * 60UL * 1000UL;
     static constexpr long LOAD_DETECT_THRESHOLD_COUNTS = 2000;
@@ -77,6 +78,7 @@ private:
     uint8_t loadConfirmSamples_ = 0;
     uint32_t runStartTime_ = 0;
     uint32_t nextSampleTime_ = 0;
+    bool initialReferenceSamplePending_ = false;
     uint32_t completedElapsedMs_ = 0;
     uint32_t runId_ = 0;
     bool leftZeroBaselineComplete_ = false;

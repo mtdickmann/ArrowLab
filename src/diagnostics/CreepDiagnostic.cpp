@@ -60,6 +60,7 @@ bool CreepDiagnostic::start(
     loadConfirmSamples_ = 0;
     runStartTime_ = 0;
     nextSampleTime_ = 0;
+    initialReferenceSamplePending_ = false;
     completedElapsedMs_ = 0;
     state_ = State::Taring;
     runId_++;
@@ -96,6 +97,7 @@ void CreepDiagnostic::cancel()
     loadConfirmSamples_ = 0;
     runStartTime_ = 0;
     nextSampleTime_ = 0;
+    initialReferenceSamplePending_ = false;
     completedElapsedMs_ = 0;
 }
 
@@ -209,7 +211,16 @@ void CreepDiagnostic::update(
     const uint32_t elapsed =
         currentTime - runStartTime_;
 
-    if (timeReached(currentTime, nextSampleTime_)) {
+    if (
+        initialReferenceSamplePending_
+        && timeReached(
+            currentTime,
+            runStartTime_ + INITIAL_REFERENCE_SAMPLE_MS
+        )
+    ) {
+        emitSample(elapsed, sensor);
+        initialReferenceSamplePending_ = false;
+    } else if (timeReached(currentTime, nextSampleTime_)) {
         emitSample(elapsed, sensor);
         nextSampleTime_ += SAMPLE_INTERVAL_MS;
     }
@@ -320,6 +331,7 @@ void CreepDiagnostic::beginRunning(
     runStartTime_ = currentTime;
     nextSampleTime_ =
         currentTime + SAMPLE_INTERVAL_MS;
+    initialReferenceSamplePending_ = true;
     completedElapsedMs_ = 0;
 
     Serial.println(

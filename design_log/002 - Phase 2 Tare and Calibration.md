@@ -172,7 +172,7 @@ Planned unattended acquisition:
 - Run a zero-load baseline with only the normal fixed arrow-rest hardware.
 - Run five applied-mass datasets, with actual mass entered by the operator for every weight.
 - Initial suggested mass spread is approximately 20 g, 100 g, 250 g, 500 g and 1000 g; recorded values are the operator-entered actual masses.
-- Record every 30 seconds for up to 30 minutes per applied mass.
+- Record at t=0, t=10 seconds and every 30 seconds from t=30 seconds through 30 minutes per applied mass.
 - Test Left and Right independently so channel behaviour is not averaged together.
 - Primary evidence is raw and zero-adjusted HX711 counts.
 - Converted grams and the active calibration factor are recorded alongside the raw evidence when calibration is available.
@@ -254,7 +254,7 @@ Loaded diagnostic runs perform a fresh operational tare with the selected calibr
 
 Zero-baseline runs use only the normal fixed arrow-rest hardware and begin automatically after their fresh tare completes.
 
-Each completed run emits a t=0 sample plus one sample every 30 seconds through 30 minutes, for 61 expected rows.
+Each completed run emits samples at t=0 and t=10 seconds, followed by one sample every 30 seconds from t=30 seconds through 30 minutes, for 62 expected rows. The dedicated 10-second point captures the important initial creep reference without changing the established 30-second cadence for the remainder of the campaign.
 
 The CSV record preserves raw counts, zero-adjusted counts, calculated grams and the active calibration factor. The diagnostic never recalibrates itself for each mass.
 
@@ -275,16 +275,20 @@ A zero baseline is mandatory independently for each channel before that channel 
 
 After a channel's zero baseline is complete, the operator may record any number of loaded masses. The diagnostic facility does not hard-code a required count because future investigations may need a different mass distribution.
 
-The current first full campaign is:
+The current first-pass campaign uses anchor loads first:
 
 - 0 g baseline
 - approximately 20 g
-- approximately 50 g
-- approximately 100 g
-- approximately 250 g
-- approximately 500 g
 - approximately 1000 g
+
+Approximately 50 g, 100 g, 250 g and 500 g runs remain available to fill informative gaps after the low/high anchor datasets have been inspected. This prevents an unnecessarily long fixed campaign from being treated as a substitute for targeted experimental design.
 
 Actual measured mass is entered for every loaded run.
 
 FINISH explicitly ends the current diagnostic session and emits an AL_DIAG SESSION_COMPLETE event. The PC capture tool treats that event as the clean end of the CSV acquisition. Starting a new diagnostic session requires new channel zero baselines.
+
+Generated diagnostic CSV files are ignored by Git by default. A reviewed dataset chosen as permanent evidence may be force-added deliberately; ordinary trial acquisitions remain local and do not clutter source control.
+
+### High-load reference comparison
+
+A later engineering reference run may follow the timing and conditioning structure of OIML R 60 creep testing without claiming accredited type evaluation. For each independent channel, the planned reference uses approximately 1,800 g total physical load on the 2 kg cell, three brief preload/removal conditioning cycles, a one-hour minimum-load rest, and one 30-minute acquisition near 20 C. The calibration platform and all other supported hardware count toward the total physical load; SET MASS still receives only the separately measured added test-piece mass. The explicit 10-second sample, 20-minute sample and 30-minute endpoint are preserved in the CSV.

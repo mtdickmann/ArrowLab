@@ -141,12 +141,23 @@ def main() -> int:
                 side = parts[3]
                 mass = parts[4]
                 elapsed_s = int(parts[5]) / 1000.0
+                raw_count = parts[6]
+                zeroed_count = parts[7]
                 grams = parts[8]
+                calibration_factor = float(parts[9])
+
+                if calibration_factor == 0.0:
+                    reading_text = (
+                        f"raw={raw_count}  zeroed={zeroed_count}  "
+                        "grams=UNCAL"
+                    )
+                else:
+                    reading_text = f"reading={grams} g"
 
                 print(
                     f"#{row_count:04d}  run={run_id}  "
                     f"{side:5s}  {mass} g  t={elapsed_s:7.1f}s  "
-                    f"reading={grams} g"
+                    f"{reading_text}"
                 )
 
     except KeyboardInterrupt:

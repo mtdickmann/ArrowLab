@@ -8,7 +8,7 @@ For implementation detail and test rationale see `test/creep_diagnostic/README.m
 
 Measure zero stability and time-under-load creep independently for Left and Right before any software compensation is designed.
 
-A normal run lasts 30 minutes and records at t=0 and every 30 seconds thereafter.
+A normal run lasts 30 minutes and records at t=0, t=10 seconds and every 30 seconds from t=30 seconds through t=30 minutes. The explicit 10-second point preserves the early reference reading used by established load-cell creep procedures while retaining the original 30-second campaign cadence.
 
 ## 1. Prepare firmware and PC capture
 
@@ -107,11 +107,9 @@ Current first-characterisation mass targets per channel:
 
 - 0 g mandatory baseline
 - approximately 20 g
-- approximately 50 g
-- approximately 100 g
-- approximately 250 g
-- approximately 500 g
 - approximately 1000 g
+
+The low and high anchor masses should be completed first. Inspect those results before deciding whether approximately 50 g, 100 g, 250 g and 500 g intermediate runs are needed. This avoids spending hours collecting redundant datasets while preserving the option to fill useful gaps.
 
 Always enter the actual measured mass, not the nominal target.
 
@@ -153,6 +151,8 @@ After all desired Left and Right datasets are complete:
 3. The PC capture tool flushes and closes the CSV cleanly.
 4. Preserve the original CSV unchanged for analysis.
 
+Generated `creep_*.csv` files are ignored by Git by default and remain on the acquisition PC. A deliberately selected evidence dataset may still be added explicitly with `git add -f <filename>` after it has been reviewed and documented.
+
 Ctrl+C in the capture terminal is the manual emergency stop if FINISH is unavailable.
 
 ## Important pitfalls
@@ -170,3 +170,16 @@ Ctrl+C in the capture terminal is the manual emergency stop if FINISH is unavail
 The ESP32 is responsible for disciplined data acquisition, not exploratory curve fitting.
 
 PC analysis will compare zero drift, creep versus time and mass, Left/Right behaviour, repeatability, slopes/curve shape and candidate correction models. Excel may be used for inspection, but compensation decisions must be based on the preserved raw datasets and quantitative analysis.
+
+## High-load reference run
+
+After the exploratory low/high anchor runs, ArrowLab may perform one engineering reference run per channel using a procedure informed by OIML R 60 creep testing:
+
+1. Use a total physical load of approximately 1,800 g on the selected 2 kg channel. The calibration platform and every other item supported by the active end contribute to this total. Choose the added test piece so the combined physical load is approximately 1,800 g, but enter only the separately measured added test-piece mass in SET MASS.
+2. Keep the environment near 20 C and as stable as practical; record the approximate room temperature rather than claiming laboratory control.
+3. Briefly apply and remove the reference load three times to preload the mechanical assembly. These are conditioning cycles, not three 30-minute acquisitions.
+4. Return to the minimum-load condition and allow the assembly to rest for one hour.
+5. Start one normal 30-minute loaded acquisition. The CSV includes t=0, the explicit 10-second reference point, 20 minutes and 30 minutes.
+6. Repeat the procedure for the other channel because Left and Right are independent load-cell/HX711 systems.
+
+This is an engineering comparison to an established load-cell procedure, not a substitute for accredited type evaluation. Raw and zeroed counts remain the primary evidence.

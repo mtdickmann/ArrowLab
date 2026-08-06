@@ -25,6 +25,8 @@
 - Repeatable creep diagnostic test procedure
 - Mandatory per-channel zero baseline before loaded diagnostic runs
 - Explicit diagnostic FINISH / CSV session completion
+- Dedicated 10-second creep reference sample in every diagnostic run
+- Local-by-default diagnostic CSV ignore convention
 
 ### Fixed
 - GT911 initialization issue

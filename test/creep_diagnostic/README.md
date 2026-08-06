@@ -6,9 +6,9 @@ It is intentionally retained as a permanent service/development test.
 
 ## What is recorded
 
-Firmware emits one data row at t=0 and then every 30 seconds for 30 minutes.
+Firmware emits one data row at t=0, an early reference row at t=10 seconds, and then every 30 seconds from t=30 seconds through 30 minutes.
 
-Each normal completed run therefore contains 61 data rows.
+Each normal completed run therefore contains 62 data rows. The dedicated 10-second sample is retained because it is an important early reference point in established load-cell creep procedures; the original 30-second cadence remains unchanged for the rest of the run.
 
 Recorded fields:
 
@@ -34,11 +34,9 @@ Run the following independently on Left and Right:
 
 1. Zero baseline: normal fixed arrow-rest hardware only; no calibration platform and no added mass.
 2. Approximately 20 g.
-3. Approximately 50 g.
-4. Approximately 100 g.
-5. Approximately 250 g.
-6. Approximately 500 g.
-7. Approximately 1000 g.
+3. Approximately 1000 g.
+
+Use the low and high loads as the first anchor points. Review those results before deciding whether approximately 50 g, 100 g, 250 g and 500 g intermediate runs are necessary.
 
 For every loaded run, enter the actual measured mass rather than the nominal target above.
 
@@ -46,7 +44,7 @@ Complete the zero baseline on both Left and Right first. The firmware keeps SET 
 
 For the first characterisation campaign, perform calibration after both raw zero baselines and before the first loaded run. Each side must be deliberately tared again with the empty calibration platform fitted. The automatic diagnostic tare is isolated from calibration state and cannot satisfy this requirement. Calibration provides supporting gram conversion while raw and zeroed counts remain the primary creep evidence.
 
-With this current seven-run-per-channel campaign, acquisition time is approximately seven hours plus handling time. The permanent diagnostic does not require this exact number of loaded masses: after the mandatory zero baseline for each tested channel, the operator may run as many or as few loaded datasets as the investigation requires.
+The permanent diagnostic does not require a hard-coded number of loaded masses. After the mandatory zero baselines, the operator may run as many or as few loaded datasets as the investigation requires.
 
 ## PC capture
 
@@ -87,6 +85,8 @@ The capture tool ignores ordinary firmware debug messages and writes only AL_DIA
 By default CSV files are written to:
 
     calibration/diagnostics/
+
+Generated `creep_*.csv` files are ignored by Git by default so routine acquisitions remain local. A reviewed dataset selected as permanent project evidence may be force-added deliberately rather than committing every trial automatically.
 
 Start the PC capture before starting the first run. It may remain open for the whole campaign and append all Left/Right runs into one timestamped CSV. Use FINISH on ArrowLab after the desired datasets are complete; the SESSION_COMPLETE event closes the host capture cleanly. Ctrl+C remains available as a manual stop.
 
