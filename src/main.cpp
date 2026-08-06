@@ -20,6 +20,10 @@ namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
+
+    // Default for the current development reference weight.
+    // This becomes user-editable from the calibration UI later.
+    float calibrationReferenceGrams = 999.8f;
     /*
      * Final GPIO assignment:
      *
@@ -39,6 +43,8 @@ namespace
     uint32_t lastSensorUpdate = 0;
     volatile bool leftTareRequested = false;
     volatile bool rightTareRequested = false;
+    volatile bool leftCalibrationRequested = false;
+    volatile bool rightCalibrationRequested = false;
 
     void requestTare(ArrowLabUI::LoadSide side)
     {
@@ -46,6 +52,15 @@ namespace
             leftTareRequested = true;
         } else {
             rightTareRequested = true;
+        }
+    }
+
+    void requestCalibration(ArrowLabUI::LoadSide side)
+    {
+        if (side == ArrowLabUI::LoadSide::Left) {
+            leftCalibrationRequested = true;
+        } else {
+            rightCalibrationRequested = true;
         }
     }
 
@@ -70,6 +85,39 @@ namespace
         }
     }
 
+    void startRequestedCalibrations()
+    {
+        if (leftCalibrationRequested) {
+            leftCalibrationRequested = false;
+
+            if (
+                !rightSensor.calibrationInProgress()
+                && leftSensor.startCalibration(
+                    calibrationReferenceGrams
+                )
+            ) {
+                Serial.println(
+                    "LEFT calibration confirmed"
+                );
+            }
+        }
+
+        if (rightCalibrationRequested) {
+            rightCalibrationRequested = false;
+
+            if (
+                !leftSensor.calibrationInProgress()
+                && rightSensor.startCalibration(
+                    calibrationReferenceGrams
+                )
+            ) {
+                Serial.println(
+                    "RIGHT calibration confirmed"
+                );
+            }
+        }
+    }
+
     void formatReading(
         char *buffer,
         size_t bufferSize,
@@ -84,6 +132,16 @@ namespace
 
         if (!sensor.tareComplete()) {
             snprintf(buffer, bufferSize, "TARE");
+            return;
+        }
+
+        if (sensor.calibrated()) {
+            snprintf(
+                buffer,
+                bufferSize,
+                "%.1f",
+                sensor.grams()
+            );
             return;
         }
 
@@ -129,10 +187,20 @@ namespace
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
 
+        ArrowLabUI::setLoadUnit(
+            ArrowLabUI::LoadSide::Left,
+            leftSensor.calibrated() ? "g" : "RAW"
+        );
+        ArrowLabUI::setLoadUnit(
+            ArrowLabUI::LoadSide::Right,
+            rightSensor.calibrated() ? "g" : "RAW"
+        );
+
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
             leftSensor.tareComplete(),
             leftSensor.userTareConfirmed(),
+            leftSensor.calibrationInProgress(),
             leftSensor.calibrated()
         );
 
@@ -140,8 +208,13 @@ namespace
             ArrowLabUI::LoadSide::Right,
             rightSensor.tareComplete(),
             rightSensor.userTareConfirmed(),
+            rightSensor.calibrationInProgress(),
             rightSensor.calibrated()
         );
+
+        const bool calibrationInProgress =
+            leftSensor.calibrationInProgress()
+            || rightSensor.calibrationInProgress();
 
         if (tareInProgress) {
             ArrowLabUI::setStatus(
@@ -152,14 +225,42 @@ namespace
                 "TARING",
                 lv_color_hex(0xFFB020)
             );
+        } else if (calibrationInProgress) {
+            ArrowLabUI::setStatus(
+                leftSensor.calibrationInProgress()
+                    ? "Calibrating LEFT - keep 999.8 g stable"
+                    : "Calibrating RIGHT - keep 999.8 g stable"
+            );
+
+            ArrowLabUI::setState(
+                "CALIBRATING",
+                lv_color_hex(0xFFB020)
+            );
         } else if (leftLive && rightLive) {
             if (
+                leftSensor.calibrated()
+                && rightSensor.calibrated()
+            ) {
+                ArrowLabUI::setStatus(
+                    "Both load channels calibrated"
+                );
+            } else if (
                 leftSensor.userTareConfirmed()
                 && rightSensor.userTareConfirmed()
             ) {
-                ArrowLabUI::setStatus(
-                    "Both loads ready for calibration"
-                );
+                if (leftSensor.calibrated()) {
+                    ArrowLabUI::setStatus(
+                        "Calibrate RIGHT with reference weight"
+                    );
+                } else if (rightSensor.calibrated()) {
+                    ArrowLabUI::setStatus(
+                        "Calibrate LEFT with reference weight"
+                    );
+                } else {
+                    ArrowLabUI::setStatus(
+                        "Both loads ready for calibration"
+                    );
+                }
             } else if (leftSensor.userTareConfirmed()) {
                 ArrowLabUI::setStatus(
                     "Tare RIGHT before calibration"
@@ -253,6 +354,9 @@ void setup()
 
     ArrowLabUI::create();
     ArrowLabUI::setTareCallback(requestTare);
+    ArrowLabUI::setCalibrationCallback(
+        requestCalibration
+    );
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");
     ArrowLabUI::setStatus(
@@ -293,6 +397,13 @@ void loop()
         || rightTareRequested
     ) {
         startRequestedTares();
+    }
+
+    if (
+        leftCalibrationRequested
+        || rightCalibrationRequested
+    ) {
+        startRequestedCalibrations();
     }
 
     /*
