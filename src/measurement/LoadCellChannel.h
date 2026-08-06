@@ -20,18 +20,24 @@ public:
     ) const;
 
     void startUserTare();
+    bool startCalibration(float referenceGrams);
 
     const char *name() const;
     long rawValue() const;
     long zeroedValue() const;
     bool tareComplete() const;
     bool userTareConfirmed() const;
+    bool calibrationInProgress() const;
     bool calibrated() const;
+    float calibrationFactor() const;
+    float grams() const;
 
 private:
     static constexpr uint8_t TARE_SAMPLE_COUNT = 20;
+    static constexpr uint8_t CALIBRATION_SAMPLE_COUNT = 20;
 
     void updateTare();
+    void updateCalibration();
 
     HX711 hx711_;
     const char *name_;
@@ -47,6 +53,12 @@ private:
     bool tareComplete_ = false;
     bool userTareConfirmed_ = false;
     bool confirmUserTareOnCompletion_ = false;
+
+    int64_t calibrationAccumulator_ = 0;
+    uint8_t calibrationSamples_ = 0;
+    float calibrationReferenceGrams_ = 0.0f;
+    float calibrationFactor_ = 0.0f;
+    bool calibrationInProgress_ = false;
     bool calibrated_ = false;
 
     bool hasReading_ = false;
