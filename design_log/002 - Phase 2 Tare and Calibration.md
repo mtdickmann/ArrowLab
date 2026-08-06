@@ -221,3 +221,17 @@ The intended polished UI follows an instrument-style layout similar in concept t
 - graphics and iconography added after workflow and measurement behaviour are proven.
 
 The navigation/state API should therefore remain independent of the exact temporary button layout so screens can be restyled without moving measurement logic.
+
+
+### Persistent fault presentation
+
+Load-cell health is an instrument-level condition, not a page-local condition.
+
+- A Left/Right HX711 loss is shown in a persistent root-level status strip that overlays the current page.
+- The fault strip remains visible while navigating Home, Settings, Calibration and future measurement/diagnostic screens.
+- The presentation uses a restrained dark strip with high-contrast red text rather than a blocking modal dialog.
+- Modal fault popups are intentionally avoided because expected service/diagnostic work may deliberately disconnect hardware.
+- The strip clears automatically after both channels return live.
+- Calibration validity is not erased merely because a live signal path was temporarily lost.
+
+Developer reveal is also explicitly timed by ArrowLab rather than relying on the touch stack's long-press event classification. Press duration is measured from press to release and must reach 2000 ms. Normal short taps have no developer-mode action.
