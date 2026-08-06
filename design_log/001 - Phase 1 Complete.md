@@ -39,3 +39,12 @@ SCK -> GPIO12
 - Convert to grams
 - Combined load
 - Begin spine calculations
+
+## Milestone M001 – Project Established
+
+**Date:** 2026-08-04
+
+- Independent Git repository created
+- GitHub repository linked
+- Dual HX711 sensors operational
+- Phase 1 completed
