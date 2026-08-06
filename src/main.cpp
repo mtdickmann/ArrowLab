@@ -57,6 +57,7 @@ namespace
     volatile bool rightCalibrationRequested = false;
     volatile bool diagnosticStartRequested = false;
     volatile bool diagnosticCancelRequested = false;
+    volatile bool diagnosticFinishRequested = false;
     ArrowLabUI::LoadSide diagnosticRequestedSide =
         ArrowLabUI::LoadSide::Left;
     float diagnosticRequestedMassGrams = 0.0f;
@@ -94,6 +95,11 @@ namespace
     void requestDiagnosticCancel()
     {
         diagnosticCancelRequested = true;
+    }
+
+    void requestDiagnosticFinish()
+    {
+        diagnosticFinishRequested = true;
     }
 
     void startRequestedTares()
@@ -160,6 +166,16 @@ namespace
             diagnosticCancelRequested = false;
             diagnosticStartRequested = false;
             creepDiagnostic.cancel();
+        }
+
+        if (diagnosticFinishRequested) {
+            diagnosticFinishRequested = false;
+
+            if (!creepDiagnostic.finishSession()) {
+                Serial.println(
+                    "AL_DIAG,EVENT,FINISH_REJECTED"
+                );
+            }
         }
 
         if (!diagnosticStartRequested) {
@@ -318,7 +334,13 @@ namespace
         ArrowLabUI::setDiagnosticStatus(
             diagnosticStatus,
             creepDiagnostic.progressPercent(currentTime),
-            diagnosticActive
+            diagnosticActive,
+            creepDiagnostic.zeroBaselineComplete(
+                DiagnosticSide::Left
+            ),
+            creepDiagnostic.zeroBaselineComplete(
+                DiagnosticSide::Right
+            )
         );
 
         ArrowLabUI::setLeftReading(leftText);
@@ -527,7 +549,8 @@ void setup()
     );
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
-        requestDiagnosticCancel
+        requestDiagnosticCancel,
+        requestDiagnosticFinish
     );
     ArrowLabUI::setCalibrationReferenceGrams(
         calibrationReferenceGrams
@@ -584,6 +607,7 @@ void loop()
     if (
         diagnosticStartRequested
         || diagnosticCancelRequested
+        || diagnosticFinishRequested
     ) {
         processDiagnosticRequests();
     }
