@@ -78,7 +78,8 @@ namespace
     ReadingPanelRefs createReadingPanel(
         lv_obj_t *parent,
         const char *titleText,
-        int xPosition
+        int xPosition,
+        lv_event_cb_t tareEventCallback
     )
     {
         ReadingPanelRefs refs;
@@ -142,12 +143,45 @@ namespace
 
         lv_obj_t *unit = createTextLabel(
             panel,
-            "RAW COUNTS",
+            "RAW",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED)
         );
 
-        lv_obj_align(unit, LV_ALIGN_BOTTOM_MID, 0, -8);
+        lv_obj_align_to(
+            unit,
+            refs.valueLabel,
+            LV_ALIGN_OUT_RIGHT_MID,
+            6,
+            2
+        );
+
+        lv_obj_t *tareButton = lv_btn_create(panel);
+        lv_obj_set_size(tareButton, 68, 28);
+        lv_obj_align(tareButton, LV_ALIGN_BOTTOM_LEFT, 10, -6);
+        lv_obj_set_style_radius(tareButton, 7, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            tareButton,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN
+        );
+        lv_obj_set_style_pad_all(tareButton, 2, LV_PART_MAIN);
+
+        lv_obj_add_event_cb(
+            tareButton,
+            tareEventCallback,
+            LV_EVENT_CLICKED,
+            nullptr
+        );
+
+        lv_obj_t *tareLabel = createTextLabel(
+            tareButton,
+            "TARE",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT)
+        );
+
+        lv_obj_center(tareLabel);
 
         return refs;
     }
@@ -228,44 +262,6 @@ namespace
         }
     }
 
-    lv_obj_t *createTareButton(
-        lv_obj_t *parent,
-        const char *text,
-        int xPosition,
-        lv_event_cb_t eventCallback
-    )
-    {
-        lv_obj_t *button = lv_btn_create(parent);
-        lv_obj_set_size(button, 98, 32);
-        lv_obj_set_pos(button, xPosition, 6);
-
-        lv_obj_set_style_radius(button, 7, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(
-            button,
-            lv_color_hex(COLOUR_ACCENT),
-            LV_PART_MAIN
-        );
-
-        lv_obj_set_style_pad_all(button, 2, LV_PART_MAIN);
-
-        lv_obj_add_event_cb(
-            button,
-            eventCallback,
-            LV_EVENT_CLICKED,
-            nullptr
-        );
-
-        lv_obj_t *label = createTextLabel(
-            button,
-            text,
-            &lv_font_montserrat_14,
-            lv_color_hex(COLOUR_TEXT)
-        );
-
-        lv_obj_center(label);
-
-        return button;
-    }
 }
 
 namespace ArrowLabUI
@@ -318,31 +314,19 @@ namespace ArrowLabUI
 
         lv_obj_align(version, LV_ALIGN_RIGHT_MID, -18, 0);
 
-        createTareButton(
-            header,
-            "TARE LEFT",
-            140,
-            tareLeftButtonEvent
-        );
-
-        createTareButton(
-            header,
-            "TARE RIGHT",
-            244,
-            tareRightButtonEvent
-        );
-
         // Reading panels
         leftPanel = createReadingPanel(
             screen,
             "LEFT LOAD",
-            18
+            18,
+            tareLeftButtonEvent
         );
 
         rightPanel = createReadingPanel(
             screen,
             "RIGHT LOAD",
-            248
+            248,
+            tareRightButtonEvent
         );
 
         // Bottom status bar
@@ -418,6 +402,7 @@ namespace ArrowLabUI
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
+        bool userTareConfirmed,
         bool calibrated
     )
     {
@@ -432,11 +417,16 @@ namespace ArrowLabUI
 
         char text[32];
 
+        const char *tareText =
+            !tareComplete
+                ? "TARING"
+                : (userTareConfirmed ? "TARE OK" : "TARE REQ");
+
         snprintf(
             text,
             sizeof(text),
             "%s  %s",
-            tareComplete ? "TARE OK" : "TARING",
+            tareText,
             calibrated ? "CAL OK" : "CAL --"
         );
 
