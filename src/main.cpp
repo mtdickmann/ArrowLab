@@ -22,6 +22,13 @@ namespace
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
     constexpr uint32_t CALIBRATION_SETTLE_TIME_MS = 30000;
 
+    /*
+     * Reference-load detection is intentionally far above observed
+     * tare noise, but below the expected signal from a 500 g minimum
+     * calibration mass so channel sensitivity can vary safely.
+     */
+    constexpr long CALIBRATION_LOAD_THRESHOLD_COUNTS = 250000;
+
     // Default for the current development reference weight.
     // This becomes user-editable from the calibration UI later.
     float calibrationReferenceGrams = 999.8f;
@@ -428,6 +435,13 @@ void loop()
      */
     leftSensor.read(now);
     rightSensor.read(now);
+
+    leftSensor.updateCalibrationLoadDetection(
+        CALIBRATION_LOAD_THRESHOLD_COUNTS
+    );
+    rightSensor.updateCalibrationLoadDetection(
+        CALIBRATION_LOAD_THRESHOLD_COUNTS
+    );
 
     updateDisplay(now);
 
