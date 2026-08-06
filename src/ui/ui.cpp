@@ -46,6 +46,7 @@ namespace
     lv_obj_t *diagnosticsButton = nullptr;
     lv_obj_t *diagnosticSideLabel = nullptr;
     lv_obj_t *diagnosticMassLabel = nullptr;
+    lv_obj_t *diagnosticMassButton = nullptr;
     lv_obj_t *diagnosticStatusLabel = nullptr;
     lv_obj_t *diagnosticProgressBar = nullptr;
     lv_obj_t *diagnosticStartZeroButton = nullptr;
@@ -545,9 +546,16 @@ namespace
             !diagnosticRunActive
             && diagnosticSideSelected;
 
-        const bool canLoad =
+        const bool bothBaselinesComplete =
+            diagnosticLeftZeroComplete
+            && diagnosticRightZeroComplete;
+
+        const bool canConfigureLoad =
             canConfigure
-            && selectedDiagnosticZeroComplete()
+            && bothBaselinesComplete;
+
+        const bool canLoad =
+            canConfigureLoad
             && diagnosticMassGrams > 0.0f;
 
         if (diagnosticStartZeroButton != nullptr) {
@@ -558,6 +566,18 @@ namespace
             } else {
                 lv_obj_add_state(
                     diagnosticStartZeroButton,
+                    LV_STATE_DISABLED);
+            }
+        }
+
+        if (diagnosticMassButton != nullptr) {
+            if (canConfigureLoad) {
+                lv_obj_clear_state(
+                    diagnosticMassButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_add_state(
+                    diagnosticMassButton,
                     LV_STATE_DISABLED);
             }
         }
@@ -667,6 +687,9 @@ namespace
         if (
             lv_event_get_code(event) != LV_EVENT_CLICKED
             || massInputBox != nullptr
+            || diagnosticRunActive
+            || !diagnosticLeftZeroComplete
+            || !diagnosticRightZeroComplete
         ) {
             return;
         }
@@ -1234,16 +1257,16 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_MUTED));
         lv_obj_set_pos(diagnosticMassLabel, 224, 59);
 
-        lv_obj_t *massButton = lv_btn_create(diagnosticsPage);
-        lv_obj_set_size(massButton, 108, 34);
-        lv_obj_set_pos(massButton, 356, 50);
+        diagnosticMassButton = lv_btn_create(diagnosticsPage);
+        lv_obj_set_size(diagnosticMassButton, 108, 34);
+        lv_obj_set_pos(diagnosticMassButton, 356, 50);
         lv_obj_add_event_cb(
-            massButton,
+            diagnosticMassButton,
             diagnosticMassEvent,
             LV_EVENT_CLICKED,
             nullptr);
         lv_obj_t *massButtonLabel = createTextLabel(
-            massButton,
+            diagnosticMassButton,
             "SET MASS",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
