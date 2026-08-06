@@ -221,7 +221,16 @@ namespace
                 CALIBRATION_SETTLE_TIME_MS
             ),
             leftSensor.calibrationInProgress(),
-            leftSensor.calibrated()
+            leftSensor.calibrated(),
+            leftSensor.calibrationLoadDetected(),
+            leftSensor.calibrationSettleRemainingSeconds(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            ),
+            leftSensor.calibrationSettlePercent(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            )
         );
 
         ArrowLabUI::setLoadStatus(
@@ -233,7 +242,16 @@ namespace
                 CALIBRATION_SETTLE_TIME_MS
             ),
             rightSensor.calibrationInProgress(),
-            rightSensor.calibrated()
+            rightSensor.calibrated(),
+            rightSensor.calibrationLoadDetected(),
+            rightSensor.calibrationSettleRemainingSeconds(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            ),
+            rightSensor.calibrationSettlePercent(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            )
         );
 
         const bool calibrationInProgress =
