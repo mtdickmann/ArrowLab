@@ -44,6 +44,7 @@ bool LoadCellChannel::read(uint32_t currentTime)
     lastReadingTime_ = currentTime;
 
     updateTare();
+    updateCalibration();
 
     if (tareComplete_) {
         Serial.printf(
@@ -91,6 +92,31 @@ void LoadCellChannel::startUserTare()
     confirmUserTareOnCompletion_ = true;
 }
 
+bool LoadCellChannel::startCalibration(float referenceGrams)
+{
+    if (
+        !tareComplete_
+        || !userTareConfirmed_
+        || calibrationInProgress_
+        || referenceGrams <= 0.0f
+    ) {
+        return false;
+    }
+
+    calibrationAccumulator_ = 0;
+    calibrationSamples_ = 0;
+    calibrationReferenceGrams_ = referenceGrams;
+    calibrationInProgress_ = true;
+
+    Serial.printf(
+        "%s calibration started: reference=%.1f g\n",
+        name_,
+        calibrationReferenceGrams_
+    );
+
+    return true;
+}
+
 void LoadCellChannel::updateTare()
 {
     if (tareComplete_) {
@@ -126,6 +152,55 @@ void LoadCellChannel::updateTare()
     );
 }
 
+void LoadCellChannel::updateCalibration()
+{
+    if (
+        !calibrationInProgress_
+        || !tareComplete_
+    ) {
+        return;
+    }
+
+    calibrationAccumulator_ += zeroedValue_;
+    calibrationSamples_++;
+
+    if (
+        calibrationSamples_
+        < CALIBRATION_SAMPLE_COUNT
+    ) {
+        return;
+    }
+
+    const float averageCounts =
+        static_cast<float>(calibrationAccumulator_)
+        / CALIBRATION_SAMPLE_COUNT;
+
+    if (averageCounts == 0.0f) {
+        calibrationInProgress_ = false;
+
+        Serial.printf(
+            "%s calibration failed: zero signal\n",
+            name_
+        );
+        return;
+    }
+
+    calibrationFactor_ =
+        averageCounts / calibrationReferenceGrams_;
+
+    calibrated_ = true;
+    calibrationInProgress_ = false;
+
+    Serial.printf(
+        "%s calibration complete: %.3f counts/g "
+        "(average=%.1f counts, reference=%.1f g)\n",
+        name_,
+        calibrationFactor_,
+        averageCounts,
+        calibrationReferenceGrams_
+    );
+}
+
 const char *LoadCellChannel::name() const
 {
     return name_;
@@ -151,7 +226,32 @@ bool LoadCellChannel::userTareConfirmed() const
     return userTareConfirmed_;
 }
 
+bool LoadCellChannel::calibrationInProgress() const
+{
+    return calibrationInProgress_;
+}
+
 bool LoadCellChannel::calibrated() const
 {
     return calibrated_;
+}
+
+float LoadCellChannel::calibrationFactor() const
+{
+    return calibrationFactor_;
+}
+
+float LoadCellChannel::grams() const
+{
+    if (
+        !calibrated_
+        || calibrationFactor_ == 0.0f
+    ) {
+        return 0.0f;
+    }
+
+    return (
+        static_cast<float>(zeroedValue_)
+        / calibrationFactor_
+    );
 }
