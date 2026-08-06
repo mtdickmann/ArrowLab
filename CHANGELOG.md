@@ -12,6 +12,9 @@
 - Load-triggered calibration settling gate
 - Tare/calibration status colour cues
 - Structured LoadCellChannel measurement module
+- Home / Settings navigation with calibration status
+- Hidden developer-mode reveal and Diagnostics entry
+- Calibration stabilization countdown and progress feedback
 
 ### Fixed
 - GT911 initialization issue
