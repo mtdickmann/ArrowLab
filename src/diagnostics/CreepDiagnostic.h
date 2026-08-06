@@ -78,6 +78,7 @@ private:
     uint32_t runStartTime_ = 0;
     uint32_t nextSampleTime_ = 0;
     uint32_t completedElapsedMs_ = 0;
+    uint32_t runId_ = 0;
     bool leftZeroBaselineComplete_ = false;
     bool rightZeroBaselineComplete_ = false;
 };
