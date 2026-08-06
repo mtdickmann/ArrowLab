@@ -42,6 +42,10 @@ Run the following independently on Left and Right:
 
 For every loaded run, enter the actual measured mass rather than the nominal target above.
 
+Complete the zero baseline on both Left and Right first. The firmware keeps SET MASS and LOAD TEST disabled until both baselines have completed; the diagnostic engine independently rejects a loaded run if either baseline is missing. A cancelled or incomplete zero run does not satisfy this gate.
+
+For the first characterisation campaign, perform calibration after both raw zero baselines and before the first loaded run. Calibration provides supporting gram conversion while raw and zeroed counts remain the primary creep evidence.
+
 With this current seven-run-per-channel campaign, acquisition time is approximately seven hours plus handling time. The permanent diagnostic does not require this exact number of loaded masses: after the mandatory zero baseline for each tested channel, the operator may run as many or as few loaded datasets as the investigation requires.
 
 ## PC capture
@@ -98,7 +102,9 @@ Do not have PlatformIO Serial Monitor open on the same COM port while the captur
 6. Confirm START.
 7. ArrowLab performs a fresh tare.
 8. Logging begins automatically after tare completes.
-9. Leave the jig untouched for 30 minutes.
+9. Leave the instrument untouched for 30 minutes.
+10. Repeat the zero baseline for the other side.
+11. Do not proceed to mass entry or loaded testing until both sides report their zero baseline complete.
 
 ## Loaded UI sequence
 
