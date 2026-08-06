@@ -37,10 +37,15 @@ namespace
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *homeCalibrationLabel = nullptr;
     lv_obj_t *homeHealthLabel = nullptr;
+    lv_obj_t *faultBar = nullptr;
+    lv_obj_t *faultLabel = nullptr;
     lv_obj_t *settingsCalibrationLabel = nullptr;
     lv_obj_t *settingsCalibrationButton = nullptr;
     lv_obj_t *diagnosticsButton = nullptr;
     bool developerMode = false;
+    uint32_t developerPressStart = 0;
+    bool developerPressActive = false;
+    constexpr uint32_t DEVELOPER_REVEAL_HOLD_MS = 2000;
 
     enum class ConfirmationAction
     {
@@ -480,13 +485,41 @@ namespace
 
     void developerRevealEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_LONG_PRESSED) {
+        const lv_event_code_t code =
+            lv_event_get_code(event);
+
+        if (code == LV_EVENT_PRESSED) {
+            developerPressStart = lv_tick_get();
+            developerPressActive = true;
+            return;
+        }
+
+        if (code == LV_EVENT_PRESS_LOST) {
+            developerPressActive = false;
+            return;
+        }
+
+        if (
+            code != LV_EVENT_RELEASED
+            || !developerPressActive
+        ) {
+            return;
+        }
+
+        developerPressActive = false;
+
+        const uint32_t heldMs =
+            lv_tick_elaps(developerPressStart);
+
+        if (heldMs < DEVELOPER_REVEAL_HOLD_MS) {
             return;
         }
 
         if (!developerMode) {
             developerMode = true;
-            lv_obj_clear_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(
+                diagnosticsButton,
+                LV_OBJ_FLAG_HIDDEN);
         }
 
         static const char *buttons[] = {"OK", ""};
@@ -600,7 +633,7 @@ namespace ArrowLabUI
         lv_obj_add_event_cb(
             titleTouchTarget,
             developerRevealEvent,
-            LV_EVENT_LONG_PRESSED,
+            LV_EVENT_ALL,
             nullptr);
 
         lv_obj_t *title = createTextLabel(
@@ -768,6 +801,43 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_OK));
         lv_obj_align(stateLabel, LV_ALIGN_LEFT_MID, 98, 13);
 
+        // Instrument-level fault overlay. This belongs to the root
+        // screen so it remains visible regardless of the active page.
+        faultBar = lv_obj_create(screen);
+        lv_obj_set_size(faultBar, 480, 28);
+        lv_obj_align(faultBar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_bg_color(
+            faultBar,
+            lv_color_hex(0xC62828),
+            LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(
+            faultBar,
+            LV_OPA_COVER,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            faultBar,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_radius(
+            faultBar,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(
+            faultBar,
+            0,
+            LV_PART_MAIN);
+        lv_obj_clear_flag(
+            faultBar,
+            LV_OBJ_FLAG_SCROLLABLE);
+
+        faultLabel = createTextLabel(
+            faultBar,
+            "LOAD CELL FAULT",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(faultLabel);
+        lv_obj_add_flag(faultBar, LV_OBJ_FLAG_HIDDEN);
+
         showPage(homePage);
     }
 
@@ -858,30 +928,44 @@ namespace ArrowLabUI
 
     void setSensorHealth(bool leftLive, bool rightLive)
     {
-        if (homeHealthLabel == nullptr)
-        {
+        if (
+            homeHealthLabel == nullptr
+            || faultBar == nullptr
+            || faultLabel == nullptr
+        ) {
             return;
         }
 
-        const char *text = "LOAD CELLS ONLINE";
-        uint32_t colour = COLOUR_OK;
-
-        if (!leftLive && !rightLive) {
-            text = "FAULT: LEFT + RIGHT LOAD CELLS";
-            colour = 0xFF4D4D;
-        } else if (!leftLive) {
-            text = "FAULT: LEFT LOAD CELL";
-            colour = 0xFF4D4D;
-        } else if (!rightLive) {
-            text = "FAULT: RIGHT LOAD CELL";
-            colour = 0xFF4D4D;
+        if (leftLive && rightLive) {
+            lv_label_set_text(
+                homeHealthLabel,
+                "LOAD CELLS ONLINE");
+            lv_obj_set_style_text_color(
+                homeHealthLabel,
+                lv_color_hex(COLOUR_OK),
+                LV_PART_MAIN);
+            lv_obj_add_flag(
+                faultBar,
+                LV_OBJ_FLAG_HIDDEN);
+            return;
         }
 
-        lv_label_set_text(homeHealthLabel, text);
-        lv_obj_set_style_text_color(
-            homeHealthLabel,
-            lv_color_hex(colour),
-            LV_PART_MAIN);
+        // The global fault strip carries the failure message on every
+        // page; do not duplicate it in the Home-only health line.
+        lv_label_set_text(homeHealthLabel, "");
+
+        const char *faultText =
+            !leftLive && !rightLive
+                ? "FAULT: LEFT + RIGHT LOAD CELLS"
+                : (!leftLive
+                    ? "FAULT: LEFT LOAD CELL"
+                    : "FAULT: RIGHT LOAD CELL");
+
+        lv_label_set_text(faultLabel, faultText);
+        lv_obj_clear_flag(
+            faultBar,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(faultBar);
     }
 
     void setLoadUnit(
