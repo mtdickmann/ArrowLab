@@ -103,6 +103,15 @@ def main() -> int:
 
                 if line.startswith("AL_DIAG,EVENT,"):
                     print(line)
+
+                    if line == "AL_DIAG,EVENT,SESSION_COMPLETE":
+                        print(
+                            f"Diagnostic session complete. "
+                            f"{row_count} data rows saved."
+                        )
+                        print(f"CSV: {output}")
+                        return 0
+
                     continue
 
                 if not line.startswith("AL_DIAG,DATA,"):
