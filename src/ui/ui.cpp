@@ -17,6 +17,7 @@ namespace
 
     struct ReadingPanelRefs
     {
+        lv_obj_t *panel = nullptr;
         lv_obj_t *valueLabel = nullptr;
         lv_obj_t *unitLabel = nullptr;
         lv_obj_t *statusLabel = nullptr;
@@ -30,6 +31,14 @@ namespace
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *stateLabel = nullptr;
     lv_obj_t *confirmationBox = nullptr;
+    lv_obj_t *homePage = nullptr;
+    lv_obj_t *settingsPage = nullptr;
+    lv_obj_t *calibrationPage = nullptr;
+    lv_obj_t *homeCalibrationLabel = nullptr;
+    lv_obj_t *settingsCalibrationLabel = nullptr;
+    lv_obj_t *settingsCalibrationButton = nullptr;
+    lv_obj_t *diagnosticsButton = nullptr;
+    bool developerMode = false;
 
     enum class ConfirmationAction
     {
@@ -96,8 +105,9 @@ namespace
         ReadingPanelRefs refs;
 
         lv_obj_t *panel = lv_obj_create(parent);
+        refs.panel = panel;
         lv_obj_set_size(panel, 214, 148);
-        lv_obj_set_pos(panel, xPosition, 54);
+        lv_obj_set_pos(panel, xPosition, 10);
         stylePanel(panel);
 
         lv_obj_t *title = createTextLabel(
@@ -389,6 +399,110 @@ namespace
         }
     }
 
+
+    void showPage(lv_obj_t *page)
+    {
+        lv_obj_add_flag(homePage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    void homeButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(homePage);
+        }
+    }
+
+    void settingsButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(settingsPage);
+        }
+    }
+
+    void calibrationPageButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(calibrationPage);
+        }
+    }
+
+    void diagnosticsButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+            return;
+        }
+
+        static const char *buttons[] = {"OK", ""};
+        lv_obj_t *box = lv_msgbox_create(
+            nullptr,
+            "DIAGNOSTICS",
+            "Developer creep-test logger is the next build stage.\n"
+            "This entry is intentionally hidden in normal operation.",
+            buttons,
+            false);
+        lv_obj_set_width(box, 400);
+        lv_obj_center(box);
+    }
+
+    void developerRevealEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_LONG_PRESSED) {
+            return;
+        }
+
+        if (!developerMode) {
+            developerMode = true;
+            lv_obj_clear_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        static const char *buttons[] = {"OK", ""};
+        lv_obj_t *box = lv_msgbox_create(
+            nullptr,
+            "DEVELOPER MODE",
+            "Developer mode enabled.\nDiagnostics is now available in Settings.",
+            buttons,
+            false);
+        lv_obj_set_width(box, 390);
+        lv_obj_center(box);
+    }
+
+    lv_obj_t *createMenuButton(
+        lv_obj_t *parent,
+        const char *text,
+        int y,
+        lv_event_cb_t callback)
+    {
+        lv_obj_t *button = lv_btn_create(parent);
+        lv_obj_set_size(button, 420, 54);
+        lv_obj_set_pos(button, 30, y);
+        lv_obj_set_style_radius(button, 9, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            button,
+            lv_color_hex(COLOUR_PANEL),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_color(
+            button,
+            lv_color_hex(COLOUR_BORDER),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
+        lv_obj_add_event_cb(
+            button,
+            callback,
+            LV_EVENT_CLICKED,
+            nullptr);
+
+        lv_obj_t *label = createTextLabel(
+            button,
+            text,
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
+        return button;
+    }
+
 }
 
 namespace ArrowLabUI
@@ -401,20 +515,18 @@ namespace ArrowLabUI
             screen,
             lv_color_hex(COLOUR_BACKGROUND),
             LV_PART_MAIN);
-
         lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-        // Header
+        // Persistent header. Version information belongs on the future
+        // About screen; the top-right position is reserved for Help.
         lv_obj_t *header = lv_obj_create(screen);
         lv_obj_set_size(header, 480, 44);
         lv_obj_set_pos(header, 0, 0);
-
         lv_obj_set_style_bg_color(
             header,
             lv_color_hex(COLOUR_HEADER),
             LV_PART_MAIN);
-
         lv_obj_set_style_bg_opa(header, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(header, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(header, 0, LV_PART_MAIN);
@@ -426,71 +538,166 @@ namespace ArrowLabUI
             "ArrowLab",
             &lv_font_montserrat_20,
             lv_color_hex(COLOUR_TEXT));
-
         lv_obj_align(title, LV_ALIGN_LEFT_MID, 18, 0);
+        lv_obj_add_flag(title, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(
+            title,
+            developerRevealEvent,
+            LV_EVENT_LONG_PRESSED,
+            nullptr);
 
-        lv_obj_t *version = createTextLabel(
-            header,
-            "v0.1 DEV",
+        lv_obj_t *helpButton = lv_btn_create(header);
+        lv_obj_set_size(helpButton, 34, 30);
+        lv_obj_align(helpButton, LV_ALIGN_RIGHT_MID, -14, 0);
+        lv_obj_set_style_radius(helpButton, 15, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            helpButton,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN);
+        lv_obj_t *helpLabel = createTextLabel(
+            helpButton,
+            "?",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(helpLabel);
+
+        homePage = lv_obj_create(screen);
+        lv_obj_set_size(homePage, 480, 228);
+        lv_obj_set_pos(homePage, 0, 44);
+        lv_obj_set_style_bg_opa(homePage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(homePage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(homePage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(homePage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *homeHeading = createTextLabel(
+            homePage,
+            "HOME",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(homeHeading, 30, 12);
 
-        lv_obj_align(version, LV_ALIGN_RIGHT_MID, -18, 0);
+        lv_obj_t *spineButton = createMenuButton(
+            homePage,
+            "SPINE TEST",
+            36,
+            nullptr);
+        lv_obj_add_state(spineButton, LV_STATE_DISABLED);
 
-        // Reading panels
+        createMenuButton(
+            homePage,
+            "SETTINGS",
+            98,
+            settingsButtonEvent);
+
+        homeCalibrationLabel = createTextLabel(
+            homePage,
+            "CALIBRATION REQUIRED",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_REQUIRED));
+        lv_obj_set_pos(homeCalibrationLabel, 30, 174);
+
+        settingsPage = lv_obj_create(screen);
+        lv_obj_set_size(settingsPage, 480, 228);
+        lv_obj_set_pos(settingsPage, 0, 44);
+        lv_obj_set_style_bg_opa(settingsPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(settingsPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(settingsPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(settingsPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        createMenuButton(
+            settingsPage,
+            "<  HOME",
+            8,
+            homeButtonEvent);
+
+        settingsCalibrationButton = createMenuButton(
+            settingsPage,
+            "CALIBRATION",
+            70,
+            calibrationPageButtonEvent);
+        settingsCalibrationLabel = createTextLabel(
+            settingsCalibrationButton,
+            "REQUIRED",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_REQUIRED));
+        lv_obj_align(settingsCalibrationLabel, LV_ALIGN_RIGHT_MID, -6, 0);
+
+        diagnosticsButton = createMenuButton(
+            settingsPage,
+            "DIAGNOSTICS  [DEV]",
+            132,
+            diagnosticsButtonEvent);
+        lv_obj_add_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
+
+        calibrationPage = lv_obj_create(screen);
+        lv_obj_set_size(calibrationPage, 480, 228);
+        lv_obj_set_pos(calibrationPage, 0, 44);
+        lv_obj_set_style_bg_opa(calibrationPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(calibrationPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(calibrationPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(calibrationPage, LV_OBJ_FLAG_SCROLLABLE);
+
         leftPanel = createReadingPanel(
-            screen,
+            calibrationPage,
             "LEFT LOAD",
             18,
             tareLeftButtonEvent,
             calibrationLeftButtonEvent);
 
         rightPanel = createReadingPanel(
-            screen,
+            calibrationPage,
             "RIGHT LOAD",
             248,
             tareRightButtonEvent,
             calibrationRightButtonEvent);
 
-        // Bottom status bar
-        lv_obj_t *statusBar = lv_obj_create(screen);
+        lv_obj_t *statusBar = lv_obj_create(calibrationPage);
         lv_obj_set_size(statusBar, 480, 58);
         lv_obj_align(statusBar, LV_ALIGN_BOTTOM_MID, 0, 0);
-
         lv_obj_set_style_bg_color(
             statusBar,
             lv_color_hex(COLOUR_HEADER),
             LV_PART_MAIN);
-
         lv_obj_set_style_bg_opa(statusBar, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(statusBar, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(statusBar, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(statusBar, 0, LV_PART_MAIN);
         lv_obj_clear_flag(statusBar, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *statusHeading = createTextLabel(
-            statusBar,
-            "STATUS",
+        lv_obj_t *backButton = lv_btn_create(statusBar);
+        lv_obj_set_size(backButton, 76, 28);
+        lv_obj_align(backButton, LV_ALIGN_LEFT_MID, 12, 0);
+        lv_obj_set_style_bg_color(
+            backButton,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN);
+        lv_obj_add_event_cb(
+            backButton,
+            settingsButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *backLabel = createTextLabel(
+            backButton,
+            "< BACK",
             &lv_font_montserrat_14,
-            lv_color_hex(COLOUR_MUTED));
-
-        lv_obj_align(statusHeading, LV_ALIGN_LEFT_MID, 18, -11);
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(backLabel);
 
         statusLabel = createTextLabel(
             statusBar,
             "Display initialized",
-            &lv_font_montserrat_16,
+            &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
-
-        lv_obj_align(statusLabel, LV_ALIGN_LEFT_MID, 18, 12);
+        lv_obj_align(statusLabel, LV_ALIGN_LEFT_MID, 98, -9);
 
         stateLabel = createTextLabel(
             statusBar,
             "READY",
-            &lv_font_montserrat_16,
-            lv_color_hex(0x4CD964));
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_OK));
+        lv_obj_align(stateLabel, LV_ALIGN_LEFT_MID, 98, 13);
 
-        lv_obj_align(stateLabel, LV_ALIGN_RIGHT_MID, -18, 0);
+        showPage(homePage);
     }
 
     void setTareCallback(TareCallback callback)
@@ -507,6 +714,55 @@ namespace ArrowLabUI
     void setCalibrationReferenceGrams(float grams)
     {
         calibrationReferenceGrams = grams;
+    }
+
+    void setCalibrationValidity(
+        bool leftCalibrated,
+        bool rightCalibrated)
+    {
+        const bool bothCalibrated =
+            leftCalibrated && rightCalibrated;
+
+        if (homeCalibrationLabel != nullptr)
+        {
+            lv_label_set_text(
+                homeCalibrationLabel,
+                bothCalibrated
+                    ? "CALIBRATION OK"
+                    : "CALIBRATION REQUIRED");
+            lv_obj_set_style_text_color(
+                homeCalibrationLabel,
+                lv_color_hex(
+                    bothCalibrated
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
+
+        if (settingsCalibrationLabel != nullptr)
+        {
+            lv_label_set_text(
+                settingsCalibrationLabel,
+                bothCalibrated ? "OK" : "REQUIRED");
+            lv_obj_set_style_text_color(
+                settingsCalibrationLabel,
+                lv_color_hex(
+                    bothCalibrated
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
+
+        if (settingsCalibrationButton != nullptr)
+        {
+            lv_obj_set_style_border_color(
+                settingsCalibrationButton,
+                lv_color_hex(
+                    bothCalibrated
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
     }
 
     void setLeftReading(const char *text)
