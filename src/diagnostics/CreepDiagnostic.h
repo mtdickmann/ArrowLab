@@ -36,6 +36,8 @@ public:
     );
 
     void cancel();
+    bool finishSession();
+    bool zeroBaselineComplete(DiagnosticSide side) const;
 
     void update(
         uint32_t currentTime,
@@ -76,4 +78,6 @@ private:
     uint32_t runStartTime_ = 0;
     uint32_t nextSampleTime_ = 0;
     uint32_t completedElapsedMs_ = 0;
+    bool leftZeroBaselineComplete_ = false;
+    bool rightZeroBaselineComplete_ = false;
 };
