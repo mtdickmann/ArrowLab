@@ -12,6 +12,12 @@ namespace ArrowLabUI
 
     using TareCallback = void (*)(LoadSide side);
     using CalibrationCallback = void (*)(LoadSide side);
+    using DiagnosticStartCallback = void (*)(
+        LoadSide side,
+        float testMassGrams,
+        bool zeroBaseline
+    );
+    using DiagnosticCancelCallback = void (*)();
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -26,6 +32,15 @@ namespace ArrowLabUI
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
     void setCalibrationReferenceGrams(float grams);
+    void setDiagnosticCallbacks(
+        DiagnosticStartCallback startCallback,
+        DiagnosticCancelCallback cancelCallback
+    );
+    void setDiagnosticStatus(
+        const char *text,
+        uint8_t progressPercent,
+        bool active
+    );
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
     void setSensorHealth(bool leftLive, bool rightLive);
 
