@@ -1,6 +1,6 @@
 #include "CreepDiagnostic.h"
 
-#include <cstdlib>
+#include <climits>
 
 namespace
 {
