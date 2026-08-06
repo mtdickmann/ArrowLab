@@ -228,8 +228,8 @@ namespace
         } else if (calibrationInProgress) {
             ArrowLabUI::setStatus(
                 leftSensor.calibrationInProgress()
-                    ? "Calibrating LEFT - keep 999.8 g stable"
-                    : "Calibrating RIGHT - keep 999.8 g stable"
+                    ? "Calibrating LEFT - keep weight stable"
+                    : "Calibrating RIGHT - keep weight stable"
             );
 
             ArrowLabUI::setState(
@@ -356,6 +356,9 @@ void setup()
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
+    );
+    ArrowLabUI::setCalibrationReferenceGrams(
+        calibrationReferenceGrams
     );
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");
