@@ -20,13 +20,21 @@ public:
     ) const;
 
     void startUserTare();
-    bool startCalibration(float referenceGrams);
+    bool startCalibration(
+        float referenceGrams,
+        uint32_t currentTime,
+        uint32_t settleTimeMs
+    );
 
     const char *name() const;
     long rawValue() const;
     long zeroedValue() const;
     bool tareComplete() const;
     bool userTareConfirmed() const;
+    bool calibrationReady(
+        uint32_t currentTime,
+        uint32_t settleTimeMs
+    ) const;
     bool calibrationInProgress() const;
     bool calibrated() const;
     float calibrationFactor() const;
@@ -53,6 +61,7 @@ private:
     bool tareComplete_ = false;
     bool userTareConfirmed_ = false;
     bool confirmUserTareOnCompletion_ = false;
+    uint32_t userTareCompletedTime_ = 0;
 
     int64_t calibrationAccumulator_ = 0;
     uint8_t calibrationSamples_ = 0;
