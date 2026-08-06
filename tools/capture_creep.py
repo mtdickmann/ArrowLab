@@ -71,11 +71,18 @@ def main() -> int:
     row_count = 0
 
     try:
-        with serial.Serial(
-            args.port,
-            args.baud,
-            timeout=1,
-        ) as device, output.open(
+        # Configure modem-control lines before opening the port.
+        # The ESP32 upload/reset circuit may react to DTR/RTS changes;
+        # diagnostic capture must not deliberately request a reset.
+        device = serial.Serial()
+        device.port = args.port
+        device.baudrate = args.baud
+        device.timeout = 1
+        device.dtr = False
+        device.rts = False
+        device.open()
+
+        with device, output.open(
             "w",
             newline="",
             encoding="utf-8",
