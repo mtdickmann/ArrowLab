@@ -47,8 +47,8 @@ The standalone launch command is then:
 
 Do not assume that the Windows `py` command exists: a rebuilt machine may have no global Python launcher even while PlatformIO's private Python works.
 
-7. Leave the capture window running. It prints the exact CSV filename when it starts.
-8. Prevent the PC from sleeping/hibernating during an active run. The monitor/display may turn off.
+6. Leave the capture window running. It prints the exact CSV filename when it starts.
+7. Prevent the PC from sleeping/hibernating during an active run. The monitor/display may turn off.
 
 Default CSV location:
 
