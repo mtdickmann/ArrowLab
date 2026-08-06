@@ -90,6 +90,13 @@ void LoadCellChannel::startUserTare()
     tareComplete_ = false;
     userTareConfirmed_ = false;
     confirmUserTareOnCompletion_ = true;
+
+    // A new tare cancels any calibration sample run, but does not
+    // erase an already established calibration factor.
+    calibrationAccumulator_ = 0;
+    calibrationSamples_ = 0;
+    calibrationReferenceGrams_ = 0.0f;
+    calibrationInProgress_ = false;
 }
 
 bool LoadCellChannel::startCalibration(float referenceGrams)
