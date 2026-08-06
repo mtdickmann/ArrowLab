@@ -20,6 +20,7 @@ except ImportError:
 
 
 CSV_HEADER = [
+    "run_id",
     "side",
     "test_mass_g",
     "elapsed_ms",
@@ -119,7 +120,7 @@ def main() -> int:
 
                 parts = line.split(",")
 
-                if len(parts) != 9:
+                if len(parts) != 10:
                     print(
                         f"Ignored malformed diagnostic line: {line}",
                         file=sys.stderr,
@@ -136,14 +137,15 @@ def main() -> int:
                 csv_file.flush()
                 row_count += 1
 
-                side = parts[2]
-                mass = parts[3]
-                elapsed_s = int(parts[4]) / 1000.0
-                grams = parts[7]
+                run_id = parts[2]
+                side = parts[3]
+                mass = parts[4]
+                elapsed_s = int(parts[5]) / 1000.0
+                grams = parts[8]
 
                 print(
-                    f"#{row_count:04d}  {side:5s}  "
-                    f"{mass} g  t={elapsed_s:7.1f}s  "
+                    f"#{row_count:04d}  run={run_id}  "
+                    f"{side:5s}  {mass} g  t={elapsed_s:7.1f}s  "
                     f"reading={grams} g"
                 )
 
