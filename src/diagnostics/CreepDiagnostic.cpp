@@ -41,10 +41,13 @@ bool CreepDiagnostic::start(
 
     if (
         !zeroBaseline
-        && !zeroBaselineComplete(side)
+        && (
+            !leftZeroBaselineComplete_
+            || !rightZeroBaselineComplete_
+        )
     ) {
         Serial.printf(
-            "AL_DIAG,EVENT,%s,%.3f,ZERO_BASELINE_REQUIRED\n",
+            "AL_DIAG,EVENT,%s,%.3f,BOTH_ZERO_BASELINES_REQUIRED\n",
             side == DiagnosticSide::Left ? "LEFT" : "RIGHT",
             testMassGrams
         );
