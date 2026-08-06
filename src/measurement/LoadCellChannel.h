@@ -38,6 +38,15 @@ public:
         uint32_t currentTime,
         uint32_t settleTimeMs
     ) const;
+    bool calibrationLoadDetected() const;
+    uint32_t calibrationSettleRemainingSeconds(
+        uint32_t currentTime,
+        uint32_t settleTimeMs
+    ) const;
+    uint8_t calibrationSettlePercent(
+        uint32_t currentTime,
+        uint32_t settleTimeMs
+    ) const;
     bool calibrationInProgress() const;
     bool calibrated() const;
     float calibrationFactor() const;
