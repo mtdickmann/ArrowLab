@@ -16,7 +16,10 @@ namespace
     struct ReadingPanelRefs
     {
         lv_obj_t *valueLabel = nullptr;
+        lv_obj_t *unitLabel = nullptr;
         lv_obj_t *statusLabel = nullptr;
+        lv_obj_t *tareButton = nullptr;
+        lv_obj_t *calibrationButton = nullptr;
     };
 
     ReadingPanelRefs leftPanel;
@@ -26,9 +29,18 @@ namespace
     lv_obj_t *stateLabel  = nullptr;
     lv_obj_t *confirmationBox = nullptr;
 
+    enum class ConfirmationAction
+    {
+        Tare,
+        Calibration
+    };
+
     ArrowLabUI::TareCallback tareCallback = nullptr;
-    ArrowLabUI::LoadSide pendingTareSide =
+    ArrowLabUI::CalibrationCallback calibrationCallback = nullptr;
+    ArrowLabUI::LoadSide pendingSide =
         ArrowLabUI::LoadSide::Left;
+    ConfirmationAction pendingAction =
+        ConfirmationAction::Tare;
 
     void stylePanel(lv_obj_t *panel)
     {
@@ -79,7 +91,8 @@ namespace
         lv_obj_t *parent,
         const char *titleText,
         int xPosition,
-        lv_event_cb_t tareEventCallback
+        lv_event_cb_t tareEventCallback,
+        lv_event_cb_t calibrationEventCallback
     )
     {
         ReadingPanelRefs refs;
@@ -171,39 +184,88 @@ namespace
             lv_color_hex(COLOUR_TEXT)
         );
 
-        createTextLabel(
+        refs.unitLabel = createTextLabel(
             readingRow,
             "RAW",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED)
         );
 
-        lv_obj_t *tareButton = lv_btn_create(panel);
-        lv_obj_set_size(tareButton, 68, 28);
-        lv_obj_align(tareButton, LV_ALIGN_BOTTOM_LEFT, 10, -6);
-        lv_obj_set_style_radius(tareButton, 7, LV_PART_MAIN);
+        refs.tareButton = lv_btn_create(panel);
+        lv_obj_set_size(refs.tareButton, 68, 28);
+        lv_obj_align(
+            refs.tareButton,
+            LV_ALIGN_BOTTOM_LEFT,
+            10,
+            -6
+        );
+        lv_obj_set_style_radius(
+            refs.tareButton,
+            7,
+            LV_PART_MAIN
+        );
         lv_obj_set_style_bg_color(
-            tareButton,
+            refs.tareButton,
             lv_color_hex(COLOUR_ACCENT),
             LV_PART_MAIN
         );
-        lv_obj_set_style_pad_all(tareButton, 2, LV_PART_MAIN);
-
+        lv_obj_set_style_pad_all(
+            refs.tareButton,
+            2,
+            LV_PART_MAIN
+        );
         lv_obj_add_event_cb(
-            tareButton,
+            refs.tareButton,
             tareEventCallback,
             LV_EVENT_CLICKED,
             nullptr
         );
 
         lv_obj_t *tareLabel = createTextLabel(
-            tareButton,
+            refs.tareButton,
             "TARE",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT)
         );
-
         lv_obj_center(tareLabel);
+
+        refs.calibrationButton = lv_btn_create(panel);
+        lv_obj_set_size(refs.calibrationButton, 68, 28);
+        lv_obj_align(
+            refs.calibrationButton,
+            LV_ALIGN_BOTTOM_LEFT,
+            84,
+            -6
+        );
+        lv_obj_set_style_radius(
+            refs.calibrationButton,
+            7,
+            LV_PART_MAIN
+        );
+        lv_obj_set_style_bg_color(
+            refs.calibrationButton,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN
+        );
+        lv_obj_set_style_pad_all(
+            refs.calibrationButton,
+            2,
+            LV_PART_MAIN
+        );
+        lv_obj_add_event_cb(
+            refs.calibrationButton,
+            calibrationEventCallback,
+            LV_EVENT_CLICKED,
+            nullptr
+        );
+
+        lv_obj_t *calibrationLabel = createTextLabel(
+            refs.calibrationButton,
+            "CAL",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT)
+        );
+        lv_obj_center(calibrationLabel);
 
         return refs;
     }
@@ -216,11 +278,19 @@ namespace
         const uint16_t selectedButton =
             lv_msgbox_get_active_btn(messageBox);
 
-        if (
-            selectedButton == 1
-            && tareCallback != nullptr
-        ) {
-            tareCallback(pendingTareSide);
+        if (selectedButton == 1) {
+            if (
+                pendingAction == ConfirmationAction::Tare
+                && tareCallback != nullptr
+            ) {
+                tareCallback(pendingSide);
+            } else if (
+                pendingAction
+                    == ConfirmationAction::Calibration
+                && calibrationCallback != nullptr
+            ) {
+                calibrationCallback(pendingSide);
+            }
         }
 
         confirmationBox = nullptr;
@@ -233,7 +303,8 @@ namespace
             return;
         }
 
-        pendingTareSide = side;
+        pendingSide = side;
+        pendingAction = ConfirmationAction::Tare;
 
         static const char *buttons[] = {
             "CANCEL",
@@ -266,6 +337,46 @@ namespace
         lv_obj_center(confirmationBox);
     }
 
+    void showCalibrationConfirmation(
+        ArrowLabUI::LoadSide side
+    )
+    {
+        if (confirmationBox != nullptr) {
+            return;
+        }
+
+        pendingSide = side;
+        pendingAction = ConfirmationAction::Calibration;
+
+        static const char *buttons[] = {
+            "CANCEL",
+            "CALIBRATE",
+            ""
+        };
+
+        const bool isLeft =
+            side == ArrowLabUI::LoadSide::Left;
+
+        confirmationBox = lv_msgbox_create(
+            nullptr,
+            isLeft ? "CALIBRATE LEFT" : "CALIBRATE RIGHT",
+            isLeft
+                ? "Keep the calibration platform on LEFT.\nPlace the 999.8 g reference weight on it and allow it to settle."
+                : "Keep the calibration platform on RIGHT.\nPlace the 999.8 g reference weight on it and allow it to settle.",
+            buttons,
+            false
+        );
+
+        lv_obj_set_width(confirmationBox, 410);
+        lv_obj_add_event_cb(
+            confirmationBox,
+            confirmationEvent,
+            LV_EVENT_VALUE_CHANGED,
+            nullptr
+        );
+        lv_obj_center(confirmationBox);
+    }
+
     void tareLeftButtonEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
@@ -279,6 +390,24 @@ namespace
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showTareConfirmation(
+                ArrowLabUI::LoadSide::Right
+            );
+        }
+    }
+
+    void calibrationLeftButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showCalibrationConfirmation(
+                ArrowLabUI::LoadSide::Left
+            );
+        }
+    }
+
+    void calibrationRightButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showCalibrationConfirmation(
                 ArrowLabUI::LoadSide::Right
             );
         }
@@ -341,14 +470,16 @@ namespace ArrowLabUI
             screen,
             "LEFT LOAD",
             18,
-            tareLeftButtonEvent
+            tareLeftButtonEvent,
+            calibrationLeftButtonEvent
         );
 
         rightPanel = createReadingPanel(
             screen,
             "RIGHT LOAD",
             248,
-            tareRightButtonEvent
+            tareRightButtonEvent,
+            calibrationRightButtonEvent
         );
 
         // Bottom status bar
@@ -401,6 +532,13 @@ namespace ArrowLabUI
         tareCallback = callback;
     }
 
+    void setCalibrationCallback(
+        CalibrationCallback callback
+    )
+    {
+        calibrationCallback = callback;
+    }
+
     void setLeftReading(const char *text)
     {
         if (leftPanel.valueLabel != nullptr) {
@@ -421,10 +559,26 @@ namespace ArrowLabUI
         }
     }
 
+    void setLoadUnit(
+        LoadSide side,
+        const char *text
+    )
+    {
+        lv_obj_t *label =
+            side == LoadSide::Left
+                ? leftPanel.unitLabel
+                : rightPanel.unitLabel;
+
+        if (label != nullptr) {
+            lv_label_set_text(label, text);
+        }
+    }
+
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
         bool userTareConfirmed,
+        bool calibrationInProgress,
         bool calibrated
     )
     {
@@ -444,15 +598,57 @@ namespace ArrowLabUI
                 ? "TARING"
                 : (userTareConfirmed ? "TARE OK" : "TARE REQ");
 
+        const char *calibrationText =
+            calibrationInProgress
+                ? "CAL..."
+                : (calibrated ? "CAL OK" : "CAL --");
+
         snprintf(
             text,
             sizeof(text),
             "%s  %s",
             tareText,
-            calibrated ? "CAL OK" : "CAL --"
+            calibrationText
         );
 
         lv_label_set_text(label, text);
+
+        ReadingPanelRefs &panel =
+            side == LoadSide::Left
+                ? leftPanel
+                : rightPanel;
+
+        if (panel.tareButton != nullptr) {
+            if (calibrationInProgress) {
+                lv_obj_add_state(
+                    panel.tareButton,
+                    LV_STATE_DISABLED
+                );
+            } else {
+                lv_obj_clear_state(
+                    panel.tareButton,
+                    LV_STATE_DISABLED
+                );
+            }
+        }
+
+        if (panel.calibrationButton != nullptr) {
+            if (
+                !tareComplete
+                || !userTareConfirmed
+                || calibrationInProgress
+            ) {
+                lv_obj_add_state(
+                    panel.calibrationButton,
+                    LV_STATE_DISABLED
+                );
+            } else {
+                lv_obj_clear_state(
+                    panel.calibrationButton,
+                    LV_STATE_DISABLED
+                );
+            }
+        }
     }
 
     void setStatus(const char *text)
