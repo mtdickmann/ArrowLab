@@ -23,6 +23,8 @@
 - Numeric diagnostic mass keypad and automatic load-triggered timing
 - USB serial diagnostic CSV protocol and host capture tool
 - Repeatable creep diagnostic test procedure
+- Mandatory per-channel zero baseline before loaded diagnostic runs
+- Explicit diagnostic FINISH / CSV session completion
 
 ### Fixed
 - GT911 initialization issue
