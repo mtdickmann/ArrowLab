@@ -194,3 +194,30 @@ The resulting datasets will be used to determine:
 - unloading recovery and hysteresis,
 - whether a fixed measurement timing window is sufficient,
 - and only then whether a bounded creep correction is technically defensible.
+
+
+## Instrument health versus calibration validity
+
+Calibration validity and hardware health are independent states and must never be conflated.
+
+- CALIBRATION OK means that both channels currently have valid calibration factors under the applicable persistence/version rules.
+- It does not mean the two HX711/load-cell signal paths are presently healthy.
+- Home therefore reports live load-cell health separately from calibration status.
+- Loss of Left, Right or both HX711 channels produces a red fault indication on Home after the normal live-data timeout.
+- A hardware fault does not silently erase a valid calibration factor; repairing/reconnecting the signal path and recalibration policy are separate decisions.
+- Future measurement actions such as Spine, mass and FOC must refuse or invalidate a measurement when required hardware is not live.
+
+## Long-term navigation direction
+
+The current Home/Settings pages are functional scaffolding, not the final visual layout.
+
+The intended polished UI follows an instrument-style layout similar in concept to the QIDI Q2 interface:
+
+- persistent navigation tabs/icons down the left side,
+- contextual menu or working content in the larger area to the right,
+- Help available from normal UI chrome,
+- About owning firmware/build information,
+- dark/light theme support later,
+- graphics and iconography added after workflow and measurement behaviour are proven.
+
+The navigation/state API should therefore remain independent of the exact temporary button layout so screens can be restyled without moving measurement logic.
