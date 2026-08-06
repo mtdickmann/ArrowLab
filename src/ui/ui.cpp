@@ -51,10 +51,15 @@ namespace
     lv_obj_t *diagnosticStartZeroButton = nullptr;
     lv_obj_t *diagnosticStartLoadButton = nullptr;
     lv_obj_t *diagnosticCancelButton = nullptr;
+    lv_obj_t *diagnosticFinishButton = nullptr;
     lv_obj_t *massInputBox = nullptr;
     lv_obj_t *massInputTextArea = nullptr;
     lv_obj_t *diagnosticConfirmBox = nullptr;
     bool developerMode = false;
+    bool diagnosticSideSelected = false;
+    bool diagnosticRunActive = false;
+    bool diagnosticLeftZeroComplete = false;
+    bool diagnosticRightZeroComplete = false;
     uint32_t developerPressStart = 0;
     bool developerPressActive = false;
     constexpr uint32_t DEVELOPER_REVEAL_HOLD_MS = 2000;
@@ -69,6 +74,7 @@ namespace
     ArrowLabUI::CalibrationCallback calibrationCallback = nullptr;
     ArrowLabUI::DiagnosticStartCallback diagnosticStartCallback = nullptr;
     ArrowLabUI::DiagnosticCancelCallback diagnosticCancelCallback = nullptr;
+    ArrowLabUI::DiagnosticFinishCallback diagnosticFinishCallback = nullptr;
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
@@ -492,6 +498,111 @@ namespace
         }
     }
 
+    bool selectedDiagnosticZeroComplete()
+    {
+        if (!diagnosticSideSelected) {
+            return false;
+        }
+
+        return diagnosticSide == ArrowLabUI::LoadSide::Left
+            ? diagnosticLeftZeroComplete
+            : diagnosticRightZeroComplete;
+    }
+
+    void refreshDiagnosticSideLabel()
+    {
+        if (diagnosticSideLabel == nullptr) {
+            return;
+        }
+
+        if (!diagnosticSideSelected) {
+            lv_label_set_text(
+                diagnosticSideLabel,
+                "SIDE: --");
+            return;
+        }
+
+        const bool zeroOk =
+            selectedDiagnosticZeroComplete();
+
+        char text[40];
+        snprintf(
+            text,
+            sizeof(text),
+            "%s / ZERO %s",
+            diagnosticSide == ArrowLabUI::LoadSide::Left
+                ? "LEFT"
+                : "RIGHT",
+            zeroOk ? "OK" : "REQ");
+        lv_label_set_text(
+            diagnosticSideLabel,
+            text);
+    }
+
+    void refreshDiagnosticControls()
+    {
+        const bool canConfigure =
+            !diagnosticRunActive
+            && diagnosticSideSelected;
+
+        const bool canLoad =
+            canConfigure
+            && selectedDiagnosticZeroComplete()
+            && diagnosticMassGrams > 0.0f;
+
+        if (diagnosticStartZeroButton != nullptr) {
+            if (canConfigure) {
+                lv_obj_clear_state(
+                    diagnosticStartZeroButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_add_state(
+                    diagnosticStartZeroButton,
+                    LV_STATE_DISABLED);
+            }
+        }
+
+        if (diagnosticStartLoadButton != nullptr) {
+            if (canLoad) {
+                lv_obj_clear_state(
+                    diagnosticStartLoadButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_add_state(
+                    diagnosticStartLoadButton,
+                    LV_STATE_DISABLED);
+            }
+        }
+
+        if (diagnosticCancelButton != nullptr) {
+            if (diagnosticRunActive) {
+                lv_obj_clear_state(
+                    diagnosticCancelButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_add_state(
+                    diagnosticCancelButton,
+                    LV_STATE_DISABLED);
+            }
+        }
+
+        if (diagnosticFinishButton != nullptr) {
+            const bool hasBaseline =
+                diagnosticLeftZeroComplete
+                || diagnosticRightZeroComplete;
+
+            if (!diagnosticRunActive && hasBaseline) {
+                lv_obj_clear_state(
+                    diagnosticFinishButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_add_state(
+                    diagnosticFinishButton,
+                    LV_STATE_DISABLED);
+            }
+        }
+    }
+
     void diagnosticSideEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
@@ -502,14 +613,9 @@ namespace
             static_cast<ArrowLabUI::LoadSide>(
                 reinterpret_cast<uintptr_t>(
                     lv_event_get_user_data(event)));
-
-        if (diagnosticSideLabel != nullptr) {
-            lv_label_set_text(
-                diagnosticSideLabel,
-                diagnosticSide == ArrowLabUI::LoadSide::Left
-                    ? "SIDE: LEFT"
-                    : "SIDE: RIGHT");
-        }
+        diagnosticSideSelected = true;
+        refreshDiagnosticSideLabel();
+        refreshDiagnosticControls();
     }
 
     void closeMassInput()
@@ -551,6 +657,7 @@ namespace
             lv_label_set_text(
                 diagnosticMassLabel,
                 label);
+            refreshDiagnosticControls();
             closeMassInput();
         }
     }
@@ -672,6 +779,24 @@ namespace
             return;
         }
 
+        if (!diagnosticSideSelected) {
+            static const char *buttons[] = {"OK", ""};
+            diagnosticConfirmBox = lv_msgbox_create(
+                nullptr,
+                "SELECT LOAD CELL",
+                "Select LEFT or RIGHT before starting a diagnostic run.",
+                buttons,
+                false);
+            lv_obj_set_width(diagnosticConfirmBox, 390);
+            lv_obj_add_event_cb(
+                diagnosticConfirmBox,
+                diagnosticConfirmEvent,
+                LV_EVENT_VALUE_CHANGED,
+                nullptr);
+            lv_obj_center(diagnosticConfirmBox);
+            return;
+        }
+
         if (!zeroRun && diagnosticMassGrams <= 0.0f) {
             static const char *buttons[] = {"OK", ""};
             diagnosticConfirmBox = lv_msgbox_create(
@@ -757,6 +882,16 @@ namespace
             && diagnosticCancelCallback != nullptr
         ) {
             diagnosticCancelCallback();
+        }
+    }
+
+    void diagnosticFinishEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) == LV_EVENT_CLICKED
+            && diagnosticFinishCallback != nullptr
+        ) {
+            diagnosticFinishCallback();
         }
     }
 
@@ -1053,7 +1188,7 @@ namespace ArrowLabUI
 
         diagnosticSideLabel = createTextLabel(
             diagnosticsPage,
-            "SIDE: LEFT",
+            "SIDE: --",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED));
         lv_obj_set_pos(diagnosticSideLabel, 320, 15);
@@ -1115,7 +1250,7 @@ namespace ArrowLabUI
         lv_obj_center(massButtonLabel);
 
         diagnosticStartZeroButton = lv_btn_create(diagnosticsPage);
-        lv_obj_set_size(diagnosticStartZeroButton, 132, 38);
+        lv_obj_set_size(diagnosticStartZeroButton, 104, 38);
         lv_obj_set_pos(diagnosticStartZeroButton, 14, 94);
         lv_obj_add_event_cb(
             diagnosticStartZeroButton,
@@ -1124,14 +1259,14 @@ namespace ArrowLabUI
             nullptr);
         lv_obj_t *zeroLabel = createTextLabel(
             diagnosticStartZeroButton,
-            "START ZERO",
+            "ZERO BASE",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(zeroLabel);
 
         diagnosticStartLoadButton = lv_btn_create(diagnosticsPage);
-        lv_obj_set_size(diagnosticStartLoadButton, 132, 38);
-        lv_obj_set_pos(diagnosticStartLoadButton, 154, 94);
+        lv_obj_set_size(diagnosticStartLoadButton, 104, 38);
+        lv_obj_set_pos(diagnosticStartLoadButton, 124, 94);
         lv_obj_add_event_cb(
             diagnosticStartLoadButton,
             diagnosticStartLoadEvent,
@@ -1139,14 +1274,14 @@ namespace ArrowLabUI
             nullptr);
         lv_obj_t *loadLabel = createTextLabel(
             diagnosticStartLoadButton,
-            "START LOAD",
+            "LOAD TEST",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(loadLabel);
 
         diagnosticCancelButton = lv_btn_create(diagnosticsPage);
-        lv_obj_set_size(diagnosticCancelButton, 132, 38);
-        lv_obj_set_pos(diagnosticCancelButton, 294, 94);
+        lv_obj_set_size(diagnosticCancelButton, 104, 38);
+        lv_obj_set_pos(diagnosticCancelButton, 234, 94);
         lv_obj_add_event_cb(
             diagnosticCancelButton,
             diagnosticCancelEvent,
@@ -1154,7 +1289,7 @@ namespace ArrowLabUI
             nullptr);
         lv_obj_t *cancelLabel = createTextLabel(
             diagnosticCancelButton,
-            "CANCEL RUN",
+            "CANCEL",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(cancelLabel);
@@ -1162,9 +1297,27 @@ namespace ArrowLabUI
             diagnosticCancelButton,
             LV_STATE_DISABLED);
 
+        diagnosticFinishButton = lv_btn_create(diagnosticsPage);
+        lv_obj_set_size(diagnosticFinishButton, 104, 38);
+        lv_obj_set_pos(diagnosticFinishButton, 344, 94);
+        lv_obj_add_event_cb(
+            diagnosticFinishButton,
+            diagnosticFinishEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *finishLabel = createTextLabel(
+            diagnosticFinishButton,
+            "FINISH",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(finishLabel);
+        lv_obj_add_state(
+            diagnosticFinishButton,
+            LV_STATE_DISABLED);
+
         diagnosticStatusLabel = createTextLabel(
             diagnosticsPage,
-            "Select side and test type",
+            "1 Select side  2 Zero baseline  3 Load tests",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_set_pos(diagnosticStatusLabel, 14, 146);
@@ -1319,17 +1472,27 @@ namespace ArrowLabUI
 
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
-        DiagnosticCancelCallback cancelCallback)
+        DiagnosticCancelCallback cancelCallback,
+        DiagnosticFinishCallback finishCallback)
     {
         diagnosticStartCallback = startCallback;
         diagnosticCancelCallback = cancelCallback;
+        diagnosticFinishCallback = finishCallback;
     }
 
     void setDiagnosticStatus(
         const char *text,
         uint8_t progressPercent,
-        bool active)
+        bool active,
+        bool leftZeroBaselineComplete,
+        bool rightZeroBaselineComplete)
     {
+        diagnosticRunActive = active;
+        diagnosticLeftZeroComplete =
+            leftZeroBaselineComplete;
+        diagnosticRightZeroComplete =
+            rightZeroBaselineComplete;
+
         if (diagnosticStatusLabel != nullptr) {
             lv_label_set_text(
                 diagnosticStatusLabel,
@@ -1343,41 +1506,8 @@ namespace ArrowLabUI
                 LV_ANIM_OFF);
         }
 
-        if (diagnosticStartZeroButton != nullptr) {
-            if (active) {
-                lv_obj_add_state(
-                    diagnosticStartZeroButton,
-                    LV_STATE_DISABLED);
-            } else {
-                lv_obj_clear_state(
-                    diagnosticStartZeroButton,
-                    LV_STATE_DISABLED);
-            }
-        }
-
-        if (diagnosticStartLoadButton != nullptr) {
-            if (active) {
-                lv_obj_add_state(
-                    diagnosticStartLoadButton,
-                    LV_STATE_DISABLED);
-            } else {
-                lv_obj_clear_state(
-                    diagnosticStartLoadButton,
-                    LV_STATE_DISABLED);
-            }
-        }
-
-        if (diagnosticCancelButton != nullptr) {
-            if (active) {
-                lv_obj_clear_state(
-                    diagnosticCancelButton,
-                    LV_STATE_DISABLED);
-            } else {
-                lv_obj_add_state(
-                    diagnosticCancelButton,
-                    LV_STATE_DISABLED);
-            }
-        }
+        refreshDiagnosticSideLabel();
+        refreshDiagnosticControls();
     }
 
     void setCalibrationValidity(
