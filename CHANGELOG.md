@@ -15,6 +15,8 @@
 - Home / Settings navigation with calibration status
 - Hidden developer-mode reveal and Diagnostics entry
 - Calibration stabilization countdown and progress feedback
+- Home load-cell health/fault status separate from calibration validity
+- Enlarged long-press-only developer reveal touch target
 
 ### Fixed
 - GT911 initialization issue
