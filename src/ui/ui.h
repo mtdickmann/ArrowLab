@@ -45,6 +45,7 @@ namespace ArrowLabUI
         LoadSide side,
         bool tareComplete,
         bool userTareConfirmed,
+        bool calibrationReady,
         bool calibrationInProgress,
         bool calibrated
     );
