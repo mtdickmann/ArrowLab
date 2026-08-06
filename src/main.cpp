@@ -198,6 +198,10 @@ namespace
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
+        ArrowLabUI::setCalibrationValidity(
+            leftSensor.calibrated(),
+            rightSensor.calibrated()
+        );
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
