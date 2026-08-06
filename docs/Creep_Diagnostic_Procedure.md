@@ -54,31 +54,35 @@ Default CSV location:
 
     calibration\diagnostics\creep_YYYYMMDD_HHMMSS.csv
 
-Start PC capture before final calibration so an unexpected USB-UART reset cannot destroy a calibration that was just completed.
+Start PC capture before the zero baselines and leave it running through baseline, calibration and loaded runs.
 
-## 2. Calibrate ArrowLab
+## 2. Mandatory zero baselines
 
-With PC capture already running:
+For the formal creep campaign, complete both zero baselines before calibration or any loaded run.
 
-1. Calibrate Left normally.
-2. Calibrate Right normally.
-3. Return to Home.
-4. Long-press the ArrowLab title to reveal Developer mode.
-5. Open Settings -> Diagnostics.
+1. Return to Home and long-press the ArrowLab title to reveal Developer mode.
+2. Open Settings -> Diagnostics.
+3. Explicitly select LEFT. Diagnostics starts with no side selected.
+4. Remove calibration platforms, weights and other added hardware. Leave only the normal fixed arrow-rest hardware.
+5. Select ZERO BASE and confirm.
+6. ArrowLab performs a fresh tare and automatically starts the 30-minute acquisition.
+7. Do not touch or disturb the instrument during the active run.
+8. Wait for RUN COMPLETE.
+9. Select RIGHT and repeat the same bare-rest ZERO BASE procedure.
+10. Wait for the Right RUN COMPLETE.
 
-## 3. Mandatory zero baseline
+A cancelled or incomplete zero run does not count as a completed baseline. SET MASS and LOAD TEST remain disabled until both Left and Right baselines have completed.
 
-Zero baseline is mandatory independently for every channel that will be load-tested.
+## 3. Calibrate ArrowLab
 
-1. Explicitly select LEFT or RIGHT. Diagnostics starts with no side selected.
-2. Remove calibration platforms, weights and other added hardware. Leave only the normal fixed arrow-rest hardware.
-3. Select ZERO BASE.
-4. Confirm the run.
-5. ArrowLab performs a fresh tare and automatically starts the 30-minute acquisition.
-6. Do not touch or disturb the jig during the active run.
-7. Wait for RUN COMPLETE.
+With both zero baselines complete and PC capture still running:
 
-A loaded run is blocked until that side has completed its zero baseline.
+1. Return to Settings -> Calibration.
+2. Calibrate Left normally.
+3. Calibrate Right normally.
+4. Return to Settings -> Diagnostics.
+
+The baseline completion state remains valid for the current powered diagnostic session. Calibration establishes the counts-per-gram factors used as supporting information during the loaded runs; raw and zeroed counts remain the primary creep evidence.
 
 ## 4. Loaded creep run
 
@@ -130,8 +134,8 @@ Use FINISH and treat the next powered period as a new diagnostic session.
 On the next session:
 
 1. Start a new PC capture/CSV.
-2. Recalibrate if required.
-3. Record a fresh zero baseline for each side being tested.
+2. Record fresh Left and Right zero baselines.
+3. Recalibrate both channels.
 4. Continue with the remaining loaded datasets.
 
 Separate sessions can be combined during PC analysis without pretending that a power/thermal cycle did not occur.
