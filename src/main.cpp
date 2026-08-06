@@ -36,6 +36,7 @@ namespace
         int64_t tareAccumulator = 0;
         uint8_t tareSamples = 0;
         bool tareComplete = false;
+        bool calibrated = false;
 
         bool hasReading = false;
         uint32_t lastReadingTime = 0;
@@ -69,7 +70,8 @@ namespace
     Board *displayBoard = nullptr;
 
     uint32_t lastSensorUpdate = 0;
-    volatile bool tareRequested = false;
+    volatile bool leftTareRequested = false;
+    volatile bool rightTareRequested = false;
 
     void beginSensor(SensorChannel &sensor)
     {
@@ -101,20 +103,34 @@ namespace
         sensor.tareComplete = false;
     }
 
-    void requestTare()
+    void requestTare(ArrowLabUI::LoadSide side)
     {
-        tareRequested = true;
+        if (side == ArrowLabUI::LoadSide::Left) {
+            leftTareRequested = true;
+        } else {
+            rightTareRequested = true;
+        }
     }
 
-    void startRequestedTare()
+    void startRequestedTares()
     {
-        resetTare(leftSensor);
-        resetTare(rightSensor);
-        tareRequested = false;
+        if (leftTareRequested) {
+            resetTare(leftSensor);
+            leftTareRequested = false;
 
-        Serial.println(
-            "Manual tare requested - zeroing both channels"
-        );
+            Serial.println(
+                "Manual LEFT tare confirmed"
+            );
+        }
+
+        if (rightTareRequested) {
+            resetTare(rightSensor);
+            rightTareRequested = false;
+
+            Serial.println(
+                "Manual RIGHT tare confirmed"
+            );
+        }
     }
 
     void updateTare(SensorChannel &sensor)
@@ -260,9 +276,21 @@ namespace
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
 
+        ArrowLabUI::setLoadStatus(
+            ArrowLabUI::LoadSide::Left,
+            leftSensor.tareComplete,
+            leftSensor.calibrated
+        );
+
+        ArrowLabUI::setLoadStatus(
+            ArrowLabUI::LoadSide::Right,
+            rightSensor.tareComplete,
+            rightSensor.calibrated
+        );
+
         if (tareInProgress) {
             ArrowLabUI::setStatus(
-                "Zeroing load cells - keep unloaded"
+                "Taring load cell - keep setup stable"
             );
 
             ArrowLabUI::setState(
@@ -388,8 +416,11 @@ void loop()
 
     lastSensorUpdate = now;
 
-    if (tareRequested) {
-        startRequestedTare();
+    if (
+        leftTareRequested
+        || rightTareRequested
+    ) {
+        startRequestedTares();
     }
 
     /*
