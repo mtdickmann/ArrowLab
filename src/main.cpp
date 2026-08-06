@@ -69,6 +69,7 @@ namespace
     Board *displayBoard = nullptr;
 
     uint32_t lastSensorUpdate = 0;
+    volatile bool tareRequested = false;
 
     void beginSensor(SensorChannel &sensor)
     {
@@ -89,6 +90,31 @@ namespace
          * falsely appearing as a ready HX711.
          */
         pinMode(sensor.dtPin, INPUT_PULLUP);
+    }
+
+    void resetTare(SensorChannel &sensor)
+    {
+        sensor.tareOffset = 0;
+        sensor.zeroedValue = 0;
+        sensor.tareAccumulator = 0;
+        sensor.tareSamples = 0;
+        sensor.tareComplete = false;
+    }
+
+    void requestTare()
+    {
+        tareRequested = true;
+    }
+
+    void startRequestedTare()
+    {
+        resetTare(leftSensor);
+        resetTare(rightSensor);
+        tareRequested = false;
+
+        Serial.println(
+            "Manual tare requested - zeroing both channels"
+        );
     }
 
     void updateTare(SensorChannel &sensor)
@@ -326,6 +352,7 @@ void setup()
     lvgl_port_lock(-1);
 
     ArrowLabUI::create();
+    ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");
     ArrowLabUI::setStatus(
@@ -360,6 +387,10 @@ void loop()
     }
 
     lastSensorUpdate = now;
+
+    if (tareRequested) {
+        startRequestedTare();
+    }
 
     /*
      * Each channel is tested independently.
