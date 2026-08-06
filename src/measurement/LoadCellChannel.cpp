@@ -90,6 +90,7 @@ void LoadCellChannel::startUserTare()
     tareComplete_ = false;
     userTareConfirmed_ = false;
     confirmUserTareOnCompletion_ = true;
+    userTareCompletedTime_ = 0;
 
     // A new tare cancels any calibration sample run, but does not
     // erase an already established calibration factor.
@@ -99,11 +100,14 @@ void LoadCellChannel::startUserTare()
     calibrationInProgress_ = false;
 }
 
-bool LoadCellChannel::startCalibration(float referenceGrams)
+bool LoadCellChannel::startCalibration(
+    float referenceGrams,
+    uint32_t currentTime,
+    uint32_t settleTimeMs
+)
 {
     if (
-        !tareComplete_
-        || !userTareConfirmed_
+        !calibrationReady(currentTime, settleTimeMs)
         || calibrationInProgress_
         || referenceGrams <= 0.0f
     ) {
@@ -148,6 +152,7 @@ void LoadCellChannel::updateTare()
 
     if (confirmUserTareOnCompletion_) {
         userTareConfirmed_ = true;
+        userTareCompletedTime_ = lastReadingTime_;
         confirmUserTareOnCompletion_ = false;
     }
 
@@ -231,6 +236,25 @@ bool LoadCellChannel::tareComplete() const
 bool LoadCellChannel::userTareConfirmed() const
 {
     return userTareConfirmed_;
+}
+
+bool LoadCellChannel::calibrationReady(
+    uint32_t currentTime,
+    uint32_t settleTimeMs
+) const
+{
+    if (
+        !tareComplete_
+        || !userTareConfirmed_
+        || userTareCompletedTime_ == 0
+    ) {
+        return false;
+    }
+
+    return (
+        currentTime - userTareCompletedTime_
+        >= settleTimeMs
+    );
 }
 
 bool LoadCellChannel::calibrationInProgress() const
