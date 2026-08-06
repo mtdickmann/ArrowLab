@@ -83,13 +83,28 @@ bool LoadCellChannel::isLive(
 
 void LoadCellChannel::startUserTare()
 {
+    startTare(true);
+}
+
+void LoadCellChannel::startDiagnosticTare()
+{
+    /*
+     * Diagnostic ZERO/LOAD runs need a fresh offset, but that tare
+     * must never satisfy the separate calibration-platform tare
+     * requirement shown by the Calibration screen.
+     */
+    startTare(false);
+}
+
+void LoadCellChannel::startTare(bool confirmAsUserTare)
+{
     tareOffset_ = 0;
     zeroedValue_ = 0;
     tareAccumulator_ = 0;
     tareSamples_ = 0;
     tareComplete_ = false;
     userTareConfirmed_ = false;
-    confirmUserTareOnCompletion_ = true;
+    confirmUserTareOnCompletion_ = confirmAsUserTare;
     calibrationLoadDetectSamples_ = 0;
     calibrationLoadDetectedTime_ = 0;
 
