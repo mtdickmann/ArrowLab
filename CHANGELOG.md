@@ -17,6 +17,8 @@
 - Calibration stabilization countdown and progress feedback
 - Home load-cell health/fault status separate from calibration validity
 - Enlarged long-press-only developer reveal touch target
+- Persistent cross-screen load-cell fault strip
+- Explicit 2-second developer reveal hold timing
 
 ### Fixed
 - GT911 initialization issue
