@@ -515,7 +515,7 @@ namespace
     void closeMassInput()
     {
         if (massInputBox != nullptr) {
-            lv_obj_del(massInputBox);
+            lv_obj_del_async(massInputBox);
             massInputBox = nullptr;
             massInputTextArea = nullptr;
         }
@@ -683,7 +683,7 @@ namespace
             lv_obj_set_width(diagnosticConfirmBox, 400);
             lv_obj_add_event_cb(
                 diagnosticConfirmBox,
-                closeInformationBoxEvent,
+                diagnosticConfirmEvent,
                 LV_EVENT_VALUE_CHANGED,
                 nullptr);
             lv_obj_center(diagnosticConfirmBox);
