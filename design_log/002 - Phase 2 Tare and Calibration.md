@@ -235,3 +235,33 @@ Load-cell health is an instrument-level condition, not a page-local condition.
 - Calibration validity is not erased merely because a live signal path was temporarily lost.
 
 Developer reveal is also explicitly timed by ArrowLab rather than relying on the touch stack's long-press event classification. Press duration is measured from press to release and must reach 2000 ms. Normal short taps have no developer-mode action.
+
+
+## Implemented creep diagnostic facility
+
+A hidden developer creep logger is now part of the maintained firmware rather than a disposable test build.
+
+Implementation boundaries:
+
+- src/diagnostics/CreepDiagnostic.* owns acquisition timing and serial diagnostic records.
+- The normal measurement channel continues to own HX711 acquisition, tare and calibration maths.
+- The UI owns diagnostic navigation, side selection, numeric mass entry, confirmations and progress presentation.
+- tools/capture_creep.py owns host-side serial filtering and CSV creation.
+- test/creep_diagnostic/README.md owns the repeatable operator procedure.
+- calibration/diagnostics/ is the repository location for retained raw investigation datasets.
+
+Loaded diagnostic runs perform a fresh operational tare with the selected calibration platform fitted and the test mass removed. The entered mass is then applied. Five consecutive fresh samples above 2,000 zero-adjusted counts confirm the load and automatically start the 30-minute acquisition clock.
+
+Zero-baseline runs use only the normal fixed arrow-rest hardware and begin automatically after their fresh tare completes.
+
+Each completed run emits a t=0 sample plus one sample every 30 seconds through 30 minutes, for 61 expected rows.
+
+The CSV record preserves raw counts, zero-adjusted counts, calculated grams and the active calibration factor. The diagnostic never recalibrates itself for each mass.
+
+## Firmware update requirement
+
+Network-delivered firmware update support is a project requirement, not an optional future experiment.
+
+The current 16 MB flash partitioning provides two 6.25 MiB OTA application slots. Future update architecture must preserve safe dual-slot update/validation and rollback capability. Wi-Fi is the expected primary transport, including ordinary phone-hotspot connectivity when appropriate. Bluetooth/BLE may support provisioning or service workflows, but must not be assumed to provide general Internet tethering without a separately proven implementation.
+
+Stored calibration validity must remain tied to firmware version compatibility as documented above; a firmware update that changes the calibration compatibility version must force recalibration.
