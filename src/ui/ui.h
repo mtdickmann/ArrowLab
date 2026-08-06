@@ -25,6 +25,7 @@ namespace ArrowLabUI
      */
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
+    void setCalibrationReferenceGrams(float grams);
 
     /**
      * Update the displayed raw reading for the left sensor.
