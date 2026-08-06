@@ -4,11 +4,19 @@
 
 namespace ArrowLabUI
 {
+    using TareCallback = void (*)();
+
     /**
      * Creates the complete ArrowLab home screen.
      * Call once after LVGL has been initialized.
      */
     void create();
+
+    /**
+     * Registers the application callback used by the TARE button.
+     * The UI only requests a tare; HX711 state remains application-owned.
+     */
+    void setTareCallback(TareCallback callback);
 
     /**
      * Update the displayed raw reading for the left sensor.
