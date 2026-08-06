@@ -36,6 +36,7 @@ namespace
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *homeCalibrationLabel = nullptr;
+    lv_obj_t *homeHealthLabel = nullptr;
     lv_obj_t *settingsCalibrationLabel = nullptr;
     lv_obj_t *settingsCalibrationButton = nullptr;
     lv_obj_t *diagnosticsButton = nullptr;
@@ -570,18 +571,41 @@ namespace ArrowLabUI
         lv_obj_set_style_pad_all(header, 0, LV_PART_MAIN);
         lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
+        /*
+         * The title has a deliberately generous invisible touch target.
+         * Developer mode is revealed ONLY by LVGL's long-press event;
+         * a normal tap has no action.
+         */
+        lv_obj_t *titleTouchTarget = lv_obj_create(header);
+        lv_obj_set_size(titleTouchTarget, 170, 44);
+        lv_obj_align(titleTouchTarget, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_set_style_bg_opa(
+            titleTouchTarget,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            titleTouchTarget,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(
+            titleTouchTarget,
+            0,
+            LV_PART_MAIN);
+        lv_obj_clear_flag(
+            titleTouchTarget,
+            LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(
+            titleTouchTarget,
+            developerRevealEvent,
+            LV_EVENT_LONG_PRESSED,
+            nullptr);
+
         lv_obj_t *title = createTextLabel(
-            header,
+            titleTouchTarget,
             "ArrowLab",
             &lv_font_montserrat_20,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_align(title, LV_ALIGN_LEFT_MID, 18, 0);
-        lv_obj_add_flag(title, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(
-            title,
-            developerRevealEvent,
-            LV_EVENT_LONG_PRESSED,
-            nullptr);
 
         lv_obj_t *helpButton = lv_btn_create(header);
         lv_obj_set_size(helpButton, 34, 30);
@@ -631,7 +655,14 @@ namespace ArrowLabUI
             "CALIBRATION REQUIRED",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_REQUIRED));
-        lv_obj_set_pos(homeCalibrationLabel, 30, 174);
+        lv_obj_set_pos(homeCalibrationLabel, 30, 166);
+
+        homeHealthLabel = createTextLabel(
+            homePage,
+            "CHECKING LOAD CELLS",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_REQUIRED));
+        lv_obj_set_pos(homeHealthLabel, 30, 190);
 
         settingsPage = lv_obj_create(screen);
         lv_obj_set_size(settingsPage, 480, 228);
@@ -820,6 +851,34 @@ namespace ArrowLabUI
                 rightPanel.valueLabel,
                 text);
         }
+    }
+
+    void setSensorHealth(bool leftLive, bool rightLive)
+    {
+        if (homeHealthLabel == nullptr)
+        {
+            return;
+        }
+
+        const char *text = "LOAD CELLS ONLINE";
+        uint32_t colour = COLOUR_OK;
+
+        if (!leftLive && !rightLive) {
+            text = "FAULT: LEFT + RIGHT LOAD CELLS";
+            colour = 0xFF4D4D;
+        } else if (!leftLive) {
+            text = "FAULT: LEFT LOAD CELL";
+            colour = 0xFF4D4D;
+        } else if (!rightLive) {
+            text = "FAULT: RIGHT LOAD CELL";
+            colour = 0xFF4D4D;
+        }
+
+        lv_label_set_text(homeHealthLabel, text);
+        lv_obj_set_style_text_color(
+            homeHealthLabel,
+            lv_color_hex(colour),
+            LV_PART_MAIN);
     }
 
     void setLoadUnit(
