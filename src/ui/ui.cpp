@@ -445,6 +445,15 @@ namespace
         }
     }
 
+    void closeInformationBoxEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED) {
+            return;
+        }
+
+        lv_msgbox_close(lv_event_get_current_target(event));
+    }
+
     void diagnosticsButtonEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
@@ -460,6 +469,11 @@ namespace
             buttons,
             false);
         lv_obj_set_width(box, 400);
+        lv_obj_add_event_cb(
+            box,
+            closeInformationBoxEvent,
+            LV_EVENT_VALUE_CHANGED,
+            nullptr);
         lv_obj_center(box);
     }
 
@@ -482,6 +496,11 @@ namespace
             buttons,
             false);
         lv_obj_set_width(box, 390);
+        lv_obj_add_event_cb(
+            box,
+            closeInformationBoxEvent,
+            LV_EVENT_VALUE_CHANGED,
+            nullptr);
         lv_obj_center(box);
     }
 
