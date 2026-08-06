@@ -36,6 +36,8 @@ namespace
         int64_t tareAccumulator = 0;
         uint8_t tareSamples = 0;
         bool tareComplete = false;
+        bool userTareConfirmed = false;
+        bool confirmUserTareOnCompletion = false;
         bool calibrated = false;
 
         bool hasReading = false;
@@ -101,6 +103,8 @@ namespace
         sensor.tareAccumulator = 0;
         sensor.tareSamples = 0;
         sensor.tareComplete = false;
+        sensor.userTareConfirmed = false;
+        sensor.confirmUserTareOnCompletion = true;
     }
 
     void requestTare(ArrowLabUI::LoadSide side)
@@ -154,6 +158,11 @@ namespace
 
         sensor.zeroedValue = 0;
         sensor.tareComplete = true;
+
+        if (sensor.confirmUserTareOnCompletion) {
+            sensor.userTareConfirmed = true;
+            sensor.confirmUserTareOnCompletion = false;
+        }
 
         Serial.printf(
             "%s tare complete: offset=%ld (%u samples)\n",
@@ -279,12 +288,14 @@ namespace
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
             leftSensor.tareComplete,
+            leftSensor.userTareConfirmed,
             leftSensor.calibrated
         );
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Right,
             rightSensor.tareComplete,
+            rightSensor.userTareConfirmed,
             rightSensor.calibrated
         );
 
@@ -298,9 +309,26 @@ namespace
                 lv_color_hex(0xFFB020)
             );
         } else if (leftLive && rightLive) {
-            ArrowLabUI::setStatus(
-                "Both load-cell channels zeroed"
-            );
+            if (
+                leftSensor.userTareConfirmed
+                && rightSensor.userTareConfirmed
+            ) {
+                ArrowLabUI::setStatus(
+                    "Both loads ready for calibration"
+                );
+            } else if (leftSensor.userTareConfirmed) {
+                ArrowLabUI::setStatus(
+                    "Tare RIGHT before calibration"
+                );
+            } else if (rightSensor.userTareConfirmed) {
+                ArrowLabUI::setStatus(
+                    "Tare LEFT before calibration"
+                );
+            } else {
+                ArrowLabUI::setStatus(
+                    "Tare each load before calibration"
+                );
+            }
 
             ArrowLabUI::setState(
                 "DUAL LIVE",
