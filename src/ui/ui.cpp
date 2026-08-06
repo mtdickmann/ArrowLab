@@ -12,6 +12,8 @@ namespace
     constexpr uint32_t COLOUR_TEXT = 0xF2F5F7;
     constexpr uint32_t COLOUR_MUTED = 0x9AA6B2;
     constexpr uint32_t COLOUR_ACCENT = 0x4EA3FF;
+    constexpr uint32_t COLOUR_OK = 0x4CD964;
+    constexpr uint32_t COLOUR_REQUIRED = 0xFFB020;
 
     struct ReadingPanelRefs
     {
@@ -585,6 +587,28 @@ namespace ArrowLabUI
             side == LoadSide::Left
                 ? leftPanel
                 : rightPanel;
+
+        if (panel.tareButton != nullptr)
+        {
+            lv_obj_set_style_bg_color(
+                panel.tareButton,
+                lv_color_hex(
+                    tareComplete && userTareConfirmed
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
+
+        if (panel.calibrationButton != nullptr)
+        {
+            lv_obj_set_style_bg_color(
+                panel.calibrationButton,
+                lv_color_hex(
+                    calibrated
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
 
         if (panel.tareButton != nullptr)
         {
