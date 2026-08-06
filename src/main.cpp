@@ -2,7 +2,7 @@
  * ArrowLab firmware
  * Development version 0.1
  *
- * Dual HX711 raw-count test
+ * Dual HX711 zero-adjusted raw-count test
  */
 
 #include <Arduino.h>
@@ -20,6 +20,7 @@ namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
+    constexpr uint8_t TARE_SAMPLE_COUNT = 20;
 
     struct SensorChannel
     {
@@ -29,6 +30,13 @@ namespace
         uint8_t sckPin;
 
         long rawValue = 0;
+        long tareOffset = 0;
+        long zeroedValue = 0;
+
+        int64_t tareAccumulator = 0;
+        uint8_t tareSamples = 0;
+        bool tareComplete = false;
+
         bool hasReading = false;
         uint32_t lastReadingTime = 0;
 
@@ -83,6 +91,36 @@ namespace
         pinMode(sensor.dtPin, INPUT_PULLUP);
     }
 
+    void updateTare(SensorChannel &sensor)
+    {
+        if (sensor.tareComplete) {
+            sensor.zeroedValue =
+                sensor.rawValue - sensor.tareOffset;
+            return;
+        }
+
+        sensor.tareAccumulator += sensor.rawValue;
+        sensor.tareSamples++;
+
+        if (sensor.tareSamples < TARE_SAMPLE_COUNT) {
+            return;
+        }
+
+        sensor.tareOffset = static_cast<long>(
+            sensor.tareAccumulator / TARE_SAMPLE_COUNT
+        );
+
+        sensor.zeroedValue = 0;
+        sensor.tareComplete = true;
+
+        Serial.printf(
+            "%s tare complete: offset=%ld (%u samples)\n",
+            sensor.name,
+            sensor.tareOffset,
+            TARE_SAMPLE_COUNT
+        );
+    }
+
     bool readSensor(
         SensorChannel &sensor,
         uint32_t currentTime
@@ -100,11 +138,24 @@ namespace
         sensor.hasReading = true;
         sensor.lastReadingTime = currentTime;
 
-        Serial.printf(
-            "%s raw: %ld\n",
-            sensor.name,
-            sensor.rawValue
-        );
+        updateTare(sensor);
+
+        if (sensor.tareComplete) {
+            Serial.printf(
+                "%s raw: %ld  zeroed: %ld\n",
+                sensor.name,
+                sensor.rawValue,
+                sensor.zeroedValue
+            );
+        } else {
+            Serial.printf(
+                "%s raw: %ld  taring: %u/%u\n",
+                sensor.name,
+                sensor.rawValue,
+                sensor.tareSamples,
+                TARE_SAMPLE_COUNT
+            );
+        }
 
         return true;
     }
@@ -124,6 +175,31 @@ namespace
         );
     }
 
+    void formatReading(
+        char *buffer,
+        size_t bufferSize,
+        const SensorChannel &sensor,
+        bool live
+    )
+    {
+        if (!live) {
+            snprintf(buffer, bufferSize, "---");
+            return;
+        }
+
+        if (!sensor.tareComplete) {
+            snprintf(buffer, bufferSize, "TARE");
+            return;
+        }
+
+        snprintf(
+            buffer,
+            bufferSize,
+            "%ld",
+            sensor.zeroedValue
+        );
+    }
+
     void updateDisplay(uint32_t currentTime)
     {
         const bool leftLive =
@@ -135,44 +211,41 @@ namespace
         char leftText[24];
         char rightText[24];
 
-        if (leftLive) {
-            snprintf(
-                leftText,
-                sizeof(leftText),
-                "%ld",
-                leftSensor.rawValue
-            );
-        } else {
-            snprintf(
-                leftText,
-                sizeof(leftText),
-                "---"
-            );
-        }
+        formatReading(
+            leftText,
+            sizeof(leftText),
+            leftSensor,
+            leftLive
+        );
 
-        if (rightLive) {
-            snprintf(
-                rightText,
-                sizeof(rightText),
-                "%ld",
-                rightSensor.rawValue
-            );
-        } else {
-            snprintf(
-                rightText,
-                sizeof(rightText),
-                "---"
-            );
-        }
+        formatReading(
+            rightText,
+            sizeof(rightText),
+            rightSensor,
+            rightLive
+        );
+
+        const bool tareInProgress =
+            (leftLive && !leftSensor.tareComplete)
+            || (rightLive && !rightSensor.tareComplete);
 
         lvgl_port_lock(-1);
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
 
-        if (leftLive && rightLive) {
+        if (tareInProgress) {
             ArrowLabUI::setStatus(
-                "Receiving both load-cell channels"
+                "Zeroing load cells - keep unloaded"
+            );
+
+            ArrowLabUI::setState(
+                "TARING",
+                lv_color_hex(0xFFB020)
+            );
+        } else if (leftLive && rightLive) {
+            ArrowLabUI::setStatus(
+                "Both load-cell channels zeroed"
             );
 
             ArrowLabUI::setState(
@@ -269,7 +342,9 @@ void setup()
     beginSensor(leftSensor);
     beginSensor(rightSensor);
 
-    Serial.println("Dual HX711 initialization complete");
+    Serial.println(
+        "Dual HX711 initialization complete - starting independent tare"
+    );
 }
 
 void loop()
