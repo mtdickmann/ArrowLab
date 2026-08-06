@@ -39,6 +39,18 @@ bool CreepDiagnostic::start(
         return false;
     }
 
+    if (
+        !zeroBaseline
+        && !zeroBaselineComplete(side)
+    ) {
+        Serial.printf(
+            "AL_DIAG,EVENT,%s,%.3f,ZERO_BASELINE_REQUIRED\n",
+            side == DiagnosticSide::Left ? "LEFT" : "RIGHT",
+            testMassGrams
+        );
+        return false;
+    }
+
     side_ = side;
     testMassGrams_ = zeroBaseline ? 0.0f : testMassGrams;
     zeroBaseline_ = zeroBaseline;
@@ -81,6 +93,39 @@ void CreepDiagnostic::cancel()
     runStartTime_ = 0;
     nextSampleTime_ = 0;
     completedElapsedMs_ = 0;
+}
+
+bool CreepDiagnostic::finishSession()
+{
+    if (
+        state_ == State::Taring
+        || state_ == State::AwaitingLoad
+        || state_ == State::Running
+    ) {
+        return false;
+    }
+
+    Serial.println(
+        "AL_DIAG,EVENT,SESSION_COMPLETE"
+    );
+
+    state_ = State::Idle;
+    leftZeroBaselineComplete_ = false;
+    rightZeroBaselineComplete_ = false;
+    testMassGrams_ = 0.0f;
+    zeroBaseline_ = false;
+    completedElapsedMs_ = 0;
+
+    return true;
+}
+
+bool CreepDiagnostic::zeroBaselineComplete(
+    DiagnosticSide side
+) const
+{
+    return side == DiagnosticSide::Left
+        ? leftZeroBaselineComplete_
+        : rightZeroBaselineComplete_;
 }
 
 void CreepDiagnostic::update(
@@ -168,6 +213,14 @@ void CreepDiagnostic::update(
     if (elapsed >= RUN_DURATION_MS) {
         completedElapsedMs_ = elapsed;
         state_ = State::Complete;
+
+        if (zeroBaseline_) {
+            if (side_ == DiagnosticSide::Left) {
+                leftZeroBaselineComplete_ = true;
+            } else {
+                rightZeroBaselineComplete_ = true;
+            }
+        }
 
         Serial.printf(
             "AL_DIAG,EVENT,%s,%.3f,COMPLETE\n",
