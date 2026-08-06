@@ -40,6 +40,7 @@ namespace ArrowLabUI
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
+        bool userTareConfirmed,
         bool calibrated
     );
 
