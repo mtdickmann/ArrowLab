@@ -546,6 +546,7 @@ namespace ArrowLabUI
         LoadSide side,
         bool tareComplete,
         bool userTareConfirmed,
+        bool calibrationReady,
         bool calibrationInProgress,
         bool calibrated)
     {
@@ -604,7 +605,7 @@ namespace ArrowLabUI
         if (panel.calibrationButton != nullptr)
         {
             if (
-                !tareComplete || !userTareConfirmed || calibrationInProgress)
+                !tareComplete || !userTareConfirmed || !calibrationReady || calibrationInProgress)
             {
                 lv_obj_add_state(
                     panel.calibrationButton,
