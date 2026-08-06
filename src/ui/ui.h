@@ -11,6 +11,7 @@ namespace ArrowLabUI
     };
 
     using TareCallback = void (*)(LoadSide side);
+    using CalibrationCallback = void (*)(LoadSide side);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -23,6 +24,7 @@ namespace ArrowLabUI
      * a LEFT or RIGHT tare operation.
      */
     void setTareCallback(TareCallback callback);
+    void setCalibrationCallback(CalibrationCallback callback);
 
     /**
      * Update the displayed raw reading for the left sensor.
@@ -33,6 +35,7 @@ namespace ArrowLabUI
      * Update the displayed raw reading for the right sensor.
      */
     void setRightReading(const char *text);
+    void setLoadUnit(LoadSide side, const char *text);
 
     /**
      * Update the tare/calibration status shown for one load channel.
@@ -41,6 +44,7 @@ namespace ArrowLabUI
         LoadSide side,
         bool tareComplete,
         bool userTareConfirmed,
+        bool calibrationInProgress,
         bool calibrated
     );
 
