@@ -18,7 +18,7 @@
 ## GPIO assignments
 
 Left HX711
-DT  -> GPIO17
+DT  -> GPIO13
 SCK -> GPIO10
 
 Right HX711
