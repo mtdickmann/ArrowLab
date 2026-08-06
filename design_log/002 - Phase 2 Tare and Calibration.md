@@ -265,3 +265,26 @@ Network-delivered firmware update support is a project requirement, not an optio
 The current 16 MB flash partitioning provides two 6.25 MiB OTA application slots. Future update architecture must preserve safe dual-slot update/validation and rollback capability. Wi-Fi is the expected primary transport, including ordinary phone-hotspot connectivity when appropriate. Bluetooth/BLE may support provisioning or service workflows, but must not be assumed to provide general Internet tethering without a separately proven implementation.
 
 Stored calibration validity must remain tied to firmware version compatibility as documented above; a firmware update that changes the calibration compatibility version must force recalibration.
+
+
+### Diagnostic session rules
+
+The creep diagnostic requires an explicit channel selection; there is no implicit/default Left or Right run.
+
+A zero baseline is mandatory independently for each channel before that channel may start any loaded diagnostic run. The firmware diagnostic engine enforces this rule in addition to the UI control state.
+
+After a channel's zero baseline is complete, the operator may record any number of loaded masses. The diagnostic facility does not hard-code a required count because future investigations may need a different mass distribution.
+
+The current first full campaign is:
+
+- 0 g baseline
+- approximately 20 g
+- approximately 50 g
+- approximately 100 g
+- approximately 250 g
+- approximately 500 g
+- approximately 1000 g
+
+Actual measured mass is entered for every loaded run.
+
+FINISH explicitly ends the current diagnostic session and emits an AL_DIAG SESSION_COMPLETE event. The PC capture tool treats that event as the clean end of the CSV acquisition. Starting a new diagnostic session requires new channel zero baselines.
