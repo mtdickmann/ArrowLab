@@ -19,6 +19,10 @@
 - Enlarged long-press-only developer reveal touch target
 - Persistent cross-screen load-cell fault strip
 - Explicit 2-second developer reveal hold timing
+- Hidden 30-minute creep diagnostic logger with side/mass workflow
+- Numeric diagnostic mass keypad and automatic load-triggered timing
+- USB serial diagnostic CSV protocol and host capture tool
+- Repeatable creep diagnostic test procedure
 
 ### Fixed
 - GT911 initialization issue
