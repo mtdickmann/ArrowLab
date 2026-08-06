@@ -433,15 +433,17 @@ void loop()
      * Each channel is tested independently.
      * One missing sensor cannot prevent the other from working.
      */
-    leftSensor.read(now);
-    rightSensor.read(now);
+    if (leftSensor.read(now)) {
+        leftSensor.updateCalibrationLoadDetection(
+            CALIBRATION_LOAD_THRESHOLD_COUNTS
+        );
+    }
 
-    leftSensor.updateCalibrationLoadDetection(
-        CALIBRATION_LOAD_THRESHOLD_COUNTS
-    );
-    rightSensor.updateCalibrationLoadDetection(
-        CALIBRATION_LOAD_THRESHOLD_COUNTS
-    );
+    if (rightSensor.read(now)) {
+        rightSensor.updateCalibrationLoadDetection(
+            CALIBRATION_LOAD_THRESHOLD_COUNTS
+        );
+    }
 
     updateDisplay(now);
 
