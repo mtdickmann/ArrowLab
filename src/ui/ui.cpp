@@ -488,11 +488,13 @@ namespace
             lv_color_hex(COLOUR_BORDER),
             LV_PART_MAIN);
         lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
-        lv_obj_add_event_cb(
-            button,
-            callback,
-            LV_EVENT_CLICKED,
-            nullptr);
+        if (callback != nullptr) {
+            lv_obj_add_event_cb(
+                button,
+                callback,
+                LV_EVENT_CLICKED,
+                nullptr);
+        }
 
         lv_obj_t *label = createTextLabel(
             button,
