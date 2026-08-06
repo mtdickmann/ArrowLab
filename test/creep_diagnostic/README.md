@@ -44,7 +44,7 @@ For every loaded run, enter the actual measured mass rather than the nominal tar
 
 Complete the zero baseline on both Left and Right first. The firmware keeps SET MASS and LOAD TEST disabled until both baselines have completed; the diagnostic engine independently rejects a loaded run if either baseline is missing. A cancelled or incomplete zero run does not satisfy this gate.
 
-For the first characterisation campaign, perform calibration after both raw zero baselines and before the first loaded run. Calibration provides supporting gram conversion while raw and zeroed counts remain the primary creep evidence.
+For the first characterisation campaign, perform calibration after both raw zero baselines and before the first loaded run. Each side must be deliberately tared again with the empty calibration platform fitted. The automatic diagnostic tare is isolated from calibration state and cannot satisfy this requirement. Calibration provides supporting gram conversion while raw and zeroed counts remain the primary creep evidence.
 
 With this current seven-run-per-channel campaign, acquisition time is approximately seven hours plus handling time. The permanent diagnostic does not require this exact number of loaded masses: after the mandatory zero baseline for each tested channel, the operator may run as many or as few loaded datasets as the investigation requires.
 
