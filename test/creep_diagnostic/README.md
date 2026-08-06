@@ -31,14 +31,15 @@ Run the following independently on Left and Right:
 
 1. Zero baseline: normal fixed arrow-rest hardware only; no calibration platform and no added mass.
 2. Approximately 20 g.
-3. Approximately 100 g.
-4. Approximately 250 g.
-5. Approximately 500 g.
-6. Approximately 1000 g.
+3. Approximately 50 g.
+4. Approximately 100 g.
+5. Approximately 250 g.
+6. Approximately 500 g.
+7. Approximately 1000 g.
 
 For every loaded run, enter the actual measured mass rather than the nominal target above.
 
-Approximate total acquisition time for both channels is six hours plus handling time.
+With this current seven-run-per-channel campaign, acquisition time is approximately seven hours plus handling time. The permanent diagnostic does not require this exact number of loaded masses: after the mandatory zero baseline for each tested channel, the operator may run as many or as few loaded datasets as the investigation requires.
 
 ## PC capture
 
@@ -60,7 +61,7 @@ By default CSV files are written to:
 
     calibration/diagnostics/
 
-Start the PC capture before starting the first run. It may remain open for the whole campaign and append all Left/Right runs into one timestamped CSV. Press Ctrl+C only after the desired runs are complete.
+Start the PC capture before starting the first run. It may remain open for the whole campaign and append all Left/Right runs into one timestamped CSV. Use FINISH on ArrowLab after the desired datasets are complete; the SESSION_COMPLETE event closes the host capture cleanly. Ctrl+C remains available as a manual stop.
 
 Do not have PlatformIO Serial Monitor open on the same COM port while the capture tool is running. Only one process should own the port.
 
@@ -68,7 +69,7 @@ Do not have PlatformIO Serial Monitor open on the same COM port while the captur
 
 1. Reveal Developer mode.
 2. Settings -> Diagnostics.
-3. Select Left or Right.
+3. Explicitly select Left or Right. No diagnostic run may begin from an implicit/default side.
 4. Remove calibration platform and all added weight so only the normal fixed arrow-rest hardware remains.
 5. Press START ZERO.
 6. Confirm START.
