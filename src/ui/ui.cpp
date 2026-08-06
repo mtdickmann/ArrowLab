@@ -808,7 +808,7 @@ namespace ArrowLabUI
         lv_obj_align(faultBar, LV_ALIGN_BOTTOM_MID, 0, 0);
         lv_obj_set_style_bg_color(
             faultBar,
-            lv_color_hex(0xC62828),
+            lv_color_hex(COLOUR_HEADER),
             LV_PART_MAIN);
         lv_obj_set_style_bg_opa(
             faultBar,
@@ -834,7 +834,7 @@ namespace ArrowLabUI
             faultBar,
             "LOAD CELL FAULT",
             &lv_font_montserrat_16,
-            lv_color_hex(COLOUR_TEXT));
+            lv_color_hex(0xFF4D4D));
         lv_obj_center(faultLabel);
         lv_obj_add_flag(faultBar, LV_OBJ_FLAG_HIDDEN);
 
