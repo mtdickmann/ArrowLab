@@ -137,3 +137,60 @@ Jitter and drift must not be treated as the same problem.
 5. Decide the measurement averaging/stability method from observed data.
 6. Implement persistent calibration storage and firmware-version invalidation.
 7. Only after scale behaviour is reliable, proceed toward combined load and later spine calculations.
+
+
+## Navigation and guided calibration UI
+
+The development UI is being moved from a single calibration/test screen into a normal instrument navigation structure.
+
+Current convention:
+
+- Home is the normal startup screen.
+- Home contains a disabled SPINE TEST placeholder and SETTINGS.
+- Home visibly reports CALIBRATION REQUIRED or CALIBRATION OK.
+- Settings owns Calibration because calibration is an instrument setup operation, not a normal measurement action.
+- The top-right header position is reserved for a future Help action.
+- Firmware version/build information will move to a future About screen instead of permanently consuming header space.
+- The existing independent Left/Right calibration controls remain the proven calibration implementation underneath the navigation layer.
+- Once a qualifying reference load is detected, the 30-second stabilization interval is shown with a progress bar and remaining-second indication. A disabled CAL button must not leave the operator guessing why it is unavailable.
+
+### Developer-mode convention
+
+Developer and diagnostic facilities are intentionally absent from the normal user interface.
+
+- A long press on the ArrowLab title/logo reveals Developer mode.
+- Developer mode exposes DIAGNOSTICS under Settings for the current powered session.
+- The reveal mechanism is independent of firmware-version placement so a future About screen does not break service access.
+- Diagnostics remains a maintained engineering tool rather than a temporary calibration hack.
+
+## Planned creep diagnostic
+
+The purpose of the diagnostic is to measure creep before any compensation model is considered.
+
+Planned unattended acquisition:
+
+- Run a zero-load baseline with only the normal fixed arrow-rest hardware.
+- Run five applied-mass datasets, with actual mass entered by the operator for every weight.
+- Initial suggested mass spread is approximately 20 g, 100 g, 250 g, 500 g and 1000 g; recorded values are the operator-entered actual masses.
+- Record every 30 seconds for up to 30 minutes per applied mass.
+- Test Left and Right independently so channel behaviour is not averaged together.
+- Primary evidence is raw and zero-adjusted HX711 counts.
+- Converted grams and the active calibration factor are recorded alongside the raw evidence when calibration is available.
+- Do not recalibrate for every diagnostic weight. Doing so would normalize away part of the behaviour being investigated.
+- Initial export target is CSV over USB serial with a small host-side capture tool; SD-card logging is deferred until the display board's SD hardware is independently proven.
+
+Candidate CSV fields:
+
+side,test_mass_g,elapsed_s,raw_count,zeroed_count,calculated_g,calibration_factor
+
+The full two-channel campaign is intentionally long (roughly 5.5 to 6 hours including handling/zero runs). Acquisition must therefore be automatic; operator timing is not part of the measurement method.
+
+The resulting datasets will be used to determine:
+
+- creep magnitude versus applied mass,
+- time dependence and possible asymptotic behaviour,
+- Left/Right channel differences,
+- repeatability between runs,
+- unloading recovery and hysteresis,
+- whether a fixed measurement timing window is sufficient,
+- and only then whether a bounded creep correction is technically defensible.
