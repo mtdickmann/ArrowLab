@@ -20,6 +20,7 @@ public:
     ) const;
 
     void startUserTare();
+    void startDiagnosticTare();
     void updateCalibrationLoadDetection(
         long thresholdCounts
     );
@@ -57,6 +58,7 @@ private:
     static constexpr uint8_t CALIBRATION_SAMPLE_COUNT = 20;
     static constexpr uint8_t CALIBRATION_LOAD_CONFIRM_SAMPLES = 5;
 
+    void startTare(bool confirmAsUserTare);
     void updateTare();
     void updateCalibration();
 
