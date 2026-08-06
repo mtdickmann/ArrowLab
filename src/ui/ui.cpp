@@ -16,6 +16,18 @@ namespace
     lv_obj_t *statusLabel     = nullptr;
     lv_obj_t *stateLabel      = nullptr;
 
+    ArrowLabUI::TareCallback tareCallback = nullptr;
+
+    void tareButtonEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) == LV_EVENT_CLICKED
+            && tareCallback != nullptr
+        ) {
+            tareCallback();
+        }
+    }
+
     void stylePanel(lv_obj_t *panel)
     {
         lv_obj_set_style_bg_color(
@@ -168,6 +180,32 @@ namespace ArrowLabUI
 
         lv_obj_align(version, LV_ALIGN_RIGHT_MID, -18, 0);
 
+        lv_obj_t *tareButton = lv_btn_create(header);
+        lv_obj_set_size(tareButton, 78, 32);
+        lv_obj_align(tareButton, LV_ALIGN_CENTER, 95, 0);
+        lv_obj_set_style_radius(tareButton, 7, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            tareButton,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN
+        );
+
+        lv_obj_add_event_cb(
+            tareButton,
+            tareButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr
+        );
+
+        lv_obj_t *tareLabel = createTextLabel(
+            tareButton,
+            "TARE",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT)
+        );
+
+        lv_obj_center(tareLabel);
+
         // Reading panels
         leftValueLabel = createReadingPanel(screen, "LEFT SENSOR", 18);
         rightValueLabel = createReadingPanel(screen, "RIGHT SENSOR", 248);
@@ -215,6 +253,11 @@ namespace ArrowLabUI
         );
 
         lv_obj_align(stateLabel, LV_ALIGN_RIGHT_MID, -18, 0);
+    }
+
+    void setTareCallback(TareCallback callback)
+    {
+        tareCallback = callback;
     }
 
     void setLeftReading(const char *text)
