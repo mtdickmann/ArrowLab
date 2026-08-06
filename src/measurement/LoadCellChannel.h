@@ -20,6 +20,9 @@ public:
     ) const;
 
     void startUserTare();
+    void updateCalibrationLoadDetection(
+        long thresholdCounts
+    );
     bool startCalibration(
         float referenceGrams,
         uint32_t currentTime,
@@ -43,6 +46,7 @@ public:
 private:
     static constexpr uint8_t TARE_SAMPLE_COUNT = 20;
     static constexpr uint8_t CALIBRATION_SAMPLE_COUNT = 20;
+    static constexpr uint8_t CALIBRATION_LOAD_CONFIRM_SAMPLES = 5;
 
     void updateTare();
     void updateCalibration();
@@ -61,8 +65,9 @@ private:
     bool tareComplete_ = false;
     bool userTareConfirmed_ = false;
     bool confirmUserTareOnCompletion_ = false;
-    uint32_t userTareCompletedTime_ = 0;
 
+    uint8_t calibrationLoadDetectSamples_ = 0;
+    uint32_t calibrationLoadDetectedTime_ = 0;
     int64_t calibrationAccumulator_ = 0;
     uint8_t calibrationSamples_ = 0;
     float calibrationReferenceGrams_ = 0.0f;
