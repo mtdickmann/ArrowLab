@@ -90,7 +90,8 @@ void LoadCellChannel::startUserTare()
     tareComplete_ = false;
     userTareConfirmed_ = false;
     confirmUserTareOnCompletion_ = true;
-    userTareCompletedTime_ = 0;
+    calibrationLoadDetectSamples_ = 0;
+    calibrationLoadDetectedTime_ = 0;
 
     // A new tare cancels any calibration sample run, but does not
     // erase an already established calibration factor.
@@ -98,6 +99,57 @@ void LoadCellChannel::startUserTare()
     calibrationSamples_ = 0;
     calibrationReferenceGrams_ = 0.0f;
     calibrationInProgress_ = false;
+}
+
+void LoadCellChannel::updateCalibrationLoadDetection(
+    long thresholdCounts
+)
+{
+    if (
+        !tareComplete_
+        || !userTareConfirmed_
+        || calibrationInProgress_
+        || thresholdCounts <= 0
+    ) {
+        calibrationLoadDetectSamples_ = 0;
+        calibrationLoadDetectedTime_ = 0;
+        return;
+    }
+
+    int64_t magnitude =
+        static_cast<int64_t>(zeroedValue_);
+
+    if (magnitude < 0) {
+        magnitude = -magnitude;
+    }
+
+    if (magnitude < thresholdCounts) {
+        calibrationLoadDetectSamples_ = 0;
+        calibrationLoadDetectedTime_ = 0;
+        return;
+    }
+
+    if (
+        calibrationLoadDetectSamples_
+        < CALIBRATION_LOAD_CONFIRM_SAMPLES
+    ) {
+        calibrationLoadDetectSamples_++;
+    }
+
+    if (
+        calibrationLoadDetectSamples_
+            >= CALIBRATION_LOAD_CONFIRM_SAMPLES
+        && calibrationLoadDetectedTime_ == 0
+    ) {
+        calibrationLoadDetectedTime_ =
+            lastReadingTime_;
+
+        Serial.printf(
+            "%s calibration load detected: %ld counts\n",
+            name_,
+            zeroedValue_
+        );
+    }
 }
 
 bool LoadCellChannel::startCalibration(
@@ -152,7 +204,8 @@ void LoadCellChannel::updateTare()
 
     if (confirmUserTareOnCompletion_) {
         userTareConfirmed_ = true;
-        userTareCompletedTime_ = lastReadingTime_;
+        calibrationLoadDetectSamples_ = 0;
+        calibrationLoadDetectedTime_ = 0;
         confirmUserTareOnCompletion_ = false;
     }
 
@@ -246,13 +299,13 @@ bool LoadCellChannel::calibrationReady(
     if (
         !tareComplete_
         || !userTareConfirmed_
-        || userTareCompletedTime_ == 0
+        || calibrationLoadDetectedTime_ == 0
     ) {
         return false;
     }
 
     return (
-        currentTime - userTareCompletedTime_
+        currentTime - calibrationLoadDetectedTime_
         >= settleTimeMs
     );
 }
