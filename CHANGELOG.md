@@ -7,7 +7,14 @@
 - LVGL interface
 - Version framework
 - GitHub repository
+- Independent deliberate tare controls for Left and Right
+- Per-channel reference-mass calibration and gram conversion
+- Load-triggered calibration settling gate
+- Tare/calibration status colour cues
+- Structured LoadCellChannel measurement module
 
 ### Fixed
 - GT911 initialization issue
 - Right HX711 DT/SCK wiring
+- Raw unit label alignment
+- Left HX711 DT GPIO documentation
