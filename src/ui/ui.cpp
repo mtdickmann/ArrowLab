@@ -37,6 +37,7 @@ namespace
 
     ArrowLabUI::TareCallback tareCallback = nullptr;
     ArrowLabUI::CalibrationCallback calibrationCallback = nullptr;
+    float calibrationReferenceGrams = 0.0f;
     ArrowLabUI::LoadSide pendingSide =
         ArrowLabUI::LoadSide::Left;
     ConfirmationAction pendingAction =
@@ -357,12 +358,21 @@ namespace
         const bool isLeft =
             side == ArrowLabUI::LoadSide::Left;
 
+        char message[160];
+        snprintf(
+            message,
+            sizeof(message),
+            "Keep the calibration platform on %s.\n"
+            "Place the %.1f g reference weight on it "
+            "and allow it to settle.",
+            isLeft ? "LEFT" : "RIGHT",
+            calibrationReferenceGrams
+        );
+
         confirmationBox = lv_msgbox_create(
             nullptr,
             isLeft ? "CALIBRATE LEFT" : "CALIBRATE RIGHT",
-            isLeft
-                ? "Keep the calibration platform on LEFT.\nPlace the 999.8 g reference weight on it and allow it to settle."
-                : "Keep the calibration platform on RIGHT.\nPlace the 999.8 g reference weight on it and allow it to settle.",
+            message,
             buttons,
             false
         );
@@ -537,6 +547,11 @@ namespace ArrowLabUI
     )
     {
         calibrationCallback = callback;
+    }
+
+    void setCalibrationReferenceGrams(float grams)
+    {
+        calibrationReferenceGrams = grams;
     }
 
     void setLeftReading(const char *text)
