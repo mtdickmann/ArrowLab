@@ -17,11 +17,36 @@ A normal run lasts 30 minutes and records at t=0 and every 30 seconds thereafter
 3. Wait for upload to finish.
 4. Stop PlatformIO Serial Monitor if it is open. Only one program may own the serial port.
 5. Open a separate PowerShell/Windows Terminal.
-6. From the ArrowLab repository root run:
 
-       py tools\capture_creep.py COM3
+### Python prerequisite
 
-   Replace COM3 if ArrowLab uses another port.
+The PC capture tool requires Python 3 and the `pyserial` module.
+
+For an ArrowLab development PC with PlatformIO installed, use PlatformIO's own Python environment. A second system-wide Python installation is not required.
+
+Verify it first:
+
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" --version
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" -c "import serial; print(serial.__version__)"
+
+If both commands succeed, run the capture tool from the ArrowLab repository root with:
+
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" tools\capture_creep.py COM3
+
+Replace COM3 if ArrowLab uses another port.
+
+If the PlatformIO Python path is missing or broken, repair/reinstall PlatformIO before firmware-development work. If this is a standalone diagnostic PC without PlatformIO, install current Python for Windows using the official Python Install Manager from https://www.python.org/downloads/ or the Microsoft Store. Then open a new terminal and verify/install the serial dependency:
+
+    python --version
+    python -m pip install pyserial
+    python -c "import serial; print(serial.__version__)"
+
+The standalone launch command is then:
+
+    python tools\capture_creep.py COM3
+
+Do not assume that the Windows `py` command exists: a rebuilt machine may have no global Python launcher even while PlatformIO's private Python works.
+
 7. Leave the capture window running. It prints the exact CSV filename when it starts.
 8. Prevent the PC from sleeping/hibernating during an active run. The monitor/display may turn off.
 
