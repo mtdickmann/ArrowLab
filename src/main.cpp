@@ -20,6 +20,7 @@ namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
+    constexpr uint32_t CALIBRATION_SETTLE_TIME_MS = 30000;
 
     // Default for the current development reference weight.
     // This becomes user-editable from the calibration UI later.
@@ -85,7 +86,7 @@ namespace
         }
     }
 
-    void startRequestedCalibrations()
+    void startRequestedCalibrations(uint32_t currentTime)
     {
         if (leftCalibrationRequested) {
             leftCalibrationRequested = false;
@@ -93,7 +94,9 @@ namespace
             if (
                 !rightSensor.calibrationInProgress()
                 && leftSensor.startCalibration(
-                    calibrationReferenceGrams
+                    calibrationReferenceGrams,
+                    currentTime,
+                    CALIBRATION_SETTLE_TIME_MS
                 )
             ) {
                 Serial.println(
@@ -108,7 +111,9 @@ namespace
             if (
                 !leftSensor.calibrationInProgress()
                 && rightSensor.startCalibration(
-                    calibrationReferenceGrams
+                    calibrationReferenceGrams,
+                    currentTime,
+                    CALIBRATION_SETTLE_TIME_MS
                 )
             ) {
                 Serial.println(
@@ -200,6 +205,10 @@ namespace
             ArrowLabUI::LoadSide::Left,
             leftSensor.tareComplete(),
             leftSensor.userTareConfirmed(),
+            leftSensor.calibrationReady(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            ),
             leftSensor.calibrationInProgress(),
             leftSensor.calibrated()
         );
@@ -208,6 +217,10 @@ namespace
             ArrowLabUI::LoadSide::Right,
             rightSensor.tareComplete(),
             rightSensor.userTareConfirmed(),
+            rightSensor.calibrationReady(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS
+            ),
             rightSensor.calibrationInProgress(),
             rightSensor.calibrated()
         );
@@ -406,7 +419,7 @@ void loop()
         leftCalibrationRequested
         || rightCalibrationRequested
     ) {
-        startRequestedCalibrations();
+        startRequestedCalibrations(now);
     }
 
     /*
