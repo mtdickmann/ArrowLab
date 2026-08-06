@@ -11,6 +11,7 @@
 
 #include "lvgl_v8_port.h"
 #include "measurement/LoadCellChannel.h"
+#include "diagnostics/CreepDiagnostic.h"
 #include "ui/ui.h"
 
 using namespace esp_panel::drivers;
@@ -45,6 +46,7 @@ namespace
      */
     LoadCellChannel leftSensor("Left", 13, 10);
     LoadCellChannel rightSensor("Right", 11, 12);
+    CreepDiagnostic creepDiagnostic;
 
     Board *displayBoard = nullptr;
 
@@ -53,6 +55,12 @@ namespace
     volatile bool rightTareRequested = false;
     volatile bool leftCalibrationRequested = false;
     volatile bool rightCalibrationRequested = false;
+    volatile bool diagnosticStartRequested = false;
+    volatile bool diagnosticCancelRequested = false;
+    ArrowLabUI::LoadSide diagnosticRequestedSide =
+        ArrowLabUI::LoadSide::Left;
+    float diagnosticRequestedMassGrams = 0.0f;
+    bool diagnosticRequestedZeroBaseline = false;
 
     void requestTare(ArrowLabUI::LoadSide side)
     {
@@ -70,6 +78,22 @@ namespace
         } else {
             rightCalibrationRequested = true;
         }
+    }
+
+    void requestDiagnosticStart(
+        ArrowLabUI::LoadSide side,
+        float testMassGrams,
+        bool zeroBaseline)
+    {
+        diagnosticRequestedSide = side;
+        diagnosticRequestedMassGrams = testMassGrams;
+        diagnosticRequestedZeroBaseline = zeroBaseline;
+        diagnosticStartRequested = true;
+    }
+
+    void requestDiagnosticCancel()
+    {
+        diagnosticCancelRequested = true;
     }
 
     void startRequestedTares()
@@ -127,6 +151,39 @@ namespace
                     "RIGHT calibration confirmed"
                 );
             }
+        }
+    }
+
+    void processDiagnosticRequests()
+    {
+        if (diagnosticCancelRequested) {
+            diagnosticCancelRequested = false;
+            diagnosticStartRequested = false;
+            creepDiagnostic.cancel();
+        }
+
+        if (!diagnosticStartRequested) {
+            return;
+        }
+
+        diagnosticStartRequested = false;
+
+        const DiagnosticSide side =
+            diagnosticRequestedSide
+                    == ArrowLabUI::LoadSide::Left
+                ? DiagnosticSide::Left
+                : DiagnosticSide::Right;
+
+        if (!creepDiagnostic.start(
+                side,
+                diagnosticRequestedMassGrams,
+                diagnosticRequestedZeroBaseline,
+                leftSensor,
+                rightSensor
+            )) {
+            Serial.println(
+                "AL_DIAG,EVENT,START_REJECTED"
+            );
         }
     }
 
@@ -195,6 +252,74 @@ namespace
             || (rightLive && !rightSensor.tareComplete());
 
         lvgl_port_lock(-1);
+
+        char diagnosticStatus[96];
+        const CreepDiagnostic::State diagnosticState =
+            creepDiagnostic.state();
+        const char *diagnosticSideText =
+            creepDiagnostic.side() == DiagnosticSide::Left
+                ? "LEFT"
+                : "RIGHT";
+        const bool diagnosticActive =
+            diagnosticState == CreepDiagnostic::State::Taring
+            || diagnosticState == CreepDiagnostic::State::AwaitingLoad
+            || diagnosticState == CreepDiagnostic::State::Running;
+
+        switch (diagnosticState) {
+        case CreepDiagnostic::State::Taring:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Taring %s - keep setup stable",
+                diagnosticSideText);
+            break;
+
+        case CreepDiagnostic::State::AwaitingLoad:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Place %.3f g on %s - logger auto-starts",
+                creepDiagnostic.testMassGrams(),
+                diagnosticSideText);
+            break;
+
+        case CreepDiagnostic::State::Running: {
+            const uint32_t elapsedSeconds =
+                creepDiagnostic.elapsedMs(currentTime) / 1000;
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "%s %.3f g - %02lu:%02lu / 30:00",
+                diagnosticSideText,
+                creepDiagnostic.testMassGrams(),
+                static_cast<unsigned long>(
+                    elapsedSeconds / 60),
+                static_cast<unsigned long>(
+                    elapsedSeconds % 60));
+            break;
+        }
+
+        case CreepDiagnostic::State::Complete:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Run complete - remove load / save CSV");
+            break;
+
+        case CreepDiagnostic::State::Idle:
+        default:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Ready - start PC capture before run");
+            break;
+        }
+
+        ArrowLabUI::setDiagnosticStatus(
+            diagnosticStatus,
+            creepDiagnostic.progressPercent(currentTime),
+            diagnosticActive
+        );
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
@@ -400,6 +525,10 @@ void setup()
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
+    ArrowLabUI::setDiagnosticCallbacks(
+        requestDiagnosticStart,
+        requestDiagnosticCancel
+    );
     ArrowLabUI::setCalibrationReferenceGrams(
         calibrationReferenceGrams
     );
@@ -452,21 +581,40 @@ void loop()
         startRequestedCalibrations(now);
     }
 
+    if (
+        diagnosticStartRequested
+        || diagnosticCancelRequested
+    ) {
+        processDiagnosticRequests();
+    }
+
     /*
      * Each channel is tested independently.
      * One missing sensor cannot prevent the other from working.
      */
-    if (leftSensor.read(now)) {
+    const bool leftFresh = leftSensor.read(now);
+
+    if (leftFresh) {
         leftSensor.updateCalibrationLoadDetection(
             CALIBRATION_LOAD_THRESHOLD_COUNTS
         );
     }
 
-    if (rightSensor.read(now)) {
+    const bool rightFresh = rightSensor.read(now);
+
+    if (rightFresh) {
         rightSensor.updateCalibrationLoadDetection(
             CALIBRATION_LOAD_THRESHOLD_COUNTS
         );
     }
+
+    creepDiagnostic.update(
+        now,
+        leftFresh,
+        rightFresh,
+        leftSensor,
+        rightSensor
+    );
 
     updateDisplay(now);
 
