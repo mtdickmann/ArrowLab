@@ -4,7 +4,13 @@
 
 namespace ArrowLabUI
 {
-    using TareCallback = void (*)();
+    enum class LoadSide
+    {
+        Left,
+        Right
+    };
+
+    using TareCallback = void (*)(LoadSide side);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -13,8 +19,8 @@ namespace ArrowLabUI
     void create();
 
     /**
-     * Registers the application callback used by the TARE button.
-     * The UI only requests a tare; HX711 state remains application-owned.
+     * Registers the application callback used after a user confirms
+     * a LEFT or RIGHT tare operation.
      */
     void setTareCallback(TareCallback callback);
 
@@ -29,15 +35,21 @@ namespace ArrowLabUI
     void setRightReading(const char *text);
 
     /**
+     * Update the tare/calibration status shown for one load channel.
+     */
+    void setLoadStatus(
+        LoadSide side,
+        bool tareComplete,
+        bool calibrated
+    );
+
+    /**
      * Update the status message at the bottom of the screen.
      */
     void setStatus(const char *text);
 
     /**
      * Update the state indicator shown at bottom-right.
-     *
-     * Example:
-     * setState("READY", lv_color_hex(0x4CD964));
      */
     void setState(const char *text, lv_color_t colour);
 }
