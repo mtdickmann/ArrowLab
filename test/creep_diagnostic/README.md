@@ -12,6 +12,7 @@ Each normal completed run therefore contains 61 data rows.
 
 Recorded fields:
 
+- diagnostic run ID
 - side
 - operator-entered test mass in grams
 - firmware elapsed time in milliseconds
@@ -20,6 +21,8 @@ Recorded fields:
 - calculated grams when a calibration factor exists
 - active calibration factor
 - host UTC timestamp added by the capture tool
+
+Run ID increments for every started run, including cancelled/retried runs, so repeated masses remain unambiguous in later analysis.
 
 Raw and zeroed counts are the primary diagnostic evidence. Converted grams are supporting information.
 
