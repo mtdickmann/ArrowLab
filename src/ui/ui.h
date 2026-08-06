@@ -48,7 +48,10 @@ namespace ArrowLabUI
         bool userTareConfirmed,
         bool calibrationReady,
         bool calibrationInProgress,
-        bool calibrated
+        bool calibrated,
+        bool calibrationLoadDetected,
+        uint32_t settleRemainingSeconds,
+        uint8_t settlePercent
     );
 
     /**
