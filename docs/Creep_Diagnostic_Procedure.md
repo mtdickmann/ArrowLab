@@ -78,11 +78,15 @@ A cancelled or incomplete zero run does not count as a completed baseline. SET M
 With both zero baselines complete and PC capture still running:
 
 1. Return to Settings -> Calibration.
-2. Calibrate Left normally.
-3. Calibrate Right normally.
-4. Return to Settings -> Diagnostics.
+2. Fit the empty calibration platform to Left.
+3. Press Left TARE and confirm; a diagnostic tare does not satisfy this calibration-platform tare requirement.
+4. Place the reference mass centrally, wait for the settling gate, then complete Left CAL.
+5. Move the empty calibration platform to Right.
+6. Press Right TARE and confirm.
+7. Place the reference mass centrally, wait for the settling gate, then complete Right CAL.
+8. Return to Settings -> Diagnostics.
 
-The baseline completion state remains valid for the current powered diagnostic session. Calibration establishes the counts-per-gram factors used as supporting information during the loaded runs; raw and zeroed counts remain the primary creep evidence.
+The baseline completion state remains valid for the current powered diagnostic session. Diagnostic tares and calibration-platform tares are deliberately separate states. Calibration establishes the counts-per-gram factors used as supporting information during the loaded runs; raw and zeroed counts remain the primary creep evidence.
 
 ## 4. Loaded creep run
 
