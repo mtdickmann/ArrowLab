@@ -48,15 +48,35 @@ With this current seven-run-per-channel campaign, acquisition time is approximat
 
 The firmware streams diagnostic records over the normal 115200-baud USB serial connection.
 
+The capture script requires Python 3 plus `pyserial`.
+
+### Preferred development-PC interpreter
+
+PlatformIO installs and manages its own Python environment. On the normal Windows ArrowLab development PC, use that interpreter instead of requiring a second global Python installation.
+
+Verify Python and `pyserial`:
+
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" --version
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" -c "import serial; print(serial.__version__)"
+
 From the ArrowLab repository root:
 
-    py tools/capture_creep.py COM7
+    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" tools\capture_creep.py COM7
 
 Replace COM7 with the display's actual serial port.
 
-If pyserial is not available:
+### Standalone PC / missing interpreter
 
-    py -m pip install pyserial
+If the PlatformIO environment is expected but `penv\Scripts\python.exe` is missing, repair/reinstall PlatformIO.
+
+If the diagnostic capture PC intentionally does not have PlatformIO, install current Python for Windows with the official Python Install Manager from https://www.python.org/downloads/ or the Microsoft Store. Open a new terminal and run:
+
+    python --version
+    python -m pip install pyserial
+    python -c "import serial; print(serial.__version__)"
+    python tools\capture_creep.py COM7
+
+The Windows `py` launcher is not assumed by ArrowLab documentation; on a rebuilt PC it may be absent even when PlatformIO's private Python is present.
 
 The capture tool ignores ordinary firmware debug messages and writes only AL_DIAG data rows.
 
