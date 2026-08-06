@@ -21,6 +21,7 @@ namespace
         lv_obj_t *valueLabel = nullptr;
         lv_obj_t *unitLabel = nullptr;
         lv_obj_t *statusLabel = nullptr;
+        lv_obj_t *settleBar = nullptr;
         lv_obj_t *tareButton = nullptr;
         lv_obj_t *calibrationButton = nullptr;
     };
@@ -143,6 +144,21 @@ namespace
         lv_obj_set_style_border_width(divider, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(divider, 1, LV_PART_MAIN);
         lv_obj_clear_flag(divider, LV_OBJ_FLAG_SCROLLABLE);
+
+        refs.settleBar = lv_bar_create(panel);
+        lv_obj_set_size(refs.settleBar, 170, 5);
+        lv_obj_align(refs.settleBar, LV_ALIGN_TOP_MID, 0, 55);
+        lv_bar_set_range(refs.settleBar, 0, 100);
+        lv_bar_set_value(refs.settleBar, 0, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(
+            refs.settleBar,
+            lv_color_hex(COLOUR_BORDER),
+            LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            refs.settleBar,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_INDICATOR);
+        lv_obj_add_flag(refs.settleBar, LV_OBJ_FLAG_HIDDEN);
 
         /*
          * Keep the reading and its unit in one flex row so a changing
@@ -808,7 +824,10 @@ namespace ArrowLabUI
         bool userTareConfirmed,
         bool calibrationReady,
         bool calibrationInProgress,
-        bool calibrated)
+        bool calibrated,
+        bool calibrationLoadDetected,
+        uint32_t settleRemainingSeconds,
+        uint8_t settlePercent)
     {
         lv_obj_t *label =
             side == LoadSide::Left
@@ -827,10 +846,39 @@ namespace ArrowLabUI
                 ? "TARING"
                 : (userTareConfirmed ? "TARE OK" : "TARE REQ");
 
-        const char *calibrationText =
-            calibrationInProgress
-                ? "CAL..."
-                : (calibrated ? "CAL OK" : "CAL --");
+        char calibrationText[16];
+
+        if (calibrationInProgress) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL...");
+        } else if (calibrated) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL OK");
+        } else if (
+            calibrationLoadDetected
+            && !calibrationReady
+        ) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL %lus",
+                static_cast<unsigned long>(
+                    settleRemainingSeconds));
+        } else if (calibrationReady) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL READY");
+        } else {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL --");
+        }
 
         snprintf(
             text,
@@ -845,6 +893,28 @@ namespace ArrowLabUI
             side == LoadSide::Left
                 ? leftPanel
                 : rightPanel;
+
+        if (panel.settleBar != nullptr)
+        {
+            if (
+                calibrationLoadDetected
+                && !calibrationReady
+                && !calibrated
+                && !calibrationInProgress
+            ) {
+                lv_bar_set_value(
+                    panel.settleBar,
+                    settlePercent,
+                    LV_ANIM_OFF);
+                lv_obj_clear_flag(
+                    panel.settleBar,
+                    LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(
+                    panel.settleBar,
+                    LV_OBJ_FLAG_HIDDEN);
+            }
+        }
 
         if (panel.tareButton != nullptr)
         {
