@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Capture ArrowLab creep diagnostic records from USB serial to CSV."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+
+try:
+    import serial
+except ImportError:
+    print(
+        "pyserial is required. Install with: py -m pip install pyserial",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+CSV_HEADER = [
+    "side",
+    "test_mass_g",
+    "elapsed_ms",
+    "raw_count",
+    "zeroed_count",
+    "calculated_g",
+    "calibration_factor",
+    "host_timestamp_utc",
+]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Capture ArrowLab AL_DIAG serial records to CSV."
+    )
+    parser.add_argument("port", help="Serial port, for example COM7")
+    parser.add_argument(
+        "--baud",
+        type=int,
+        default=115200,
+        help="Serial baud rate (default: 115200)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional output CSV path",
+    )
+    return parser.parse_args()
+
+
+def default_output() -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return (
+        Path("calibration")
+        / "diagnostics"
+        / f"creep_{stamp}.csv"
+    )
+
+
+def main() -> int:
+    args = parse_args()
+    output = args.output or default_output()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"ArrowLab diagnostic capture: {args.port} @ {args.baud}")
+    print(f"CSV: {output}")
+    print("Leave this running for all diagnostic runs. Ctrl+C stops capture.")
+
+    row_count = 0
+
+    try:
+        with serial.Serial(
+            args.port,
+            args.baud,
+            timeout=1,
+        ) as device, output.open(
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(CSV_HEADER)
+            csv_file.flush()
+
+            while True:
+                raw_line = device.readline()
+                if not raw_line:
+                    continue
+
+                line = raw_line.decode(
+                    "utf-8",
+                    errors="replace",
+                ).strip()
+
+                if line.startswith("AL_DIAG,EVENT,"):
+                    print(line)
+                    continue
+
+                if not line.startswith("AL_DIAG,DATA,"):
+                    continue
+
+                parts = line.split(",")
+
+                if len(parts) != 9:
+                    print(
+                        f"Ignored malformed diagnostic line: {line}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                writer.writerow(
+                    parts[2:]
+                    + [
+                        datetime.now(timezone.utc)
+                        .isoformat(timespec="milliseconds")
+                    ]
+                )
+                csv_file.flush()
+                row_count += 1
+
+                side = parts[2]
+                mass = parts[3]
+                elapsed_s = int(parts[4]) / 1000.0
+                grams = parts[7]
+
+                print(
+                    f"#{row_count:04d}  {side:5s}  "
+                    f"{mass} g  t={elapsed_s:7.1f}s  "
+                    f"reading={grams} g"
+                )
+
+    except KeyboardInterrupt:
+        print(f"\nCapture stopped cleanly. {row_count} data rows saved.")
+        print(f"CSV: {output}")
+        return 0
+    except serial.SerialException as exc:
+        print(f"Serial error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
