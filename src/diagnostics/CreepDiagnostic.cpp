@@ -59,6 +59,7 @@ bool CreepDiagnostic::start(
     nextSampleTime_ = 0;
     completedElapsedMs_ = 0;
     state_ = State::Taring;
+    runId_++;
 
     LoadCellChannel &sensor =
         side_ == DiagnosticSide::Left
@@ -319,7 +320,7 @@ void CreepDiagnostic::beginRunning(
     completedElapsedMs_ = 0;
 
     Serial.println(
-        "AL_DIAG,HEADER,side,test_mass_g,elapsed_ms,"
+        "AL_DIAG,HEADER,run_id,side,test_mass_g,elapsed_ms,"
         "raw_count,zeroed_count,calculated_g,"
         "calibration_factor"
     );
@@ -341,7 +342,8 @@ void CreepDiagnostic::emitSample(
 ) const
 {
     Serial.printf(
-        "AL_DIAG,DATA,%s,%.3f,%lu,%ld,%ld,%.4f,%.6f\n",
+        "AL_DIAG,DATA,%lu,%s,%.3f,%lu,%ld,%ld,%.4f,%.6f\n",
+        static_cast<unsigned long>(runId_),
         side_ == DiagnosticSide::Left
             ? "LEFT"
             : "RIGHT",
