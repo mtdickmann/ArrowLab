@@ -127,33 +127,55 @@ namespace
         lv_obj_set_style_radius(divider, 1, LV_PART_MAIN);
         lv_obj_clear_flag(divider, LV_OBJ_FLAG_SCROLLABLE);
 
+        /*
+         * Keep the reading and its unit in one flex row so a changing
+         * number width cannot overwrite the unit label.
+         */
+        lv_obj_t *readingRow = lv_obj_create(panel);
+        lv_obj_set_size(readingRow, 190, 42);
+        lv_obj_align(readingRow, LV_ALIGN_CENTER, 0, 8);
+        lv_obj_set_style_bg_opa(
+            readingRow,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN
+        );
+        lv_obj_set_style_border_width(
+            readingRow,
+            0,
+            LV_PART_MAIN
+        );
+        lv_obj_set_style_pad_all(
+            readingRow,
+            0,
+            LV_PART_MAIN
+        );
+        lv_obj_clear_flag(
+            readingRow,
+            LV_OBJ_FLAG_SCROLLABLE
+        );
+        lv_obj_set_flex_flow(
+            readingRow,
+            LV_FLEX_FLOW_ROW
+        );
+        lv_obj_set_flex_align(
+            readingRow,
+            LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER
+        );
+
         refs.valueLabel = createTextLabel(
-            panel,
+            readingRow,
             "0",
             &lv_font_montserrat_30,
             lv_color_hex(COLOUR_TEXT)
         );
 
-        lv_obj_align(
-            refs.valueLabel,
-            LV_ALIGN_CENTER,
-            0,
-            10
-        );
-
-        lv_obj_t *unit = createTextLabel(
-            panel,
+        createTextLabel(
+            readingRow,
             "RAW",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED)
-        );
-
-        lv_obj_align_to(
-            unit,
-            refs.valueLabel,
-            LV_ALIGN_OUT_RIGHT_MID,
-            6,
-            2
         );
 
         lv_obj_t *tareButton = lv_btn_create(panel);
