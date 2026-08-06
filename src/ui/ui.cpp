@@ -594,6 +594,9 @@ namespace ArrowLabUI
         lv_obj_clear_flag(
             titleTouchTarget,
             LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(
+            titleTouchTarget,
+            LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(
             titleTouchTarget,
             developerRevealEvent,
