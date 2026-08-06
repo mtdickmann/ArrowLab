@@ -1,4 +1,4 @@
-#include "ui.h"
+#include "ui.h"\n\n#include <cstdio>
 
 namespace
 {
