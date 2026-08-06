@@ -310,6 +310,55 @@ bool LoadCellChannel::calibrationReady(
     );
 }
 
+bool LoadCellChannel::calibrationLoadDetected() const
+{
+    return calibrationLoadDetectedTime_ != 0;
+}
+
+uint32_t LoadCellChannel::calibrationSettleRemainingSeconds(
+    uint32_t currentTime,
+    uint32_t settleTimeMs
+) const
+{
+    if (calibrationLoadDetectedTime_ == 0) {
+        return settleTimeMs / 1000;
+    }
+
+    const uint32_t elapsed =
+        currentTime - calibrationLoadDetectedTime_;
+
+    if (elapsed >= settleTimeMs) {
+        return 0;
+    }
+
+    return (settleTimeMs - elapsed + 999) / 1000;
+}
+
+uint8_t LoadCellChannel::calibrationSettlePercent(
+    uint32_t currentTime,
+    uint32_t settleTimeMs
+) const
+{
+    if (
+        calibrationLoadDetectedTime_ == 0
+        || settleTimeMs == 0
+    ) {
+        return 0;
+    }
+
+    const uint32_t elapsed =
+        currentTime - calibrationLoadDetectedTime_;
+
+    if (elapsed >= settleTimeMs) {
+        return 100;
+    }
+
+    return static_cast<uint8_t>(
+        (static_cast<uint64_t>(elapsed) * 100)
+        / settleTimeMs
+    );
+}
+
 bool LoadCellChannel::calibrationInProgress() const
 {
     return calibrationInProgress_;
