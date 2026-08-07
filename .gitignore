@@ -5,3 +5,4 @@
 .vscode/ipch
 vendor/
 calibration/diagnostics/creep_*.csv
+calibration/diagnostics/creep_*.xlsx
