@@ -923,8 +923,6 @@ namespace
             || massInputBox != nullptr
             || diagnosticRunActive
             || diagnosticAwaitingSave
-            || !selectedDiagnosticZeroComplete()
-            || !selectedDiagnosticCalibrated()
         ) {
             return;
         }
