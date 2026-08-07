@@ -10,6 +10,19 @@ namespace ArrowLabUI
         Right
     };
 
+    struct DiagnosticChannelState
+    {
+        bool baselineCaptured = false;
+        bool tareComplete = false;
+        bool userTareConfirmed = false;
+        bool calibrated = false;
+        bool calibrationReady = false;
+        bool calibrationInProgress = false;
+        bool calibrationLoadDetected = false;
+        uint32_t settleRemainingSeconds = 0;
+        uint8_t settlePercent = 0;
+    };
+
     using TareCallback = void (*)(LoadSide side);
     using CalibrationCallback = void (*)(LoadSide side);
     using DiagnosticStartCallback = void (*)(
@@ -19,7 +32,6 @@ namespace ArrowLabUI
     );
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
-    using DiagnosticBaselineImportCallback = void (*)(LoadSide side);
     using DiagnosticResetCallback = void (*)(LoadSide side);
 
     /**
@@ -39,7 +51,6 @@ namespace ArrowLabUI
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
         DiagnosticFinishCallback finishCallback,
-        DiagnosticBaselineImportCallback importCallback,
         DiagnosticResetCallback resetCallback
     );
     void setDiagnosticStatus(
@@ -49,12 +60,8 @@ namespace ArrowLabUI
         bool awaitingSave
     );
     void setDiagnosticChannelState(
-        bool leftBaselineCaptured,
-        bool rightBaselineCaptured,
-        bool leftCalibrated,
-        bool rightCalibrated,
-        bool leftCalibrationReady,
-        bool rightCalibrationReady,
+        const DiagnosticChannelState &left,
+        const DiagnosticChannelState &right,
         bool hostConnected
     );
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);

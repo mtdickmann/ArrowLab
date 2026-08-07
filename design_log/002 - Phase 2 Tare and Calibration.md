@@ -287,7 +287,55 @@ Routine high-frequency raw serial output was removed because it competed with di
 
 Persistent storage now implements the previously planned rules. Counts-per-gram factor, reference mass and firmware version are stored independently for each channel. Version mismatch invalidates calibration. Baseline evidence is stored separately because it records a completed historical diagnostic rather than defining measurement conversion.
 
-`USE CSV` exists only as an explicit migration declaration for a retained, completed legacy zero-baseline file. Firmware does not parse that old file and the action never manufactures a calibration factor. This is deliberately visible and reversible with the selected-channel reset control.
+Legacy PC CSV files remain evidence but are not instrument state. The earlier
+`USE CSV` declaration was removed because the firmware cannot parse or verify a
+PC file and the control therefore implied authority it did not possess. A new
+or reset channel earns `BASE OK` only after a complete run is acknowledged by
+the logger.
+
+## Creep evidence decision (v0.1.2)
+
+The retained campaign data shows short-term residual noise near 0.03-0.05 g,
+approximately 0.16-0.29 g movement over some 30-minute loaded runs, and drift
+which reverses direction between runs and sessions. One Left 999.8 g run also
+contains a single multi-million-count transient. These facts rule out a single
+honest counts-per-minute compensation curve.
+
+The adopted boundary is therefore:
+
+- diagnostic CSV output remains raw and unsmoothed;
+- normal displayed measurements use a 15-sample trimmed-mean window (three
+  samples removed from each tail once full);
+- a tare is taken in the actual physical configuration immediately before a
+  measurement sequence;
+- future mass and spine workflows accept a short stable window rather than
+  leaving a result under load for many minutes;
+- automatic zero tracking is not used because it could erase real small masses
+  such as protector rings;
+- no empirical creep correction is applied until repeatable temperature-aware
+  evidence proves one is valid.
+
+The filter rejects isolated electrical spikes and calms the display. It does
+not pretend that filtering removes mechanical or thermal creep. Calibration
+also uses the robust window after the existing 30-second settling gate.
+
+Normal Calibration and Creep Diagnostic remain separate workflows. Both call
+the same channel tare/calibration primitives, but diagnostic baseline state
+does not block a normal recalibration and normal calibration does not fabricate
+baseline evidence.
+
+## Diagnostic UI convention (v0.1.2)
+
+- the persistent header names the current page/tool;
+- the compact state line reports selected side, BASE, TARE and CAL state;
+- the main status line gives the exact next action or a deliberate WAIT state;
+- the progress bar represents the active acquisition or 30-second calibration
+  settling gate;
+- modal popups are reserved for prerequisites, confirmation and explicit Help;
+- CAL is green for a stored factor, orange while action is required, and may be
+  deliberately run again through normal Calibration after a fresh tare;
+- diagnostic CSV filenames include LHS/RHS and one capture session contains
+  only one selected channel.
 
 
 ### Diagnostic session rules

@@ -32,7 +32,10 @@ namespace
 
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *stateLabel = nullptr;
+    lv_obj_t *headerContextLabel = nullptr;
     lv_obj_t *confirmationBox = nullptr;
+    lv_obj_t *helpBox = nullptr;
+    lv_obj_t *currentPage = nullptr;
     lv_obj_t *homePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
@@ -57,7 +60,6 @@ namespace
     lv_obj_t *diagnosticFinishButton = nullptr;
     lv_obj_t *diagnosticTareButton = nullptr;
     lv_obj_t *diagnosticCalibrationButton = nullptr;
-    lv_obj_t *diagnosticImportButton = nullptr;
     lv_obj_t *diagnosticResetButton = nullptr;
     lv_obj_t *diagnosticHostLabel = nullptr;
     lv_obj_t *diagnosticLeftStateLabel = nullptr;
@@ -69,12 +71,9 @@ namespace
     bool diagnosticSideSelected = false;
     bool diagnosticRunActive = false;
     bool diagnosticAwaitingSave = false;
-    bool diagnosticLeftZeroComplete = false;
-    bool diagnosticRightZeroComplete = false;
-    bool diagnosticLeftCalibrated = false;
-    bool diagnosticRightCalibrated = false;
-    bool diagnosticLeftCalibrationReady = false;
-    bool diagnosticRightCalibrationReady = false;
+    bool diagnosticUseAutomaticInstruction = true;
+    ArrowLabUI::DiagnosticChannelState diagnosticLeftState;
+    ArrowLabUI::DiagnosticChannelState diagnosticRightState;
     bool diagnosticHostConnected = false;
     uint32_t developerPressStart = 0;
     bool developerPressActive = false;
@@ -91,19 +90,10 @@ namespace
     ArrowLabUI::DiagnosticStartCallback diagnosticStartCallback = nullptr;
     ArrowLabUI::DiagnosticCancelCallback diagnosticCancelCallback = nullptr;
     ArrowLabUI::DiagnosticFinishCallback diagnosticFinishCallback = nullptr;
-    ArrowLabUI::DiagnosticBaselineImportCallback
-        diagnosticImportCallback = nullptr;
     ArrowLabUI::DiagnosticResetCallback diagnosticResetCallback = nullptr;
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
-    enum class DiagnosticMaintenanceAction
-    {
-        ImportBaseline,
-        ResetChannel
-    };
-    DiagnosticMaintenanceAction diagnosticMaintenanceAction =
-        DiagnosticMaintenanceAction::ImportBaseline;
     float calibrationReferenceGrams = 0.0f;
     ArrowLabUI::LoadSide pendingSide =
         ArrowLabUI::LoadSide::Left;
@@ -480,6 +470,85 @@ namespace
         lv_obj_add_flag(diagnosticSidePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
+        currentPage = page;
+
+        if (headerContextLabel != nullptr) {
+            const char *title = "";
+            if (page == homePage) {
+                title = "HOME";
+            } else if (page == settingsPage) {
+                title = "SETTINGS";
+            } else if (page == calibrationPage) {
+                title = "CALIBRATION";
+            } else if (page == diagnosticsMenuPage) {
+                title = "DIAGNOSTICS";
+            } else if (page == diagnosticSidePage) {
+                title = "CREEP TEST";
+            } else if (page == diagnosticsPage) {
+                title = "CREEP DIAGNOSTIC";
+            }
+            lv_label_set_text(headerContextLabel, title);
+        }
+    }
+
+    void helpCloseEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED) {
+            return;
+        }
+
+        helpBox = nullptr;
+        lv_msgbox_close(lv_event_get_current_target(event));
+    }
+
+    void helpButtonEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) != LV_EVENT_CLICKED
+            || helpBox != nullptr
+        ) {
+            return;
+        }
+
+        const char *title = "ARROWLAB HELP";
+        const char *message =
+            "Follow the highlighted next action. Red faults must be "
+            "corrected before measurement.";
+
+        if (currentPage == calibrationPage) {
+            title = "CALIBRATION HELP";
+            message =
+                "For either side: fit the empty platform, TARE, place "
+                "the reference weight, wait for CAL READY, then CAL. "
+                "Calibration may be repeated whenever required.";
+        } else if (currentPage == diagnosticSidePage) {
+            title = "CREEP TEST HELP";
+            message =
+                "Choose one channel. Left and Right baseline, "
+                "calibration and reset state are independent.";
+        } else if (currentPage == diagnosticsPage) {
+            title = "CREEP DIAGNOSTIC HELP";
+            message =
+                "Start the PC logger first. Follow the NEXT/WAIT line. "
+                "ZERO BASE records 30 minutes; then TARE and CAL if "
+                "required. SET MASS and LOAD TEST record raw evidence. "
+                "Do not disturb an active run.";
+        }
+
+        static const char *buttons[] = {"OK", ""};
+        helpBox = lv_msgbox_create(
+            nullptr,
+            title,
+            message,
+            buttons,
+            false);
+        lv_obj_set_width(helpBox, 420);
+        lv_obj_add_event_cb(
+            helpBox,
+            helpCloseEvent,
+            LV_EVENT_VALUE_CHANGED,
+            nullptr);
+        lv_obj_center(helpBox);
     }
 
     void homeButtonEvent(lv_event_t *event)
@@ -551,15 +620,17 @@ namespace
         }
     }
 
+    const ArrowLabUI::DiagnosticChannelState &selectedDiagnosticState()
+    {
+        return diagnosticSide == ArrowLabUI::LoadSide::Left
+            ? diagnosticLeftState
+            : diagnosticRightState;
+    }
+
     bool selectedDiagnosticZeroComplete()
     {
-        if (!diagnosticSideSelected) {
-            return false;
-        }
-
-        return diagnosticSide == ArrowLabUI::LoadSide::Left
-            ? diagnosticLeftZeroComplete
-            : diagnosticRightZeroComplete;
+        return diagnosticSideSelected
+            && selectedDiagnosticState().baselineCaptured;
     }
 
     bool selectedDiagnosticCalibrated()
@@ -568,9 +639,7 @@ namespace
             return false;
         }
 
-        return diagnosticSide == ArrowLabUI::LoadSide::Left
-            ? diagnosticLeftCalibrated
-            : diagnosticRightCalibrated;
+        return selectedDiagnosticState().calibrated;
     }
 
     bool selectedDiagnosticCalibrationReady()
@@ -579,9 +648,7 @@ namespace
             return false;
         }
 
-        return diagnosticSide == ArrowLabUI::LoadSide::Left
-            ? diagnosticLeftCalibrationReady
-            : diagnosticRightCalibrationReady;
+        return selectedDiagnosticState().calibrationReady;
     }
 
     void refreshDiagnosticSideLabel()
@@ -597,19 +664,45 @@ namespace
             return;
         }
 
-        const bool zeroOk =
-            selectedDiagnosticZeroComplete();
+        const ArrowLabUI::DiagnosticChannelState &state =
+            selectedDiagnosticState();
 
-        char text[64];
+        const char *tareText =
+            !state.tareComplete
+                ? "TARING"
+                : (state.userTareConfirmed ? "TARE OK" : "TARE REQ");
+
+        char calibrationText[20];
+        if (state.calibrationInProgress) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL...");
+        } else if (state.calibrated) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL OK");
+        } else if (
+            state.calibrationLoadDetected
+            && !state.calibrationReady
+        ) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL %lus",
+                static_cast<unsigned long>(state.settleRemainingSeconds));
+        } else if (state.calibrationReady) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL READY");
+        } else {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL REQ");
+        }
+
+        char text[80];
         snprintf(
             text,
             sizeof(text),
-            "%s  BASE %s  CAL %s",
+            "%s  BASE %s  %s  %s",
             diagnosticSide == ArrowLabUI::LoadSide::Left
                 ? "LEFT"
                 : "RIGHT",
-            zeroOk ? "OK" : "REQ",
-            selectedDiagnosticCalibrated() ? "OK" : "REQ");
+            state.baselineCaptured ? "OK" : "REQ",
+            tareText,
+            calibrationText);
         lv_label_set_text(
             diagnosticSideLabel,
             text);
@@ -617,6 +710,8 @@ namespace
 
     void refreshDiagnosticControls()
     {
+        const ArrowLabUI::DiagnosticChannelState &state =
+            selectedDiagnosticState();
         const bool canConfigure =
             !diagnosticRunActive
             && !diagnosticAwaitingSave
@@ -644,6 +739,12 @@ namespace
         }
 
         if (diagnosticTareButton != nullptr) {
+            lv_obj_set_style_bg_color(
+                diagnosticTareButton,
+                lv_color_hex(
+                    state.userTareConfirmed ? COLOUR_OK : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+
             if (canConfigure && selectedDiagnosticZeroComplete()) {
                 lv_obj_clear_state(
                     diagnosticTareButton,
@@ -656,25 +757,23 @@ namespace
         }
 
         if (diagnosticCalibrationButton != nullptr) {
-            if (canConfigure && selectedDiagnosticCalibrationReady()) {
-                lv_obj_clear_state(
-                    diagnosticCalibrationButton,
-                    LV_STATE_DISABLED);
-            } else {
-                lv_obj_add_state(
-                    diagnosticCalibrationButton,
-                    LV_STATE_DISABLED);
-            }
-        }
+            lv_obj_set_style_bg_color(
+                diagnosticCalibrationButton,
+                lv_color_hex(
+                    state.calibrated ? COLOUR_OK : COLOUR_REQUIRED),
+                LV_PART_MAIN);
 
-        if (diagnosticImportButton != nullptr) {
-            if (canConfigure && !selectedDiagnosticZeroComplete()) {
+            if (
+                canConfigure
+                && !state.calibrated
+                && selectedDiagnosticCalibrationReady()
+            ) {
                 lv_obj_clear_state(
-                    diagnosticImportButton,
+                    diagnosticCalibrationButton,
                     LV_STATE_DISABLED);
             } else {
                 lv_obj_add_state(
-                    diagnosticImportButton,
+                    diagnosticCalibrationButton,
                     LV_STATE_DISABLED);
             }
         }
@@ -744,6 +843,64 @@ namespace
         }
     }
 
+    void refreshDiagnosticInstruction()
+    {
+        if (
+            diagnosticStatusLabel == nullptr
+            || !diagnosticUseAutomaticInstruction
+        ) {
+            return;
+        }
+
+        const char *instruction = "NEXT: Select a load cell";
+
+        if (diagnosticSideSelected) {
+            const ArrowLabUI::DiagnosticChannelState &state =
+                selectedDiagnosticState();
+
+            if (!state.baselineCaptured) {
+                instruction =
+                    "NEXT: Remove added hardware and press ZERO BASE";
+            } else if (!state.tareComplete) {
+                instruction = "WAIT: Taring empty calibration platform";
+            } else if (!state.userTareConfirmed) {
+                instruction =
+                    "NEXT: Fit empty calibration platform and press TARE";
+            } else if (state.calibrationInProgress) {
+                instruction = "WAIT: Calibration sampling in progress";
+            } else if (!state.calibrated) {
+                if (state.calibrationReady) {
+                    instruction = "NEXT: Press CAL";
+                } else if (state.calibrationLoadDetected) {
+                    static char settlingText[64];
+                    snprintf(
+                        settlingText,
+                        sizeof(settlingText),
+                        "WAIT: Calibration weight settling - %lus",
+                        static_cast<unsigned long>(
+                            state.settleRemainingSeconds));
+                    instruction = settlingText;
+                } else {
+                    static char placeReferenceText[72];
+                    snprintf(
+                        placeReferenceText,
+                        sizeof(placeReferenceText),
+                        "NEXT: Place %.1f g calibration weight",
+                        calibrationReferenceGrams);
+                    instruction = placeReferenceText;
+                }
+            } else if (diagnosticMassGrams <= 0.0f) {
+                instruction =
+                    "NEXT: Remove calibration weight and press SET MASS";
+            } else {
+                instruction =
+                    "NEXT: Keep test mass off platform; press LOAD TEST";
+            }
+        }
+
+        lv_label_set_text(diagnosticStatusLabel, instruction);
+    }
+
     void diagnosticSideEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
@@ -755,8 +912,14 @@ namespace
                 reinterpret_cast<uintptr_t>(
                     lv_event_get_user_data(event)));
         diagnosticSideSelected = true;
+        diagnosticMassGrams = 0.0f;
+        if (diagnosticMassLabel != nullptr) {
+            lv_label_set_text(diagnosticMassLabel, "MASS: -- g");
+        }
+        diagnosticUseAutomaticInstruction = true;
         refreshDiagnosticSideLabel();
         refreshDiagnosticControls();
+        refreshDiagnosticInstruction();
         showPage(diagnosticsPage);
     }
 
@@ -800,6 +963,8 @@ namespace
                 diagnosticMassLabel,
                 label);
             refreshDiagnosticControls();
+            diagnosticUseAutomaticInstruction = true;
+            refreshDiagnosticInstruction();
             closeMassInput();
         }
     }
@@ -1044,60 +1209,38 @@ namespace
         lv_obj_t *box = lv_event_get_current_target(event);
         const uint16_t selectedButton = lv_msgbox_get_active_btn(box);
 
-        if (selectedButton == 1) {
-            if (
-                diagnosticMaintenanceAction
-                    == DiagnosticMaintenanceAction::ImportBaseline
-                && diagnosticImportCallback != nullptr
-            ) {
-                diagnosticImportCallback(diagnosticSide);
-            } else if (diagnosticResetCallback != nullptr) {
-                diagnosticResetCallback(diagnosticSide);
-            }
+        if (selectedButton == 1 && diagnosticResetCallback != nullptr) {
+            diagnosticResetCallback(diagnosticSide);
         }
 
         diagnosticConfirmBox = nullptr;
         lv_msgbox_close(box);
     }
 
-    void showDiagnosticMaintenanceConfirmation(
-        DiagnosticMaintenanceAction action)
+    void showDiagnosticResetConfirmation()
     {
         if (diagnosticConfirmBox != nullptr) {
             return;
         }
 
-        diagnosticMaintenanceAction = action;
         static const char *buttons[] = {"CANCEL", "CONFIRM", ""};
 
-        const bool import =
-            action == DiagnosticMaintenanceAction::ImportBaseline;
         const char *sideText =
             diagnosticSide == ArrowLabUI::LoadSide::Left
                 ? "LEFT"
                 : "RIGHT";
         char message[240];
 
-        if (import) {
-            snprintf(
-                message,
-                sizeof(message),
-                "Use an already captured %s ZERO baseline CSV.\n"
-                "Only confirm if that file was completed and retained.\n"
-                "This does not import or create calibration.",
-                sideText);
-        } else {
-            snprintf(
-                message,
-                sizeof(message),
-                "Reset %s diagnostic state and calibration.\n"
-                "The other load cell is not changed.",
-                sideText);
-        }
+        snprintf(
+            message,
+            sizeof(message),
+            "Reset %s diagnostic state and calibration.\n"
+            "The other load cell is not changed.",
+            sideText);
 
         diagnosticConfirmBox = lv_msgbox_create(
             nullptr,
-            import ? "USE EXISTING BASELINE" : "RESET LOAD CELL",
+            "RESET LOAD CELL",
             message,
             buttons,
             false);
@@ -1110,19 +1253,10 @@ namespace
         lv_obj_center(diagnosticConfirmBox);
     }
 
-    void diagnosticImportEvent(lv_event_t *event)
-    {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
-            showDiagnosticMaintenanceConfirmation(
-                DiagnosticMaintenanceAction::ImportBaseline);
-        }
-    }
-
     void diagnosticResetEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
-            showDiagnosticMaintenanceConfirmation(
-                DiagnosticMaintenanceAction::ResetChannel);
+            showDiagnosticResetConfirmation();
         }
     }
 
@@ -1306,6 +1440,18 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_align(title, LV_ALIGN_LEFT_MID, 18, 0);
 
+        headerContextLabel = createTextLabel(
+            header,
+            "HOME",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(headerContextLabel, 244, 24);
+        lv_obj_set_pos(headerContextLabel, 174, 11);
+        lv_obj_set_style_text_align(
+            headerContextLabel,
+            LV_TEXT_ALIGN_CENTER,
+            LV_PART_MAIN);
+
         lv_obj_t *helpButton = lv_btn_create(header);
         lv_obj_set_size(helpButton, 34, 30);
         lv_obj_align(helpButton, LV_ALIGN_RIGHT_MID, -14, 0);
@@ -1314,6 +1460,11 @@ namespace ArrowLabUI
             helpButton,
             lv_color_hex(COLOUR_ACCENT),
             LV_PART_MAIN);
+        lv_obj_add_event_cb(
+            helpButton,
+            helpButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
         lv_obj_t *helpLabel = createTextLabel(
             helpButton,
             "?",
@@ -1328,13 +1479,6 @@ namespace ArrowLabUI
         lv_obj_set_style_border_width(homePage, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(homePage, 0, LV_PART_MAIN);
         lv_obj_clear_flag(homePage, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t *homeHeading = createTextLabel(
-            homePage,
-            "HOME",
-            &lv_font_montserrat_14,
-            lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_pos(homeHeading, 30, 12);
 
         lv_obj_t *spineButton = createMenuButton(
             homePage,
@@ -1531,19 +1675,16 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(diagBackLabel);
 
-        lv_obj_t *diagHeading = createTextLabel(
-            diagnosticsPage,
-            "CREEP DIAGNOSTIC",
-            &lv_font_montserrat_16,
-            lv_color_hex(COLOUR_TEXT));
-        lv_obj_set_pos(diagHeading, 116, 14);
-
         diagnosticSideLabel = createTextLabel(
             diagnosticsPage,
             "SIDE: --",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_pos(diagnosticSideLabel, 320, 15);
+        lv_obj_set_size(diagnosticSideLabel, 350, 24);
+        lv_obj_set_pos(diagnosticSideLabel, 110, 13);
+        lv_label_set_long_mode(
+            diagnosticSideLabel,
+            LV_LABEL_LONG_DOT);
 
         diagnosticMassLabel = createTextLabel(
             diagnosticsPage,
@@ -1634,24 +1775,9 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(loadLabel);
 
-        diagnosticImportButton = lv_btn_create(diagnosticsPage);
-        lv_obj_set_size(diagnosticImportButton, 104, 34);
-        lv_obj_set_pos(diagnosticImportButton, 14, 132);
-        lv_obj_add_event_cb(
-            diagnosticImportButton,
-            diagnosticImportEvent,
-            LV_EVENT_CLICKED,
-            nullptr);
-        lv_obj_t *importLabel = createTextLabel(
-            diagnosticImportButton,
-            "USE CSV",
-            &lv_font_montserrat_14,
-            lv_color_hex(COLOUR_TEXT));
-        lv_obj_center(importLabel);
-
         diagnosticResetButton = lv_btn_create(diagnosticsPage);
         lv_obj_set_size(diagnosticResetButton, 104, 34);
-        lv_obj_set_pos(diagnosticResetButton, 124, 132);
+        lv_obj_set_pos(diagnosticResetButton, 14, 132);
         lv_obj_add_event_cb(
             diagnosticResetButton,
             diagnosticResetEvent,
@@ -1706,11 +1832,15 @@ namespace ArrowLabUI
             "Selected cell: capture baseline, calibrate, then test",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_TEXT));
-        lv_obj_set_pos(diagnosticStatusLabel, 14, 171);
+        lv_obj_set_pos(diagnosticStatusLabel, 14, 168);
+        lv_obj_set_width(diagnosticStatusLabel, 438);
+        lv_label_set_long_mode(
+            diagnosticStatusLabel,
+            LV_LABEL_LONG_WRAP);
 
         diagnosticProgressBar = lv_bar_create(diagnosticsPage);
         lv_obj_set_size(diagnosticProgressBar, 438, 12);
-        lv_obj_set_pos(diagnosticProgressBar, 14, 194);
+        lv_obj_set_pos(diagnosticProgressBar, 14, 199);
         lv_bar_set_range(diagnosticProgressBar, 0, 100);
         lv_bar_set_value(
             diagnosticProgressBar,
@@ -1727,10 +1857,10 @@ namespace ArrowLabUI
 
         lv_obj_t *diagHint = createTextLabel(
             diagnosticsPage,
-            "10 s + every 30 s / 30 min / buffered USB CSV",
+            "Progress shown above - details under Help",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_pos(diagHint, 14, 210);
+        lv_obj_set_pos(diagHint, 14, 213);
 
         calibrationPage = lv_obj_create(screen);
         lv_obj_set_size(calibrationPage, 480, 228);
@@ -1860,13 +1990,11 @@ namespace ArrowLabUI
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
         DiagnosticFinishCallback finishCallback,
-        DiagnosticBaselineImportCallback importCallback,
         DiagnosticResetCallback resetCallback)
     {
         diagnosticStartCallback = startCallback;
         diagnosticCancelCallback = cancelCallback;
         diagnosticFinishCallback = finishCallback;
-        diagnosticImportCallback = importCallback;
         diagnosticResetCallback = resetCallback;
     }
 
@@ -1878,11 +2006,17 @@ namespace ArrowLabUI
     {
         diagnosticRunActive = active;
         diagnosticAwaitingSave = awaitingSave;
+        diagnosticUseAutomaticInstruction =
+            text == nullptr || text[0] == '\0';
 
         if (diagnosticStatusLabel != nullptr) {
-            lv_label_set_text(
-                diagnosticStatusLabel,
-                text);
+            if (diagnosticUseAutomaticInstruction) {
+                refreshDiagnosticInstruction();
+            } else {
+                lv_label_set_text(
+                    diagnosticStatusLabel,
+                    text);
+            }
         }
 
         if (diagnosticProgressBar != nullptr) {
@@ -1897,20 +2031,12 @@ namespace ArrowLabUI
     }
 
     void setDiagnosticChannelState(
-        bool leftBaselineCaptured,
-        bool rightBaselineCaptured,
-        bool leftCalibrated,
-        bool rightCalibrated,
-        bool leftCalibrationReady,
-        bool rightCalibrationReady,
+        const DiagnosticChannelState &left,
+        const DiagnosticChannelState &right,
         bool hostConnected)
     {
-        diagnosticLeftZeroComplete = leftBaselineCaptured;
-        diagnosticRightZeroComplete = rightBaselineCaptured;
-        diagnosticLeftCalibrated = leftCalibrated;
-        diagnosticRightCalibrated = rightCalibrated;
-        diagnosticLeftCalibrationReady = leftCalibrationReady;
-        diagnosticRightCalibrationReady = rightCalibrationReady;
+        diagnosticLeftState = left;
+        diagnosticRightState = right;
         diagnosticHostConnected = hostConnected;
 
         if (diagnosticLeftStateLabel != nullptr) {
@@ -1919,8 +2045,8 @@ namespace ArrowLabUI
                 text,
                 sizeof(text),
                 "LEFT\nBASE %s / CAL %s",
-                leftBaselineCaptured ? "OK" : "REQ",
-                leftCalibrated ? "OK" : "REQ");
+                left.baselineCaptured ? "OK" : "REQ",
+                left.calibrated ? "OK" : "REQ");
             lv_label_set_text(diagnosticLeftStateLabel, text);
         }
 
@@ -1930,8 +2056,8 @@ namespace ArrowLabUI
                 text,
                 sizeof(text),
                 "RIGHT\nBASE %s / CAL %s",
-                rightBaselineCaptured ? "OK" : "REQ",
-                rightCalibrated ? "OK" : "REQ");
+                right.baselineCaptured ? "OK" : "REQ",
+                right.calibrated ? "OK" : "REQ");
             lv_label_set_text(diagnosticRightStateLabel, text);
         }
 
@@ -1950,6 +2076,25 @@ namespace ArrowLabUI
 
         refreshDiagnosticSideLabel();
         refreshDiagnosticControls();
+        refreshDiagnosticInstruction();
+
+        if (
+            diagnosticProgressBar != nullptr
+            && diagnosticUseAutomaticInstruction
+            && diagnosticSideSelected
+        ) {
+            const DiagnosticChannelState &state =
+                selectedDiagnosticState();
+            const uint8_t progress =
+                state.calibrationLoadDetected
+                && !state.calibrated
+                    ? state.settlePercent
+                    : 0;
+            lv_bar_set_value(
+                diagnosticProgressBar,
+                progress,
+                LV_ANIM_OFF);
+        }
     }
 
     void setCalibrationValidity(
@@ -2113,11 +2258,6 @@ namespace ArrowLabUI
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL...");
-        } else if (calibrated) {
-            snprintf(
-                calibrationText,
-                sizeof(calibrationText),
-                "CAL OK");
         } else if (
             calibrationLoadDetected
             && !calibrationReady
@@ -2133,6 +2273,11 @@ namespace ArrowLabUI
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL READY");
+        } else if (calibrated) {
+            snprintf(
+                calibrationText,
+                sizeof(calibrationText),
+                "CAL OK");
         } else {
             snprintf(
                 calibrationText,
@@ -2159,7 +2304,6 @@ namespace ArrowLabUI
             if (
                 calibrationLoadDetected
                 && !calibrationReady
-                && !calibrated
                 && !calibrationInProgress
             ) {
                 lv_bar_set_value(
@@ -2192,7 +2336,7 @@ namespace ArrowLabUI
             lv_obj_set_style_bg_color(
                 panel.calibrationButton,
                 lv_color_hex(
-                    calibrated
+                    calibrated && !calibrationLoadDetected
                         ? COLOUR_OK
                         : COLOUR_REQUIRED),
                 LV_PART_MAIN);

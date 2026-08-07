@@ -66,7 +66,6 @@ namespace
         ArrowLabUI::LoadSide::Left;
     float diagnosticRequestedMassGrams = 0.0f;
     bool diagnosticRequestedZeroBaseline = false;
-    volatile bool diagnosticImportBaselineRequested = false;
     volatile bool diagnosticResetChannelRequested = false;
     ArrowLabUI::LoadSide diagnosticMaintenanceSide =
         ArrowLabUI::LoadSide::Left;
@@ -122,12 +121,6 @@ namespace
     void requestDiagnosticFinish()
     {
         diagnosticFinishRequested = true;
-    }
-
-    void requestDiagnosticImportBaseline(ArrowLabUI::LoadSide side)
-    {
-        diagnosticMaintenanceSide = side;
-        diagnosticImportBaselineRequested = true;
     }
 
     void requestDiagnosticResetChannel(ArrowLabUI::LoadSide side)
@@ -227,28 +220,6 @@ namespace
 
     void processDiagnosticRequests(uint32_t currentTime)
     {
-        if (diagnosticImportBaselineRequested) {
-            diagnosticImportBaselineRequested = false;
-            const DiagnosticSide side =
-                diagnosticMaintenanceSide == ArrowLabUI::LoadSide::Left
-                    ? DiagnosticSide::Left
-                    : DiagnosticSide::Right;
-            creepDiagnostic.setBaselineCaptured(side, true);
-            instrumentStorage.setBaselineCaptured(
-                storedSide(diagnosticMaintenanceSide),
-                true
-            );
-            if (side == DiagnosticSide::Left) {
-                leftBaselineStored = true;
-            } else {
-                rightBaselineStored = true;
-            }
-            Serial.printf(
-                "AL_DIAG,EVENT,%s,BASELINE_IMPORTED\n",
-                side == DiagnosticSide::Left ? "LEFT" : "RIGHT"
-            );
-        }
-
         if (diagnosticResetChannelRequested) {
             diagnosticResetChannelRequested = false;
             const DiagnosticSide side =
@@ -347,7 +318,7 @@ namespace
             buffer,
             bufferSize,
             "%ld",
-            sensor.zeroedValue()
+            sensor.filteredZeroedValue()
         );
     }
 
@@ -401,14 +372,14 @@ namespace
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Start PC logger - waiting for handshake");
+                "NEXT: Start PC logger and wait for CONNECTED");
             break;
 
         case CreepDiagnostic::State::Taring:
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Taring %s - keep setup stable",
+                "WAIT: Taring %s - keep setup stable",
                 diagnosticSideText);
             break;
 
@@ -416,7 +387,7 @@ namespace
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Place %.3f g on %s - logger auto-starts",
+                "NEXT: Place %.3f g centrally on %s",
                 creepDiagnostic.testMassGrams(),
                 diagnosticSideText);
             break;
@@ -427,7 +398,7 @@ namespace
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "%s %.3f g - %02lu:%02lu / 30:00",
+                "DO NOT TOUCH: %s %.3f g - %02lu:%02lu / 30:00",
                 diagnosticSideText,
                 creepDiagnostic.testMassGrams(),
                 static_cast<unsigned long>(
@@ -441,22 +412,19 @@ namespace
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Run buffered - waiting for PC save ACK");
+                "WAIT: Saving and verifying the complete run");
             break;
 
         case CreepDiagnostic::State::Complete:
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Run saved - remove load / continue");
+                "NEXT: Remove test weight; continue or press DONE");
             break;
 
         case CreepDiagnostic::State::Idle:
         default:
-            snprintf(
-                diagnosticStatus,
-                sizeof(diagnosticStatus),
-                "Ready - choose ZERO BASE or LOAD TEST");
+            diagnosticStatus[0] = '\0';
             break;
         }
 
@@ -466,19 +434,58 @@ namespace
             diagnosticActive,
             creepDiagnostic.awaitingSave()
         );
-        ArrowLabUI::setDiagnosticChannelState(
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Left),
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Right),
-            leftSensor.calibrated(),
-            rightSensor.calibrated(),
+        ArrowLabUI::DiagnosticChannelState leftDiagnosticState;
+        leftDiagnosticState.baselineCaptured =
+            creepDiagnostic.baselineCaptured(DiagnosticSide::Left);
+        leftDiagnosticState.tareComplete = leftSensor.tareComplete();
+        leftDiagnosticState.userTareConfirmed =
+            leftSensor.userTareConfirmed();
+        leftDiagnosticState.calibrated = leftSensor.calibrated();
+        leftDiagnosticState.calibrationReady =
             leftSensor.calibrationReady(
                 currentTime,
-                CALIBRATION_SETTLE_TIME_MS),
+                CALIBRATION_SETTLE_TIME_MS);
+        leftDiagnosticState.calibrationInProgress =
+            leftSensor.calibrationInProgress();
+        leftDiagnosticState.calibrationLoadDetected =
+            leftSensor.calibrationLoadDetected();
+        leftDiagnosticState.settleRemainingSeconds =
+            leftSensor.calibrationSettleRemainingSeconds(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS);
+        leftDiagnosticState.settlePercent =
+            leftSensor.calibrationSettlePercent(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS);
+
+        ArrowLabUI::DiagnosticChannelState rightDiagnosticState;
+        rightDiagnosticState.baselineCaptured =
+            creepDiagnostic.baselineCaptured(DiagnosticSide::Right);
+        rightDiagnosticState.tareComplete = rightSensor.tareComplete();
+        rightDiagnosticState.userTareConfirmed =
+            rightSensor.userTareConfirmed();
+        rightDiagnosticState.calibrated = rightSensor.calibrated();
+        rightDiagnosticState.calibrationReady =
             rightSensor.calibrationReady(
                 currentTime,
-                CALIBRATION_SETTLE_TIME_MS),
-            creepDiagnostic.hostConnected(currentTime)
-        );
+                CALIBRATION_SETTLE_TIME_MS);
+        rightDiagnosticState.calibrationInProgress =
+            rightSensor.calibrationInProgress();
+        rightDiagnosticState.calibrationLoadDetected =
+            rightSensor.calibrationLoadDetected();
+        rightDiagnosticState.settleRemainingSeconds =
+            rightSensor.calibrationSettleRemainingSeconds(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS);
+        rightDiagnosticState.settlePercent =
+            rightSensor.calibrationSettlePercent(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS);
+
+        ArrowLabUI::setDiagnosticChannelState(
+            leftDiagnosticState,
+            rightDiagnosticState,
+            creepDiagnostic.hostConnected(currentTime));
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
@@ -699,7 +706,6 @@ void setup()
         requestDiagnosticStart,
         requestDiagnosticCancel,
         requestDiagnosticFinish,
-        requestDiagnosticImportBaseline,
         requestDiagnosticResetChannel
     );
     ArrowLabUI::setCalibrationReferenceGrams(
@@ -795,7 +801,6 @@ void loop()
         diagnosticStartRequested
         || diagnosticCancelRequested
         || diagnosticFinishRequested
-        || diagnosticImportBaselineRequested
         || diagnosticResetChannelRequested
     ) {
         processDiagnosticRequests(now);

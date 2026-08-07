@@ -18,7 +18,10 @@ Replace `COM3` when required. If PlatformIO's Python is missing, repair Platform
 
 The logger creates:
 
-    calibration\diagnostics\creep_YYYYMMDD_HHMMSS.csv
+    calibration\diagnostics\creep_LHS_YYYYMMDD_HHMMSS.csv
+
+or the equivalent `RHS` filename. The side is assigned when the first
+diagnostic sample arrives. Keep one logger session to one selected channel.
 
 Leave the logger open for the selected channel's runs. The logger and firmware exchange heartbeats; ArrowLab will not start a run without a real PC handshake.
 
@@ -36,8 +39,13 @@ The required order is:
 
 1. `ZERO BASE`
 2. `TARE`
-3. `CAL`
+3. `CAL` when calibration is required or deliberately being renewed
 4. one or more `LOAD TEST` runs
+
+The instruction line states the next operator action. The state line says what
+ArrowLab currently knows, and the progress bar shows acquisition or calibration
+settling. Timing details live here and under Help rather than competing with the
+next action on the working screen.
 
 ### 1. Zero baseline
 
@@ -58,6 +66,11 @@ If USB disconnects, leave ArrowLab powered. The run continues in RAM and is repl
 4. Wait for the 30-second stability gate.
 5. Press `CAL` when enabled.
 
+During the gate the screen counts down and shows progress. `CAL READY` means the
+button may be pressed. `CAL OK` and a green CAL button mean a factor is already
+stored. Normal Calibration remains independently available at any time; the
+diagnostic screen merely reuses the same tare and calibration routines.
+
 Calibration stores counts-per-gram for the selected channel in ESP32 non-volatile storage. It survives normal power cycles. A firmware version change deliberately invalidates it so the user must recalibrate; the other channel remains independent.
 
 The zero-baseline record and calibration factor are different things. A baseline characterises drift. Calibration converts counts to grams.
@@ -72,12 +85,6 @@ The zero-baseline record and calibration factor are different things. A baseline
 6. Remove the load and repeat for any further masses.
 
 Recommended first evidence set per channel is the mandatory 0 g baseline, an approximately 20 g arrow-range run and an approximately 1000 g run. The 1806 g engineering reference may then be used if the platform is stable and the total physical load remains within the 2 kg channel capacity.
-
-## Existing baseline migration
-
-`USE CSV` is a deliberate migration control for a baseline captured by the older logger.
-
-Use it only when the selected side's original CSV is retained and contains a completed 30-minute zero run. ArrowLab records the operator's confirmation as `BASE OK`; it does not parse the old CSV and it does not create or import a calibration factor. If there is any doubt, run a fresh baseline.
 
 ## Resetting one channel
 
@@ -102,4 +109,7 @@ Use it only when the selected side's original CSV is retained and contains a com
 
 ## Analysis boundary
 
-Firmware performs disciplined acquisition and loss detection, not speculative creep compensation. Compensation will be chosen only after the preserved datasets are graphed and quantitatively compared for zero drift, load creep, mass dependence, side-to-side behaviour and repeatability.
+Firmware preserves unsmoothed diagnostic evidence. Operational readings use a
+small robust filter, but no fixed time-based creep correction is applied because
+the observed drift changes both magnitude and direction between runs. See
+`docs/Creep_Data_Analysis.md` for the evidence and resulting measurement policy.

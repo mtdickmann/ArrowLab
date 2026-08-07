@@ -33,6 +33,7 @@ public:
     const char *name() const;
     long rawValue() const;
     long zeroedValue() const;
+    long filteredZeroedValue() const;
     bool tareComplete() const;
     bool userTareConfirmed() const;
     bool calibrationReady(
@@ -53,6 +54,7 @@ public:
     float calibrationFactor() const;
     float calibrationReferenceGrams() const;
     float grams() const;
+    float rawGrams() const;
     void restoreCalibration(float factor, float referenceGrams);
     void clearCalibration();
 
@@ -60,9 +62,11 @@ private:
     static constexpr uint8_t TARE_SAMPLE_COUNT = 20;
     static constexpr uint8_t CALIBRATION_SAMPLE_COUNT = 20;
     static constexpr uint8_t CALIBRATION_LOAD_CONFIRM_SAMPLES = 5;
+    static constexpr uint8_t FILTER_SAMPLE_COUNT = 15;
 
     void startTare(bool confirmAsUserTare);
     void updateTare();
+    void updateMeasurementFilter();
     void updateCalibration();
 
     HX711 hx711_;
@@ -73,6 +77,10 @@ private:
     long rawValue_ = 0;
     long tareOffset_ = 0;
     long zeroedValue_ = 0;
+    long filteredZeroedValue_ = 0;
+    long filterSamples_[FILTER_SAMPLE_COUNT] = {};
+    uint8_t filterSampleCount_ = 0;
+    uint8_t filterWriteIndex_ = 0;
 
     int64_t tareAccumulator_ = 0;
     uint8_t tareSamples_ = 0;

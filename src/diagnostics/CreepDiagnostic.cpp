@@ -527,7 +527,9 @@ void CreepDiagnostic::captureSample(
     sample.elapsedMs = elapsed;
     sample.rawCount = sensor.rawValue();
     sample.zeroedCount = sensor.zeroedValue();
-    sample.calculatedGrams = sensor.grams();
+    // The operational/UI value is robustly filtered. Diagnostic evidence
+    // deliberately retains the unsmoothed conversion of this raw sample.
+    sample.calculatedGrams = sensor.rawGrams();
     sample.calibrationFactor = sensor.calibrationFactor();
 
     if (hostConnected(millis())) {

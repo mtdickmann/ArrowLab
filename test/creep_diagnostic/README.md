@@ -43,7 +43,9 @@ ESP32 Preferences stores calibration factor/reference/version and the baseline-c
 
 Calibration loads only when the stored firmware version matches `Version.h`; a firmware revision therefore requires recalibration. Baseline evidence may remain because it is a historical diagnostic record rather than a measurement conversion factor.
 
-`USE CSV` is an explicit operator migration for a retained, complete pre-v2 baseline CSV. It never invents calibration and must not be treated as automated file validation.
+Legacy CSV files remain external evidence only. Firmware does not claim to read
+or import a PC file, so there is no baseline-import bypass in the UI. A new or
+reset channel earns `BASE OK` only through a complete acknowledged run.
 
 ## Why active runs cannot pause
 

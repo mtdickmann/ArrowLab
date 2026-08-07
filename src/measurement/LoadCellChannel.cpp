@@ -44,6 +44,7 @@ bool LoadCellChannel::read(uint32_t currentTime)
     lastReadingTime_ = currentTime;
 
     updateTare();
+    updateMeasurementFilter();
     updateCalibration();
 
     if (!tareComplete_) {
@@ -93,6 +94,9 @@ void LoadCellChannel::startTare(bool confirmAsUserTare)
 {
     tareOffset_ = 0;
     zeroedValue_ = 0;
+    filteredZeroedValue_ = 0;
+    filterSampleCount_ = 0;
+    filterWriteIndex_ = 0;
     tareAccumulator_ = 0;
     tareSamples_ = 0;
     tareComplete_ = false;
@@ -229,6 +233,59 @@ void LoadCellChannel::updateTare()
     );
 }
 
+void LoadCellChannel::updateMeasurementFilter()
+{
+    if (!tareComplete_) {
+        return;
+    }
+
+    filterSamples_[filterWriteIndex_] = zeroedValue_;
+    filterWriteIndex_ = static_cast<uint8_t>(
+        (filterWriteIndex_ + 1) % FILTER_SAMPLE_COUNT
+    );
+
+    if (filterSampleCount_ < FILTER_SAMPLE_COUNT) {
+        filterSampleCount_++;
+    }
+
+    long ordered[FILTER_SAMPLE_COUNT];
+    for (uint8_t index = 0; index < filterSampleCount_; index++) {
+        ordered[index] = filterSamples_[index];
+    }
+
+    for (uint8_t index = 1; index < filterSampleCount_; index++) {
+        const long value = ordered[index];
+        uint8_t position = index;
+
+        while (position > 0 && ordered[position - 1] > value) {
+            ordered[position] = ordered[position - 1];
+            position--;
+        }
+
+        ordered[position] = value;
+    }
+
+    uint8_t trim = 0;
+    if (filterSampleCount_ >= FILTER_SAMPLE_COUNT) {
+        trim = 3;
+    } else if (filterSampleCount_ >= 9) {
+        trim = 2;
+    } else if (filterSampleCount_ >= 5) {
+        trim = 1;
+    }
+
+    int64_t accumulator = 0;
+    const uint8_t end = filterSampleCount_ - trim;
+    for (uint8_t index = trim; index < end; index++) {
+        accumulator += ordered[index];
+    }
+
+    const uint8_t retainedCount = end - trim;
+    filteredZeroedValue_ = static_cast<long>(
+        accumulator / retainedCount
+    );
+}
+
 void LoadCellChannel::updateCalibration()
 {
     if (
@@ -238,7 +295,7 @@ void LoadCellChannel::updateCalibration()
         return;
     }
 
-    calibrationAccumulator_ += zeroedValue_;
+    calibrationAccumulator_ += filteredZeroedValue_;
     calibrationSamples_++;
 
     if (
@@ -267,6 +324,8 @@ void LoadCellChannel::updateCalibration()
 
     calibrated_ = true;
     calibrationInProgress_ = false;
+    calibrationLoadDetectSamples_ = 0;
+    calibrationLoadDetectedTime_ = 0;
 
     Serial.printf(
         "%s calibration complete: %.3f counts/g "
@@ -291,6 +350,11 @@ long LoadCellChannel::rawValue() const
 long LoadCellChannel::zeroedValue() const
 {
     return zeroedValue_;
+}
+
+long LoadCellChannel::filteredZeroedValue() const
+{
+    return filteredZeroedValue_;
 }
 
 bool LoadCellChannel::tareComplete() const
@@ -418,6 +482,21 @@ void LoadCellChannel::clearCalibration()
 }
 
 float LoadCellChannel::grams() const
+{
+    if (
+        !calibrated_
+        || calibrationFactor_ == 0.0f
+    ) {
+        return 0.0f;
+    }
+
+    return (
+        static_cast<float>(filteredZeroedValue_)
+        / calibrationFactor_
+    );
+}
+
+float LoadCellChannel::rawGrams() const
 {
     if (
         !calibrated_

@@ -1,6 +1,9 @@
 # Calibration diagnostic data
 
 ArrowLab developer diagnostic CSV files are written here by tools/capture_creep.py.
+Automatic names include `LHS` or `RHS`, for example
+`creep_RHS_20260807_100313.csv`, so independent channels cannot be mistaken in
+the evidence folder.
 
 Generated `creep_*.csv` datasets are ignored by Git by default and remain on the acquisition PC.
 

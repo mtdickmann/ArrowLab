@@ -59,9 +59,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def default_output() -> Path:
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path("calibration") / "diagnostics" / f"creep_{stamp}.csv"
+def default_output(side: str, stamp: str) -> Path:
+    side_name = "LHS" if side == "LEFT" else "RHS"
+    return (
+        Path("calibration")
+        / "diagnostics"
+        / f"creep_{side_name}_{stamp}.csv"
+    )
 
 
 def send_line(device: serial.Serial, text: str) -> None:
@@ -83,180 +87,217 @@ def open_device(port: str, baud: int) -> serial.Serial:
 
 def main() -> int:
     args = parse_args()
-    output = args.output or default_output()
-    output.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output: Path | None = args.output
 
     print(f"ArrowLab creep logger v2: {args.port} @ {args.baud}")
-    print(f"CSV: {output}")
+    if output is None:
+        print("CSV: filename will be assigned from the first LHS/RHS run")
+    else:
+        print(f"CSV: {output}")
     print("Waiting for ArrowLab handshake. Ctrl+C closes the logger.")
 
     row_count = 0
     seen_samples: set[tuple[int, int, int]] = set()
     device: serial.Serial | None = None
     last_heartbeat = 0.0
+    csv_file = None
+    writer = None
+    active_side: str | None = None
 
-    with output.open("w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(CSV_HEADER)
-        csv_file.flush()
-
-        try:
-            while True:
-                if device is None:
-                    try:
-                        device = open_device(args.port, args.baud)
-                        last_heartbeat = time.monotonic()
-                        print("Serial connected; handshake sent.")
-                    except serial.SerialException as exc:
-                        print(
-                            f"Serial unavailable ({exc}); retrying in "
-                            f"{RECONNECT_DELAY_S:.0f}s...",
-                            file=sys.stderr,
-                        )
-                        time.sleep(RECONNECT_DELAY_S)
-                        continue
-
+    try:
+        while True:
+            if device is None:
                 try:
-                    now = time.monotonic()
-                    if now - last_heartbeat >= HEARTBEAT_INTERVAL_S:
-                        send_line(
-                            device,
-                            f"AL_HOST,HEARTBEAT,{PROTOCOL_VERSION}",
-                        )
-                        last_heartbeat = now
-
-                    raw_line = device.readline()
-                    if not raw_line:
-                        continue
-
-                    line = raw_line.decode(
-                        "utf-8",
-                        errors="replace",
-                    ).strip()
-
-                    if line == f"AL_DIAG,EVENT,HOST_READY,{PROTOCOL_VERSION}":
-                        print("ArrowLab confirms PC LOGGER CONNECTED.")
-                        continue
-
-                    if line.startswith("AL_DIAG,EVENT,"):
-                        print(line)
-
-                        if line.startswith("AL_DIAG,EVENT,REPLAY_END,"):
-                            parts = line.split(",")
-                            if len(parts) == 6:
-                                boot_id = int(parts[3])
-                                run_id = int(parts[4])
-                                expected = int(parts[5])
-                                captured = sum(
-                                    1
-                                    for key in seen_samples
-                                    if key[0] == boot_id and key[1] == run_id
-                                )
-
-                                if captured == expected:
-                                    csv_file.flush()
-                                    send_line(
-                                        device,
-                                        "AL_HOST,ACK,"
-                                        f"{boot_id},{run_id},{expected}",
-                                    )
-                                    print(
-                                        f"Run {run_id} verified and acknowledged: "
-                                        f"{expected} samples saved."
-                                    )
-                                else:
-                                    send_line(
-                                        device,
-                                        f"AL_HOST,REPLAY,{boot_id},{run_id}",
-                                    )
-                                    print(
-                                        f"Run {run_id} incomplete on PC "
-                                        f"({captured}/{expected}); replay requested."
-                                    )
-
-                        if line == "AL_DIAG,EVENT,SESSION_COMPLETE":
-                            print(
-                                f"Diagnostic session complete. "
-                                f"{row_count} unique data rows saved."
-                            )
-                            print(f"CSV: {output}")
-                            return 0
-
-                        continue
-
-                    if not line.startswith("AL_DIAG,DATA,"):
-                        continue
-
-                    parts = line.split(",")
-                    if len(parts) != 13:
-                        print(
-                            f"Ignored malformed diagnostic line: {line}",
-                            file=sys.stderr,
-                        )
-                        continue
-
-                    boot_id = int(parts[2])
-                    run_id = int(parts[3])
-                    sample_index = int(parts[4])
-                    sample_key = (boot_id, run_id, sample_index)
-
-                    if sample_key in seen_samples:
-                        continue
-
-                    writer.writerow(
-                        parts[2:]
-                        + [
-                            datetime.now(timezone.utc).isoformat(
-                                timespec="milliseconds"
-                            )
-                        ]
-                    )
-                    csv_file.flush()
-                    seen_samples.add(sample_key)
-                    row_count += 1
-
-                    side = parts[5]
-                    run_type = parts[6]
-                    mass = parts[7]
-                    elapsed_s = int(parts[8]) / 1000.0
-                    raw_count = parts[9]
-                    zeroed_count = parts[10]
-                    grams = parts[11]
-                    factor = float(parts[12])
-
-                    reading_text = (
-                        f"raw={raw_count} zeroed={zeroed_count} grams=UNCAL"
-                        if factor == 0.0
-                        else f"reading={grams} g"
-                    )
-
-                    print(
-                        f"#{row_count:04d} run={run_id} {side:5s} "
-                        f"{run_type:4s} {mass} g t={elapsed_s:7.1f}s "
-                        f"{reading_text}"
-                    )
-
+                    device = open_device(args.port, args.baud)
+                    last_heartbeat = time.monotonic()
+                    print("Serial connected; handshake sent.")
                 except serial.SerialException as exc:
                     print(
-                        f"Serial connection lost ({exc}). Run data remains "
-                        "buffered on ArrowLab; reconnecting...",
+                        f"Serial unavailable ({exc}); retrying in "
+                        f"{RECONNECT_DELAY_S:.0f}s...",
                         file=sys.stderr,
                     )
-                    try:
-                        device.close()
-                    except serial.SerialException:
-                        pass
-                    device = None
+                    time.sleep(RECONNECT_DELAY_S)
+                    continue
 
-        except KeyboardInterrupt:
-            print(
-                f"\nLogger closed cleanly. {row_count} unique data rows saved."
-            )
+            try:
+                now = time.monotonic()
+                if now - last_heartbeat >= HEARTBEAT_INTERVAL_S:
+                    send_line(
+                        device,
+                        f"AL_HOST,HEARTBEAT,{PROTOCOL_VERSION}",
+                    )
+                    last_heartbeat = now
+
+                raw_line = device.readline()
+                if not raw_line:
+                    continue
+
+                line = raw_line.decode(
+                    "utf-8",
+                    errors="replace",
+                ).strip()
+
+                if line == f"AL_DIAG,EVENT,HOST_READY,{PROTOCOL_VERSION}":
+                    print("ArrowLab confirms PC LOGGER CONNECTED.")
+                    continue
+
+                if line.startswith("AL_DIAG,EVENT,"):
+                    print(line)
+
+                    if line.startswith("AL_DIAG,EVENT,REPLAY_END,"):
+                        parts = line.split(",")
+                        if len(parts) == 6:
+                            boot_id = int(parts[3])
+                            run_id = int(parts[4])
+                            expected = int(parts[5])
+                            captured = sum(
+                                1
+                                for key in seen_samples
+                                if key[0] == boot_id and key[1] == run_id
+                            )
+
+                            if captured == expected:
+                                csv_file.flush()
+                                send_line(
+                                    device,
+                                    "AL_HOST,ACK,"
+                                    f"{boot_id},{run_id},{expected}",
+                                )
+                                print(
+                                    f"Run {run_id} verified and acknowledged: "
+                                    f"{expected} samples saved."
+                                )
+                            else:
+                                send_line(
+                                    device,
+                                    f"AL_HOST,REPLAY,{boot_id},{run_id}",
+                                )
+                                print(
+                                    f"Run {run_id} incomplete on PC "
+                                    f"({captured}/{expected}); replay requested."
+                                )
+
+                    if line == "AL_DIAG,EVENT,SESSION_COMPLETE":
+                        print(
+                            f"Diagnostic session complete. "
+                            f"{row_count} unique data rows saved."
+                        )
+                        if output is not None:
+                            print(f"CSV: {output}")
+                        return 0
+
+                    continue
+
+                if not line.startswith("AL_DIAG,DATA,"):
+                    continue
+
+                parts = line.split(",")
+                if len(parts) != 13:
+                    print(
+                        f"Ignored malformed diagnostic line: {line}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                boot_id = int(parts[2])
+                run_id = int(parts[3])
+                sample_index = int(parts[4])
+                sample_key = (boot_id, run_id, sample_index)
+                side = parts[5]
+
+                if side not in {"LEFT", "RIGHT"}:
+                    print(
+                        f"Ignored unknown diagnostic side: {side}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                if active_side is None:
+                    active_side = side
+                    if output is None:
+                        output = default_output(side, stamp)
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    csv_file = output.open(
+                        "w",
+                        newline="",
+                        encoding="utf-8",
+                    )
+                    writer = csv.writer(csv_file)
+                    writer.writerow(CSV_HEADER)
+                    csv_file.flush()
+                    print(f"CSV: {output}")
+                elif side != active_side:
+                    print(
+                        "Ignored opposite-side data. Close this logger "
+                        f"before starting {side}; this file is "
+                        f"{active_side}-only.",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                if sample_key in seen_samples:
+                    continue
+
+                assert writer is not None
+                assert csv_file is not None
+                writer.writerow(
+                    parts[2:]
+                    + [
+                        datetime.now(timezone.utc).isoformat(
+                            timespec="milliseconds"
+                        )
+                    ]
+                )
+                csv_file.flush()
+                seen_samples.add(sample_key)
+                row_count += 1
+
+                run_type = parts[6]
+                mass = parts[7]
+                elapsed_s = int(parts[8]) / 1000.0
+                raw_count = parts[9]
+                zeroed_count = parts[10]
+                grams = parts[11]
+                factor = float(parts[12])
+
+                reading_text = (
+                    f"raw={raw_count} zeroed={zeroed_count} grams=UNCAL"
+                    if factor == 0.0
+                    else f"reading={grams} g"
+                )
+
+                print(
+                    f"#{row_count:04d} run={run_id} {side:5s} "
+                    f"{run_type:4s} {mass} g t={elapsed_s:7.1f}s "
+                    f"{reading_text}"
+                )
+
+            except serial.SerialException as exc:
+                print(
+                    f"Serial connection lost ({exc}). Run data remains "
+                    "buffered on ArrowLab; reconnecting...",
+                    file=sys.stderr,
+                )
+                try:
+                    device.close()
+                except serial.SerialException:
+                    pass
+                device = None
+
+    except KeyboardInterrupt:
+        print(
+            f"\nLogger closed cleanly. {row_count} unique data rows saved."
+        )
+        if output is not None:
             print(f"CSV: {output}")
-            return 0
-        finally:
-            if device is not None:
-                device.close()
+        return 0
+    finally:
+        if csv_file is not None:
+            csv_file.close()
+        if device is not None:
+            device.close()
 
 
 if __name__ == "__main__":
