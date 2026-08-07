@@ -46,11 +46,11 @@ A new tare changes the temporary zero offset but does not erase a valid calibrat
 - Calibration factor is stored as signed counts per gram so either load-cell signal direction is supported.
 - After successful calibration the channel displays grams.
 - Re-taring does not invalidate the calibration factor.
-- Calibration factors are currently RAM-only and therefore lost on power cycle.
+- Calibration factors are persisted independently for Left and Right and restored after a normal power cycle when the firmware version matches.
 
-### Planned persistence rule
+### Persistence rule
 
-When persistent storage is implemented:
+Implemented behaviour:
 
 - Left and Right calibration factors are stored independently.
 - Calibration survives normal power off/on.
@@ -93,7 +93,7 @@ Status uses text and colour together. Colour is a quick visual cue, not the only
 - `CAL OK` / calibration-required state remains visible in text.
 - TARE and CAL buttons adopt the same orange/green status convention.
 
-At the current development stage, green CAL means a valid calibration in the current powered session. After persistent storage is implemented, green calibration status will mean the stored calibration is valid for the running firmware.
+Green CAL means the stored or newly completed calibration is valid for the running firmware version.
 
 ## Units
 
@@ -163,11 +163,11 @@ Developer and diagnostic facilities are intentionally absent from the normal use
 - The reveal mechanism is independent of firmware-version placement so a future About screen does not break service access.
 - Diagnostics remains a maintained engineering tool rather than a temporary calibration hack.
 
-## Planned creep diagnostic
+## Creep diagnostic rationale
 
 The purpose of the diagnostic is to measure creep before any compensation model is considered.
 
-Planned unattended acquisition:
+The original unattended-acquisition requirements were:
 
 - Run a zero-load baseline with only the normal fixed arrow-rest hardware.
 - Run five applied-mass datasets, with actual mass entered by the operator for every weight.
@@ -247,7 +247,7 @@ Implementation boundaries:
 - The normal measurement channel continues to own HX711 acquisition, tare and calibration maths.
 - The UI owns diagnostic navigation, side selection, numeric mass entry, confirmations and progress presentation.
 - tools/capture_creep.py owns host-side serial filtering and CSV creation.
-- test/creep_diagnostic/README.md owns the repeatable operator procedure.
+- docs/Creep_Diagnostic_Procedure.md owns the repeatable operator procedure; test/creep_diagnostic/README.md records design rationale.
 - calibration/diagnostics/ is the repository location for retained raw investigation datasets.
 
 Loaded diagnostic runs perform a fresh operational tare with the selected calibration platform fitted and the test mass removed. The entered mass is then applied. Five consecutive fresh samples above 2,000 zero-adjusted counts confirm the load and automatically start the 30-minute acquisition clock.
@@ -265,6 +265,29 @@ Network-delivered firmware update support is a project requirement, not an optio
 The current 16 MB flash partitioning provides two 6.25 MiB OTA application slots. Future update architecture must preserve safe dual-slot update/validation and rollback capability. Wi-Fi is the expected primary transport, including ordinary phone-hotspot connectivity when appropriate. Bluetooth/BLE may support provisioning or service workflows, but must not be assumed to provide general Internet tethering without a separately proven implementation.
 
 Stored calibration validity must remain tied to firmware version compatibility as documented above; a firmware update that changes the calibration compatibility version must force recalibration.
+
+## Diagnostic workflow and serial recovery revision (v0.1.1)
+
+Field testing exposed two design weaknesses in the first creep logger: the two channels were unnecessarily coupled by a both-baselines gate, and a PC/USB interruption could leave the operator unsure whether the final samples reached the CSV.
+
+The revised design treats Left and Right as independent instruments until a later measurement mode deliberately combines them:
+
+- Settings -> Diagnostics is a submenu so further developer tools can be added without overloading one screen.
+- The operator selects a channel before entering the creep workflow.
+- Baseline, calibration and reset state are stored per channel.
+- Replacing or resetting one channel does not invalidate the other.
+- The selected channel follows baseline -> deliberate platform tare -> calibration -> arbitrary loaded runs.
+- Existing calibration/tare routines are reused; diagnostics does not maintain competing measurement maths.
+
+The USB protocol now uses a host handshake and heartbeat. A run cannot start merely because the operator claims the logger is open. Firmware buffers all 62 samples in RAM, replays the full run at completion and waits for a PC acknowledgement containing boot ID, run ID and expected row count. Duplicate replay rows are removed by the PC using sample identity. A zero baseline becomes valid only after this acknowledgement.
+
+This recovery is intentionally bounded. Serial disconnection is recoverable while ArrowLab remains powered; a power loss destroys the RAM buffer. Another run cannot replace an unacknowledged buffer.
+
+Routine high-frequency raw serial output was removed because it competed with diagnostic protocol traffic and had no value in a disciplined CSV acquisition.
+
+Persistent storage now implements the previously planned rules. Counts-per-gram factor, reference mass and firmware version are stored independently for each channel. Version mismatch invalidates calibration. Baseline evidence is stored separately because it records a completed historical diagnostic rather than defining measurement conversion.
+
+`USE CSV` exists only as an explicit migration declaration for a retained, completed legacy zero-baseline file. Firmware does not parse that old file and the action never manufactures a calibration factor. This is deliberately visible and reversible with the selected-channel reset control.
 
 
 ### Diagnostic session rules
@@ -285,7 +308,7 @@ Approximately 50 g, 100 g, 250 g and 500 g runs remain available to fill informa
 
 Actual measured mass is entered for every loaded run.
 
-FINISH explicitly ends the current diagnostic session and emits an AL_DIAG SESSION_COMPLETE event. The PC capture tool treats that event as the clean end of the CSV acquisition. Starting a new diagnostic session requires new channel zero baselines.
+DONE explicitly ends the current PC capture session and emits an AL_DIAG SESSION_COMPLETE event. The PC capture tool treats that event as the clean end of the CSV acquisition. A previously acknowledged baseline remains stored for its channel until the operator resets that channel; a new CSV session alone does not erase it.
 
 Generated diagnostic CSV files are ignored by Git by default. A reviewed dataset chosen as permanent evidence may be force-added deliberately; ordinary trial acquisitions remain local and do not clutter source control.
 

@@ -46,14 +46,7 @@ bool LoadCellChannel::read(uint32_t currentTime)
     updateTare();
     updateCalibration();
 
-    if (tareComplete_) {
-        Serial.printf(
-            "%s raw: %ld  zeroed: %ld\n",
-            name_,
-            rawValue_,
-            zeroedValue_
-        );
-    } else {
+    if (!tareComplete_) {
         Serial.printf(
             "%s raw: %ld  taring: %u/%u\n",
             name_,
@@ -112,7 +105,11 @@ void LoadCellChannel::startTare(bool confirmAsUserTare)
     // erase an already established calibration factor.
     calibrationAccumulator_ = 0;
     calibrationSamples_ = 0;
-    calibrationReferenceGrams_ = 0.0f;
+    // A tare changes only the zero offset. An established counts/g
+    // calibration and its reference mass remain valid.
+    if (!calibrated_) {
+        calibrationReferenceGrams_ = 0.0f;
+    }
     calibrationInProgress_ = false;
 }
 
@@ -387,6 +384,37 @@ bool LoadCellChannel::calibrated() const
 float LoadCellChannel::calibrationFactor() const
 {
     return calibrationFactor_;
+}
+
+float LoadCellChannel::calibrationReferenceGrams() const
+{
+    return calibrationReferenceGrams_;
+}
+
+void LoadCellChannel::restoreCalibration(
+    float factor,
+    float referenceGrams
+)
+{
+    if (factor == 0.0f || referenceGrams <= 0.0f) {
+        clearCalibration();
+        return;
+    }
+
+    calibrationFactor_ = factor;
+    calibrationReferenceGrams_ = referenceGrams;
+    calibrated_ = true;
+    calibrationInProgress_ = false;
+}
+
+void LoadCellChannel::clearCalibration()
+{
+    calibrationAccumulator_ = 0;
+    calibrationSamples_ = 0;
+    calibrationReferenceGrams_ = 0.0f;
+    calibrationFactor_ = 0.0f;
+    calibrationInProgress_ = false;
+    calibrated_ = false;
 }
 
 float LoadCellChannel::grams() const

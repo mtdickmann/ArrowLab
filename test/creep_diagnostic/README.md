@@ -1,135 +1,62 @@
-# ArrowLab Creep Diagnostic
+# Creep Diagnostic Design Notes
 
-This developer test characterises time-under-load creep independently for the Left and Right load-cell/HX711 channels.
+This permanent developer diagnostic characterises each load-cell/HX711 channel independently. It is intentionally separate from normal spine, mass and FOC workflows.
 
-It is intentionally retained as a permanent service/development test.
+## State model
 
-## What is recorded
+For each channel ArrowLab persists two independent facts:
 
-Firmware emits one data row at t=0, an early reference row at t=10 seconds, and then every 30 seconds from t=30 seconds through 30 minutes.
+- baseline evidence captured and acknowledged;
+- valid counts-per-gram calibration for the current firmware version.
 
-Each normal completed run therefore contains 62 data rows. The dedicated 10-second sample is retained because it is an important early reference point in established load-cell creep procedures; the original 30-second cadence remains unchanged for the rest of the run.
+The operator chooses one channel before entering its workflow. A channel reset clears only that side. Calibration and baseline states are never inferred from the other side.
 
-Recorded fields:
+The acquisition engine moves through `WaitingForHost`, `Taring`, `AwaitingLoad` (loaded runs), `Running`, `AwaitingSave` and `Complete`. A load run is rejected unless the selected channel has both its baseline flag and calibration.
 
-- diagnostic run ID
-- side
-- operator-entered test mass in grams
-- firmware elapsed time in milliseconds
-- HX711 raw count
-- tare-adjusted/zeroed count
-- calculated grams when a calibration factor exists
-- active calibration factor
-- host UTC timestamp added by the capture tool
+## Sampling
 
-Run ID increments for every started run, including cancelled/retried runs, so repeated masses remain unambiguous in later analysis.
+Every completed run contains 62 samples:
 
-Raw and zeroed counts are the primary diagnostic evidence. Converted grams are supporting information.
+- t=0;
+- t=10 s;
+- t=30 s through t=1800 s in 30-second steps.
 
-The diagnostic does not recalibrate itself for each test mass.
+The early 10-second point supports comparison with established load-cell creep procedures. Firmware elapsed time is authoritative; host timestamps are supporting metadata.
 
-## Recommended campaign
+Recorded fields are boot ID, run ID, sample index, side, run type, entered mass, elapsed milliseconds, raw count, zeroed count, calculated grams, calibration factor and host UTC timestamp.
 
-Run the following independently on Left and Right:
+Raw and zeroed counts are the primary evidence. Gram conversion is supporting information. No run recalibrates itself and no creep correction is currently applied.
 
-1. Zero baseline: normal fixed arrow-rest hardware only; no calibration platform and no added mass.
-2. Approximately 20 g.
-3. Approximately 1000 g.
+## Reliable serial protocol (v2)
 
-Use the low and high loads as the first anchor points. Review those results before deciding whether approximately 50 g, 100 g, 250 g and 500 g intermediate runs are necessary.
+The PC sends `HELLO` and one-second heartbeats. Firmware refuses to start acquisition until a current handshake exists.
 
-For every loaded run, enter the actual measured mass rather than the nominal target above.
+All 62 samples are retained in ESP32 RAM. Live serial output is convenient but not trusted as the sole record. At completion firmware replays the entire buffered run. The PC deduplicates `(boot_id, run_id, sample_index)`, flushes the CSV and sends an ACK containing the expected sample count. Only that ACK changes a zero run to `BASE OK`.
 
-Complete the zero baseline on both Left and Right first. The firmware keeps SET MASS and LOAD TEST disabled until both baselines have completed; the diagnostic engine independently rejects a loaded run if either baseline is missing. A cancelled or incomplete zero run does not satisfy this gate.
+If the serial link fails, acquisition continues in RAM and the logger reconnects/replays. The buffer does not survive an ArrowLab power loss. Starting another run is blocked until the current buffer is acknowledged or deliberately cancelled.
 
-For the first characterisation campaign, perform calibration after both raw zero baselines and before the first loaded run. Each side must be deliberately tared again with the empty calibration platform fitted. The automatic diagnostic tare is isolated from calibration state and cannot satisfy this requirement. Calibration provides supporting gram conversion while raw and zeroed counts remain the primary creep evidence.
+Routine high-rate HX711 debug output is suppressed so it cannot starve protocol traffic.
 
-The permanent diagnostic does not require a hard-coded number of loaded masses. After the mandatory zero baselines, the operator may run as many or as few loaded datasets as the investigation requires.
+## Persistence and firmware changes
 
-## PC capture
+ESP32 Preferences stores calibration factor/reference/version and the baseline-complete flag under separate Left/Right keys.
 
-The firmware streams diagnostic records over the normal 115200-baud USB serial connection.
+Calibration loads only when the stored firmware version matches `Version.h`; a firmware revision therefore requires recalibration. Baseline evidence may remain because it is a historical diagnostic record rather than a measurement conversion factor.
 
-The capture script requires Python 3 plus `pyserial`.
+`USE CSV` is an explicit operator migration for a retained, complete pre-v2 baseline CSV. It never invents calibration and must not be treated as automated file validation.
 
-### Preferred development-PC interpreter
+## Why active runs cannot pause
 
-PlatformIO installs and manages its own Python environment. On the normal Windows ArrowLab development PC, use that interpreter instead of requiring a second global Python installation.
+Creep continues while load remains applied. Pausing acquisition would create an unmeasured interval and a misleading time axis. `CANCEL` invalidates the active run; recovery is a full restart. Waiting between complete runs is unrestricted.
 
-Verify Python and `pyserial`:
+## First-characterisation campaign
 
-    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" --version
-    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" -c "import serial; print(serial.__version__)"
+For each side:
 
-From the ArrowLab repository root:
+1. mandatory bare-rest zero baseline;
+2. deliberate platform tare and calibration;
+3. approximately 20 g load;
+4. approximately 1000 g load;
+5. optional approximately 1800 g engineering reference if mechanically stable and within capacity.
 
-    "%USERPROFILE%\.platformio\penv\Scripts\python.exe" tools\capture_creep.py COM7
-
-Replace COM7 with the display's actual serial port.
-
-### Standalone PC / missing interpreter
-
-If the PlatformIO environment is expected but `penv\Scripts\python.exe` is missing, repair/reinstall PlatformIO.
-
-If the diagnostic capture PC intentionally does not have PlatformIO, install current Python for Windows with the official Python Install Manager from https://www.python.org/downloads/ or the Microsoft Store. Open a new terminal and run:
-
-    python --version
-    python -m pip install pyserial
-    python -c "import serial; print(serial.__version__)"
-    python tools\capture_creep.py COM7
-
-The Windows `py` launcher is not assumed by ArrowLab documentation; on a rebuilt PC it may be absent even when PlatformIO's private Python is present.
-
-The capture tool ignores ordinary firmware debug messages and writes only AL_DIAG data rows.
-
-By default CSV files are written to:
-
-    calibration/diagnostics/
-
-Generated `creep_*.csv` files are ignored by Git by default so routine acquisitions remain local. A reviewed dataset selected as permanent project evidence may be force-added deliberately rather than committing every trial automatically.
-
-Start the PC capture before starting the first run. It may remain open for the whole campaign and append all Left/Right runs into one timestamped CSV. Use FINISH on ArrowLab after the desired datasets are complete; the SESSION_COMPLETE event closes the host capture cleanly. Ctrl+C remains available as a manual stop.
-
-Do not have PlatformIO Serial Monitor open on the same COM port while the capture tool is running. Only one process should own the port.
-
-## Zero baseline UI sequence
-
-1. Reveal Developer mode.
-2. Settings -> Diagnostics.
-3. Explicitly select Left or Right. No diagnostic run may begin from an implicit/default side.
-4. Remove calibration platform and all added weight so only the normal fixed arrow-rest hardware remains.
-5. Press START ZERO.
-6. Confirm START.
-7. ArrowLab performs a fresh tare.
-8. Logging begins automatically after tare completes.
-9. Leave the instrument untouched for 30 minutes.
-10. Repeat the zero baseline for the other side.
-11. Do not proceed to mass entry or loaded testing until both sides report their zero baseline complete.
-
-## Loaded UI sequence
-
-1. Select Left or Right.
-2. Press SET MASS and enter the actual mass in grams.
-3. Fit the calibration platform to the selected side.
-4. Keep the test weight OFF the platform.
-5. Press START LOAD and confirm START.
-6. ArrowLab performs a fresh tare with the empty platform fitted.
-7. When the screen asks for the weight, place the entered mass centrally on the platform.
-8. ArrowLab requires five consecutive fresh samples above the diagnostic load threshold.
-9. The 30-minute clock and logging start automatically when the load is confirmed.
-10. Leave the jig untouched until RUN COMPLETE.
-11. Remove the weight and prepare the next run.
-
-## Diagnostic load trigger
-
-Loaded diagnostic runs currently use a 2,000-count zero-adjusted trigger and require five consecutive fresh samples.
-
-This threshold is separate from the much higher calibration-reference trigger. It exists so the approximately 20 g diagnostic mass can start a run while remaining comfortably above the observed approximately +/-200-count zero noise.
-
-## Test discipline
-
-- Do not touch the jig during an active run.
-- Keep environmental conditions as consistent as practical.
-- Record unusual events separately if the bench is bumped, power changes, or a weight visibly moves.
-- Do not intentionally compensate, smooth or edit the raw dataset before analysis.
-- Preserve incomplete/failed runs when useful; they may still reveal recovery or handling behaviour.
+Intermediate masses are added only if the anchors show meaningful mass dependence. This is an engineering investigation, not accredited OIML conformity testing.

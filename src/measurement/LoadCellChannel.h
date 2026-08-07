@@ -51,7 +51,10 @@ public:
     bool calibrationInProgress() const;
     bool calibrated() const;
     float calibrationFactor() const;
+    float calibrationReferenceGrams() const;
     float grams() const;
+    void restoreCalibration(float factor, float referenceGrams);
+    void clearCalibration();
 
 private:
     static constexpr uint8_t TARE_SAMPLE_COUNT = 20;

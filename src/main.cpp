@@ -1,18 +1,21 @@
 /*
  * ArrowLab firmware
- * Development version 0.1
+ * Development firmware; version is defined only in Version.h.
  *
  * Dual HX711 zero-adjusted raw-count test
  */
 
 #include <Arduino.h>
+#include <cstdio>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
 
 #include "lvgl_v8_port.h"
 #include "measurement/LoadCellChannel.h"
 #include "diagnostics/CreepDiagnostic.h"
+#include "storage/InstrumentStorage.h"
 #include "ui/ui.h"
+#include "Version.h"
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -47,6 +50,7 @@ namespace
     LoadCellChannel leftSensor("Left", 13, 10);
     LoadCellChannel rightSensor("Right", 11, 12);
     CreepDiagnostic creepDiagnostic;
+    InstrumentStorage instrumentStorage;
 
     Board *displayBoard = nullptr;
 
@@ -62,6 +66,24 @@ namespace
         ArrowLabUI::LoadSide::Left;
     float diagnosticRequestedMassGrams = 0.0f;
     bool diagnosticRequestedZeroBaseline = false;
+    volatile bool diagnosticImportBaselineRequested = false;
+    volatile bool diagnosticResetChannelRequested = false;
+    ArrowLabUI::LoadSide diagnosticMaintenanceSide =
+        ArrowLabUI::LoadSide::Left;
+    bool leftCalibrationStored = false;
+    bool rightCalibrationStored = false;
+    bool leftBaselineStored = false;
+    bool rightBaselineStored = false;
+
+    char serialLine[128];
+    size_t serialLineLength = 0;
+
+    StoredLoadSide storedSide(ArrowLabUI::LoadSide side)
+    {
+        return side == ArrowLabUI::LoadSide::Left
+            ? StoredLoadSide::Left
+            : StoredLoadSide::Right;
+    }
 
     void requestTare(ArrowLabUI::LoadSide side)
     {
@@ -102,6 +124,47 @@ namespace
         diagnosticFinishRequested = true;
     }
 
+    void requestDiagnosticImportBaseline(ArrowLabUI::LoadSide side)
+    {
+        diagnosticMaintenanceSide = side;
+        diagnosticImportBaselineRequested = true;
+    }
+
+    void requestDiagnosticResetChannel(ArrowLabUI::LoadSide side)
+    {
+        diagnosticMaintenanceSide = side;
+        diagnosticResetChannelRequested = true;
+    }
+
+    void processSerialInput(uint32_t currentTime)
+    {
+        while (Serial.available() > 0) {
+            const char value = static_cast<char>(Serial.read());
+
+            if (value == '\r') {
+                continue;
+            }
+
+            if (value == '\n') {
+                if (serialLineLength > 0) {
+                    serialLine[serialLineLength] = '\0';
+                    creepDiagnostic.handleHostCommand(
+                        serialLine,
+                        currentTime
+                    );
+                    serialLineLength = 0;
+                }
+                continue;
+            }
+
+            if (serialLineLength < sizeof(serialLine) - 1) {
+                serialLine[serialLineLength++] = value;
+            } else {
+                serialLineLength = 0;
+            }
+        }
+    }
+
     void startRequestedTares()
     {
         if (leftTareRequested) {
@@ -136,6 +199,7 @@ namespace
                     CALIBRATION_SETTLE_TIME_MS
                 )
             ) {
+                leftCalibrationStored = false;
                 Serial.println(
                     "LEFT calibration confirmed"
                 );
@@ -153,6 +217,7 @@ namespace
                     CALIBRATION_SETTLE_TIME_MS
                 )
             ) {
+                rightCalibrationStored = false;
                 Serial.println(
                     "RIGHT calibration confirmed"
                 );
@@ -160,8 +225,55 @@ namespace
         }
     }
 
-    void processDiagnosticRequests()
+    void processDiagnosticRequests(uint32_t currentTime)
     {
+        if (diagnosticImportBaselineRequested) {
+            diagnosticImportBaselineRequested = false;
+            const DiagnosticSide side =
+                diagnosticMaintenanceSide == ArrowLabUI::LoadSide::Left
+                    ? DiagnosticSide::Left
+                    : DiagnosticSide::Right;
+            creepDiagnostic.setBaselineCaptured(side, true);
+            instrumentStorage.setBaselineCaptured(
+                storedSide(diagnosticMaintenanceSide),
+                true
+            );
+            if (side == DiagnosticSide::Left) {
+                leftBaselineStored = true;
+            } else {
+                rightBaselineStored = true;
+            }
+            Serial.printf(
+                "AL_DIAG,EVENT,%s,BASELINE_IMPORTED\n",
+                side == DiagnosticSide::Left ? "LEFT" : "RIGHT"
+            );
+        }
+
+        if (diagnosticResetChannelRequested) {
+            diagnosticResetChannelRequested = false;
+            const DiagnosticSide side =
+                diagnosticMaintenanceSide == ArrowLabUI::LoadSide::Left
+                    ? DiagnosticSide::Left
+                    : DiagnosticSide::Right;
+            creepDiagnostic.setBaselineCaptured(side, false);
+            instrumentStorage.resetChannel(
+                storedSide(diagnosticMaintenanceSide)
+            );
+            if (side == DiagnosticSide::Left) {
+                leftSensor.clearCalibration();
+                leftCalibrationStored = false;
+                leftBaselineStored = false;
+            } else {
+                rightSensor.clearCalibration();
+                rightCalibrationStored = false;
+                rightBaselineStored = false;
+            }
+            Serial.printf(
+                "AL_DIAG,EVENT,%s,CHANNEL_STATE_RESET\n",
+                side == DiagnosticSide::Left ? "LEFT" : "RIGHT"
+            );
+        }
+
         if (diagnosticCancelRequested) {
             diagnosticCancelRequested = false;
             diagnosticStartRequested = false;
@@ -195,7 +307,8 @@ namespace
                 diagnosticRequestedMassGrams,
                 diagnosticRequestedZeroBaseline,
                 leftSensor,
-                rightSensor
+                rightSensor,
+                currentTime
             )) {
             Serial.println(
                 "AL_DIAG,EVENT,START_REJECTED"
@@ -277,11 +390,20 @@ namespace
                 ? "LEFT"
                 : "RIGHT";
         const bool diagnosticActive =
+            diagnosticState == CreepDiagnostic::State::WaitingForHost
+            ||
             diagnosticState == CreepDiagnostic::State::Taring
             || diagnosticState == CreepDiagnostic::State::AwaitingLoad
             || diagnosticState == CreepDiagnostic::State::Running;
 
         switch (diagnosticState) {
+        case CreepDiagnostic::State::WaitingForHost:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Start PC logger - waiting for handshake");
+            break;
+
         case CreepDiagnostic::State::Taring:
             snprintf(
                 diagnosticStatus,
@@ -315,11 +437,18 @@ namespace
             break;
         }
 
+        case CreepDiagnostic::State::AwaitingSave:
+            snprintf(
+                diagnosticStatus,
+                sizeof(diagnosticStatus),
+                "Run buffered - waiting for PC save ACK");
+            break;
+
         case CreepDiagnostic::State::Complete:
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Run complete - remove load / save CSV");
+                "Run saved - remove load / continue");
             break;
 
         case CreepDiagnostic::State::Idle:
@@ -327,7 +456,7 @@ namespace
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "Ready - start PC capture before run");
+                "Ready - choose ZERO BASE or LOAD TEST");
             break;
         }
 
@@ -335,12 +464,20 @@ namespace
             diagnosticStatus,
             creepDiagnostic.progressPercent(currentTime),
             diagnosticActive,
-            creepDiagnostic.zeroBaselineComplete(
-                DiagnosticSide::Left
-            ),
-            creepDiagnostic.zeroBaselineComplete(
-                DiagnosticSide::Right
-            )
+            creepDiagnostic.awaitingSave()
+        );
+        ArrowLabUI::setDiagnosticChannelState(
+            creepDiagnostic.baselineCaptured(DiagnosticSide::Left),
+            creepDiagnostic.baselineCaptured(DiagnosticSide::Right),
+            leftSensor.calibrated(),
+            rightSensor.calibrated(),
+            leftSensor.calibrationReady(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS),
+            rightSensor.calibrationReady(
+                currentTime,
+                CALIBRATION_SETTLE_TIME_MS),
+            creepDiagnostic.hostConnected(currentTime)
         );
 
         ArrowLabUI::setLeftReading(leftText);
@@ -505,7 +642,18 @@ namespace
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("ArrowLab v0.1 starting");
+    Serial.printf(
+        "%s v%u.%u.%u %s starting\n",
+        Version::PROJECT_NAME,
+        Version::MAJOR,
+        Version::MINOR,
+        Version::PATCH,
+        Version::STATUS
+    );
+
+    if (!instrumentStorage.begin()) {
+        Serial.println("WARNING: persistent instrument storage unavailable");
+    }
 
     displayBoard = new Board();
     displayBoard->init();
@@ -550,7 +698,9 @@ void setup()
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,
-        requestDiagnosticFinish
+        requestDiagnosticFinish,
+        requestDiagnosticImportBaseline,
+        requestDiagnosticResetChannel
     );
     ArrowLabUI::setCalibrationReferenceGrams(
         calibrationReferenceGrams
@@ -571,6 +721,39 @@ void setup()
     leftSensor.begin();
     rightSensor.begin();
 
+    StoredCalibration leftCalibration;
+    if (instrumentStorage.loadCalibration(
+            StoredLoadSide::Left,
+            leftCalibration)) {
+        leftSensor.restoreCalibration(
+            leftCalibration.factor,
+            leftCalibration.referenceGrams);
+        leftCalibrationStored = true;
+        Serial.println("Restored LEFT calibration from NVS");
+    }
+
+    StoredCalibration rightCalibration;
+    if (instrumentStorage.loadCalibration(
+            StoredLoadSide::Right,
+            rightCalibration)) {
+        rightSensor.restoreCalibration(
+            rightCalibration.factor,
+            rightCalibration.referenceGrams);
+        rightCalibrationStored = true;
+        Serial.println("Restored RIGHT calibration from NVS");
+    }
+
+    leftBaselineStored = instrumentStorage.baselineCaptured(
+        StoredLoadSide::Left);
+    rightBaselineStored = instrumentStorage.baselineCaptured(
+        StoredLoadSide::Right);
+    creepDiagnostic.setBaselineCaptured(
+        DiagnosticSide::Left,
+        leftBaselineStored);
+    creepDiagnostic.setBaselineCaptured(
+        DiagnosticSide::Right,
+        rightBaselineStored);
+
     Serial.println(
         "Dual HX711 initialization complete - starting independent tare"
     );
@@ -579,6 +762,10 @@ void setup()
 void loop()
 {
     const uint32_t now = millis();
+
+    // Serial commands must be serviced even between HX711 UI refreshes so
+    // heartbeat/ACK traffic cannot be starved by the 100 ms sensor cadence.
+    processSerialInput(now);
 
     if (
         now - lastSensorUpdate
@@ -608,8 +795,10 @@ void loop()
         diagnosticStartRequested
         || diagnosticCancelRequested
         || diagnosticFinishRequested
+        || diagnosticImportBaselineRequested
+        || diagnosticResetChannelRequested
     ) {
-        processDiagnosticRequests();
+        processDiagnosticRequests(now);
     }
 
     /*
@@ -639,6 +828,50 @@ void loop()
         leftSensor,
         rightSensor
     );
+
+    if (
+        leftSensor.calibrated()
+        && !leftSensor.calibrationInProgress()
+        && !leftCalibrationStored
+    ) {
+        leftCalibrationStored = instrumentStorage.saveCalibration(
+            StoredLoadSide::Left,
+            leftSensor.calibrationFactor(),
+            leftSensor.calibrationReferenceGrams());
+        if (leftCalibrationStored) {
+            Serial.println("Stored LEFT calibration in NVS");
+        }
+    }
+
+    if (
+        rightSensor.calibrated()
+        && !rightSensor.calibrationInProgress()
+        && !rightCalibrationStored
+    ) {
+        rightCalibrationStored = instrumentStorage.saveCalibration(
+            StoredLoadSide::Right,
+            rightSensor.calibrationFactor(),
+            rightSensor.calibrationReferenceGrams());
+        if (rightCalibrationStored) {
+            Serial.println("Stored RIGHT calibration in NVS");
+        }
+    }
+
+    const bool leftBaselineNow = creepDiagnostic.baselineCaptured(
+        DiagnosticSide::Left);
+    if (leftBaselineNow && !leftBaselineStored) {
+        leftBaselineStored = instrumentStorage.setBaselineCaptured(
+            StoredLoadSide::Left,
+            true);
+    }
+
+    const bool rightBaselineNow = creepDiagnostic.baselineCaptured(
+        DiagnosticSide::Right);
+    if (rightBaselineNow && !rightBaselineStored) {
+        rightBaselineStored = instrumentStorage.setBaselineCaptured(
+            StoredLoadSide::Right,
+            true);
+    }
 
     updateDisplay(now);
 

@@ -19,6 +19,8 @@ namespace ArrowLabUI
     );
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
+    using DiagnosticBaselineImportCallback = void (*)(LoadSide side);
+    using DiagnosticResetCallback = void (*)(LoadSide side);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -36,14 +38,24 @@ namespace ArrowLabUI
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
-        DiagnosticFinishCallback finishCallback
+        DiagnosticFinishCallback finishCallback,
+        DiagnosticBaselineImportCallback importCallback,
+        DiagnosticResetCallback resetCallback
     );
     void setDiagnosticStatus(
         const char *text,
         uint8_t progressPercent,
         bool active,
-        bool leftZeroBaselineComplete,
-        bool rightZeroBaselineComplete
+        bool awaitingSave
+    );
+    void setDiagnosticChannelState(
+        bool leftBaselineCaptured,
+        bool rightBaselineCaptured,
+        bool leftCalibrated,
+        bool rightCalibrated,
+        bool leftCalibrationReady,
+        bool rightCalibrationReady,
+        bool hostConnected
     );
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
     void setSensorHealth(bool leftLive, bool rightLive);
