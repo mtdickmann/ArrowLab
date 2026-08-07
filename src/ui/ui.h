@@ -10,21 +10,6 @@ namespace ArrowLabUI
         Right
     };
 
-    struct DiagnosticChannelState
-    {
-        bool baselineCaptured = false;
-        bool tareComplete = false;
-        bool tareInProgress = false;
-        bool userTareConfirmed = false;
-        bool calibrated = false;
-        bool calibrationSetupActive = false;
-        bool calibrationReady = false;
-        bool calibrationInProgress = false;
-        bool calibrationLoadDetected = false;
-        uint32_t settleRemainingSeconds = 0;
-        uint8_t settlePercent = 0;
-    };
-
     using TareCallback = void (*)(LoadSide side);
     using CalibrationCallback = void (*)(LoadSide side, float referenceGrams);
     using DiagnosticStartCallback = void (*)(
@@ -34,7 +19,6 @@ namespace ArrowLabUI
     );
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
-    using DiagnosticResetCallback = void (*)(LoadSide side);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -52,8 +36,7 @@ namespace ArrowLabUI
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
-        DiagnosticFinishCallback finishCallback,
-        DiagnosticResetCallback resetCallback
+        DiagnosticFinishCallback finishCallback
     );
     void setDiagnosticStatus(
         const char *text,
@@ -61,11 +44,7 @@ namespace ArrowLabUI
         bool active,
         bool awaitingSave
     );
-    void setDiagnosticChannelState(
-        const DiagnosticChannelState &left,
-        const DiagnosticChannelState &right,
-        bool hostConnected
-    );
+    void setDiagnosticHostConnected(bool hostConnected);
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
     void setSensorHealth(bool leftLive, bool rightLive);
 

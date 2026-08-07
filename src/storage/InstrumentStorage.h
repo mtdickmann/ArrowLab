@@ -32,10 +32,6 @@ public:
         float referenceGrams
     );
 
-    bool baselineCaptured(StoredLoadSide side);
-    bool setBaselineCaptured(StoredLoadSide side, bool captured);
-    void resetChannel(StoredLoadSide side);
-
 private:
     const char *key(
         StoredLoadSide side,

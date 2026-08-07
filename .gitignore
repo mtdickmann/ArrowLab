@@ -4,5 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 vendor/
+__pycache__/
+*.py[cod]
 calibration/diagnostics/creep_*.csv
 calibration/diagnostics/creep_*.xlsx

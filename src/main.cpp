@@ -7,12 +7,14 @@
  */
 
 #include <Arduino.h>
+#include <cassert>
 #include <cstdio>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
 
 #include "lvgl_v8_port.h"
 #include "measurement/LoadCellChannel.h"
+#include "measurement/MeasurementChannel.h"
 #include "calibration/CalibrationController.h"
 #include "diagnostics/CreepDiagnostic.h"
 #include "storage/InstrumentStorage.h"
@@ -40,11 +42,13 @@ namespace
      */
     LoadCellChannel leftSensor("Left", 13, 10);
     LoadCellChannel rightSensor("Right", 11, 12);
+    MeasurementChannel leftMeasurement;
+    MeasurementChannel rightMeasurement;
     CreepDiagnostic creepDiagnostic;
     InstrumentStorage instrumentStorage;
     CalibrationController calibrationController(
-        leftSensor,
-        rightSensor,
+        leftMeasurement,
+        rightMeasurement,
         instrumentStorage);
 
     Board *displayBoard = nullptr;
@@ -57,12 +61,6 @@ namespace
         ArrowLabUI::LoadSide::Left;
     float diagnosticRequestedMassGrams = 0.0f;
     bool diagnosticRequestedZeroBaseline = false;
-    volatile bool diagnosticResetChannelRequested = false;
-    ArrowLabUI::LoadSide diagnosticMaintenanceSide =
-        ArrowLabUI::LoadSide::Left;
-    bool leftBaselineStored = false;
-    bool rightBaselineStored = false;
-
     char serialLine[128];
     size_t serialLineLength = 0;
 
@@ -113,12 +111,6 @@ namespace
         diagnosticFinishRequested = true;
     }
 
-    void requestDiagnosticResetChannel(ArrowLabUI::LoadSide side)
-    {
-        diagnosticMaintenanceSide = side;
-        diagnosticResetChannelRequested = true;
-    }
-
     void processSerialInput(uint32_t currentTime)
     {
         while (Serial.available() > 0) {
@@ -150,26 +142,6 @@ namespace
 
     void processDiagnosticRequests(uint32_t currentTime)
     {
-        if (diagnosticResetChannelRequested) {
-            diagnosticResetChannelRequested = false;
-            const DiagnosticSide side =
-                diagnosticMaintenanceSide == ArrowLabUI::LoadSide::Left
-                    ? DiagnosticSide::Left
-                    : DiagnosticSide::Right;
-            creepDiagnostic.setBaselineCaptured(side, false);
-            calibrationController.resetChannel(
-                calibrationSide(diagnosticMaintenanceSide));
-            if (side == DiagnosticSide::Left) {
-                leftBaselineStored = false;
-            } else {
-                rightBaselineStored = false;
-            }
-            Serial.printf(
-                "AL_DIAG,EVENT,%s,CHANNEL_STATE_RESET\n",
-                side == DiagnosticSide::Left ? "LEFT" : "RIGHT"
-            );
-        }
-
         if (diagnosticCancelRequested) {
             diagnosticCancelRequested = false;
             diagnosticStartRequested = false;
@@ -202,8 +174,6 @@ namespace
                 side,
                 diagnosticRequestedMassGrams,
                 diagnosticRequestedZeroBaseline,
-                leftSensor,
-                rightSensor,
                 currentTime
             )) {
             Serial.println(
@@ -215,7 +185,7 @@ namespace
     void formatReading(
         char *buffer,
         size_t bufferSize,
-        const LoadCellChannel &sensor,
+        const MeasurementChannel &measurement,
         bool live
     )
     {
@@ -224,17 +194,17 @@ namespace
             return;
         }
 
-        if (!sensor.tareComplete()) {
+        if (!measurement.tareComplete()) {
             snprintf(buffer, bufferSize, "TARE");
             return;
         }
 
-        if (sensor.calibrated()) {
+        if (measurement.calibrated()) {
             snprintf(
                 buffer,
                 bufferSize,
                 "%.1f",
-                sensor.grams()
+                measurement.heldGrams()
             );
             return;
         }
@@ -243,7 +213,7 @@ namespace
             buffer,
             bufferSize,
             "%ld",
-            sensor.filteredZeroedValue()
+            measurement.heldRawCounts()
         );
     }
 
@@ -261,14 +231,14 @@ namespace
         formatReading(
             leftText,
             sizeof(leftText),
-            leftSensor,
+            leftMeasurement,
             leftLive
         );
 
         formatReading(
             rightText,
             sizeof(rightText),
-            rightSensor,
+            rightMeasurement,
             rightLive
         );
 
@@ -303,7 +273,7 @@ namespace
         const bool diagnosticActive =
             diagnosticState == CreepDiagnostic::State::WaitingForHost
             ||
-            diagnosticState == CreepDiagnostic::State::Taring
+            diagnosticState == CreepDiagnostic::State::CapturingReference
             || diagnosticState == CreepDiagnostic::State::AwaitingLoad
             || diagnosticState == CreepDiagnostic::State::Running;
 
@@ -315,11 +285,11 @@ namespace
                 "NEXT: Start PC logger and wait for CONNECTED");
             break;
 
-        case CreepDiagnostic::State::Taring:
+        case CreepDiagnostic::State::CapturingReference:
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "WAIT: Taring %s - keep setup stable",
+                "WAIT: Capturing %s raw reference",
                 diagnosticSideText);
             break;
 
@@ -374,83 +344,35 @@ namespace
             diagnosticActive,
             creepDiagnostic.awaitingSave()
         );
-        ArrowLabUI::DiagnosticChannelState leftDiagnosticState;
-        leftDiagnosticState.baselineCaptured =
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Left);
-        leftDiagnosticState.tareComplete = leftSensor.tareComplete();
-        leftDiagnosticState.tareInProgress =
-            leftCalibration.stage == CalibrationController::Stage::Taring;
-        leftDiagnosticState.userTareConfirmed =
-            leftSensor.userTareConfirmed();
-        leftDiagnosticState.calibrated = leftSensor.calibrated();
-        leftDiagnosticState.calibrationSetupActive =
-            setupActive(leftCalibration.stage);
-        leftDiagnosticState.calibrationReady =
-            leftCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate;
-        leftDiagnosticState.calibrationInProgress =
-            calibrationBusy(leftCalibration.stage);
-        leftDiagnosticState.calibrationLoadDetected =
-            leftSensor.calibrationLoadDetected();
-        leftDiagnosticState.settleRemainingSeconds =
-            leftCalibration.settleRemainingSeconds;
-        leftDiagnosticState.settlePercent =
-            leftCalibration.settlePercent;
-
-        ArrowLabUI::DiagnosticChannelState rightDiagnosticState;
-        rightDiagnosticState.baselineCaptured =
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Right);
-        rightDiagnosticState.tareComplete = rightSensor.tareComplete();
-        rightDiagnosticState.tareInProgress =
-            rightCalibration.stage == CalibrationController::Stage::Taring;
-        rightDiagnosticState.userTareConfirmed =
-            rightSensor.userTareConfirmed();
-        rightDiagnosticState.calibrated = rightSensor.calibrated();
-        rightDiagnosticState.calibrationSetupActive =
-            setupActive(rightCalibration.stage);
-        rightDiagnosticState.calibrationReady =
-            rightCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate;
-        rightDiagnosticState.calibrationInProgress =
-            calibrationBusy(rightCalibration.stage);
-        rightDiagnosticState.calibrationLoadDetected =
-            rightSensor.calibrationLoadDetected();
-        rightDiagnosticState.settleRemainingSeconds =
-            rightCalibration.settleRemainingSeconds;
-        rightDiagnosticState.settlePercent =
-            rightCalibration.settlePercent;
-
-        ArrowLabUI::setDiagnosticChannelState(
-            leftDiagnosticState,
-            rightDiagnosticState,
+        ArrowLabUI::setDiagnosticHostConnected(
             creepDiagnostic.hostConnected(currentTime));
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
         ArrowLabUI::setSensorHealth(leftLive, rightLive);
         ArrowLabUI::setCalibrationValidity(
-            leftSensor.calibrated(),
-            rightSensor.calibrated()
+            leftMeasurement.calibrated(),
+            rightMeasurement.calibrated()
         );
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
-            leftSensor.calibrated() ? "g" : "RAW"
+            leftMeasurement.calibrated() ? "g" : "RAW"
         );
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Right,
-            rightSensor.calibrated() ? "g" : "RAW"
+            rightMeasurement.calibrated() ? "g" : "RAW"
         );
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
-            leftSensor.tareComplete(),
+            leftMeasurement.tareComplete(),
             leftCalibration.stage == CalibrationController::Stage::Taring,
-            leftSensor.userTareConfirmed(),
+            leftMeasurement.userTareConfirmed(),
             leftCalibration.stage
                 == CalibrationController::Stage::ReadyToCalibrate,
             calibrationBusy(leftCalibration.stage),
-            leftSensor.calibrated(),
+            leftMeasurement.calibrated(),
             setupActive(leftCalibration.stage),
             leftCalibration.settleRemainingSeconds,
             leftCalibration.settlePercent
@@ -458,13 +380,13 @@ namespace
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Right,
-            rightSensor.tareComplete(),
+            rightMeasurement.tareComplete(),
             rightCalibration.stage == CalibrationController::Stage::Taring,
-            rightSensor.userTareConfirmed(),
+            rightMeasurement.userTareConfirmed(),
             rightCalibration.stage
                 == CalibrationController::Stage::ReadyToCalibrate,
             calibrationBusy(rightCalibration.stage),
-            rightSensor.calibrated(),
+            rightMeasurement.calibrated(),
             setupActive(rightCalibration.stage),
             rightCalibration.settleRemainingSeconds,
             rightCalibration.settlePercent
@@ -530,21 +452,21 @@ namespace
                 ArrowLabUI::setStatus(
                     "NEXT: Press RIGHT CAL to start 30 s stabilization");
             } else if (
-                leftSensor.calibrated()
-                && rightSensor.calibrated()
+                leftMeasurement.calibrated()
+                && rightMeasurement.calibrated()
             ) {
                 ArrowLabUI::setStatus(
                     "Both load channels calibrated"
                 );
             } else if (
-                leftSensor.userTareConfirmed()
-                && rightSensor.userTareConfirmed()
+                leftMeasurement.userTareConfirmed()
+                && rightMeasurement.userTareConfirmed()
             ) {
-                if (leftSensor.calibrated()) {
+                if (leftMeasurement.calibrated()) {
                     ArrowLabUI::setStatus(
                         "Calibrate RIGHT with reference weight"
                     );
-                } else if (rightSensor.calibrated()) {
+                } else if (rightMeasurement.calibrated()) {
                     ArrowLabUI::setStatus(
                         "Calibrate LEFT with reference weight"
                     );
@@ -553,11 +475,11 @@ namespace
                         "Both loads ready for calibration"
                     );
                 }
-            } else if (leftSensor.userTareConfirmed()) {
+            } else if (leftMeasurement.userTareConfirmed()) {
                 ArrowLabUI::setStatus(
                     "Tare RIGHT before calibration"
                 );
-            } else if (rightSensor.userTareConfirmed()) {
+            } else if (rightMeasurement.userTareConfirmed()) {
                 ArrowLabUI::setStatus(
                     "Tare LEFT before calibration"
                 );
@@ -663,8 +585,7 @@ void setup()
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,
-        requestDiagnosticFinish,
-        requestDiagnosticResetChannel
+        requestDiagnosticFinish
     );
     ArrowLabUI::setCalibrationReferenceGrams(
         calibrationReferenceGrams
@@ -686,19 +607,8 @@ void setup()
     rightSensor.begin();
     calibrationController.begin();
 
-    leftBaselineStored = instrumentStorage.baselineCaptured(
-        StoredLoadSide::Left);
-    rightBaselineStored = instrumentStorage.baselineCaptured(
-        StoredLoadSide::Right);
-    creepDiagnostic.setBaselineCaptured(
-        DiagnosticSide::Left,
-        leftBaselineStored);
-    creepDiagnostic.setBaselineCaptured(
-        DiagnosticSide::Right,
-        rightBaselineStored);
-
     Serial.println(
-        "Dual HX711 initialization complete - starting independent tare"
+        "Dual HX711 initialization complete - awaiting deliberate tare"
     );
 }
 
@@ -724,7 +634,6 @@ void loop()
         diagnosticStartRequested
         || diagnosticCancelRequested
         || diagnosticFinishRequested
-        || diagnosticResetChannelRequested
     ) {
         processDiagnosticRequests(now);
     }
@@ -736,12 +645,14 @@ void loop()
     const bool leftFresh = leftSensor.read(now);
 
     if (leftFresh) {
+        leftMeasurement.onRawSample(leftSensor.rawValue(), now);
         calibrationController.onFreshReading(CalibrationSide::Left);
     }
 
     const bool rightFresh = rightSensor.read(now);
 
     if (rightFresh) {
+        rightMeasurement.onRawSample(rightSensor.rawValue(), now);
         calibrationController.onFreshReading(CalibrationSide::Right);
     }
 
@@ -754,22 +665,6 @@ void loop()
         leftSensor,
         rightSensor
     );
-
-    const bool leftBaselineNow = creepDiagnostic.baselineCaptured(
-        DiagnosticSide::Left);
-    if (leftBaselineNow && !leftBaselineStored) {
-        leftBaselineStored = instrumentStorage.setBaselineCaptured(
-            StoredLoadSide::Left,
-            true);
-    }
-
-    const bool rightBaselineNow = creepDiagnostic.baselineCaptured(
-        DiagnosticSide::Right);
-    if (rightBaselineNow && !rightBaselineStored) {
-        rightBaselineStored = instrumentStorage.setBaselineCaptured(
-            StoredLoadSide::Right,
-            true);
-    }
 
     updateDisplay(now);
 

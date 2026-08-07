@@ -4,14 +4,21 @@
 2026-08-06
 
 ## Status
-Calibration is implemented and under hardware validation. Both HX711/load-cell channels have repeatedly calibrated independently and produced consistent converted gram readings.
+Calibration is implemented. The v0.2 event-based measurement core is under
+hardware validation. Earlier sections in this log describe the path to that
+decision; where they conflict with the final v0.2 section, the final section
+supersedes them.
 
 Spine calculations must not be added until calibration, repeatability, drift and measurement timing are considered reliable.
 
 ## Measurement architecture
 
 - `main.cpp` is the top-level coordinator. It does not own HX711 acquisition, tare maths or calibration maths.
-- `src/measurement/LoadCellChannel.*` owns the state and behaviour of one HX711/load-cell channel.
+- `src/measurement/LoadCellChannel.*` owns only one raw HX711 signal path.
+- `src/measurement/MeasurementChannel.*` owns operational tare, raw tracking,
+  change acquisition and the held result.
+- `src/calibration/CalibrationController.*` is the sole owner of calibration
+  workflow and K calculation.
 - Left and Right are independent channels with independent tare state and calibration factors.
 - The UI presents state and raises user actions; measurement maths does not belong in the UI.
 - Future measurement modes such as spine, whole-arrow mass and FOC will consume calibrated Left/Right loads rather than accessing HX711 hardware directly.
@@ -243,26 +250,28 @@ Load-cell health is an instrument-level condition, not a page-local condition.
 Developer reveal is also explicitly timed by ArrowLab rather than relying on the touch stack's long-press event classification. Press duration is measured from press to release and must reach 2000 ms. Normal short taps have no developer-mode action.
 
 
-## Implemented creep diagnostic facility
+## Initial creep diagnostic facility (historical; superseded by v0.2.0)
 
 A hidden developer creep logger is now part of the maintained firmware rather than a disposable test build.
 
 Implementation boundaries:
 
 - src/diagnostics/CreepDiagnostic.* owns acquisition timing and serial diagnostic records.
-- The normal measurement channel continues to own HX711 acquisition, tare and calibration maths.
+- The then-current measurement channel owned HX711 acquisition, tare and
+  calibration maths.
 - The UI owns diagnostic navigation, side selection, numeric mass entry, confirmations and progress presentation.
 - tools/capture_creep.py owns host-side serial filtering and CSV creation.
 - docs/Creep_Diagnostic_Procedure.md owns the repeatable operator procedure; test/creep_diagnostic/README.md records design rationale.
 - calibration/diagnostics/ is the repository location for retained raw investigation datasets.
 
-Loaded diagnostic runs perform a fresh operational tare with the selected calibration platform fitted and the test mass removed. The entered mass is then applied. Five consecutive fresh samples above 2,000 zero-adjusted counts confirm the load and automatically start the 30-minute acquisition clock.
+The initial implementation performed a fresh operational tare for each run.
 
-Zero-baseline runs use only the normal fixed arrow-rest hardware and begin automatically after their fresh tare completes.
+Zero-baseline runs used only the normal fixed arrow-rest hardware.
 
 Each completed run emits samples at t=0 and t=10 seconds, followed by one sample every 30 seconds from t=30 seconds through 30 minutes, for 62 expected rows. The dedicated 10-second point captures the important initial creep reference without changing the established 30-second cadence for the remainder of the campaign.
 
-The CSV record preserves raw counts, zero-adjusted counts, calculated grams and the active calibration factor. The diagnostic never recalibrates itself for each mass.
+The initial CSV included operational zero and grams. Protocol v3 removes those
+fields and uses a private raw reference instead.
 
 ## Firmware update requirement
 
@@ -272,7 +281,7 @@ The current 16 MB flash partitioning provides two 6.25 MiB OTA application slots
 
 Stored calibration validity must remain tied to firmware version compatibility as documented above; a firmware update that changes the calibration compatibility version must force recalibration.
 
-## Diagnostic workflow and serial recovery revision (v0.1.1)
+## Diagnostic workflow and serial recovery revision (v0.1.1 — historical)
 
 Field testing exposed two design weaknesses in the first creep logger: the two channels were unnecessarily coupled by a both-baselines gate, and a PC/USB interruption could leave the operator unsure whether the final samples reached the CSV.
 
@@ -299,7 +308,7 @@ PC file and the control therefore implied authority it did not possess. A new
 or reset channel earns `BASE OK` only after a complete run is acknowledged by
 the logger.
 
-## Creep evidence decision (v0.1.2)
+## Creep evidence decision (v0.1.2 — superseded by v0.2.0)
 
 The retained campaign data shows short-term residual noise near 0.03-0.05 g,
 approximately 0.16-0.29 g movement over some 30-minute loaded runs, and drift
@@ -330,7 +339,7 @@ the same channel tare/calibration primitives, but diagnostic baseline state
 does not block a normal recalibration and normal calibration does not fabricate
 baseline evidence.
 
-## Diagnostic UI convention (v0.1.2)
+## Diagnostic UI convention (v0.1.2 — layout retained, gating superseded)
 
 - the persistent header names the current page/tool;
 - the compact state line reports selected side, BASE, TARE and CAL state;
@@ -344,7 +353,7 @@ baseline evidence.
   only one selected channel.
 
 
-### Diagnostic session rules
+### Historical diagnostic session rules (superseded by protocol v3)
 
 The creep diagnostic requires an explicit channel selection; there is no implicit/default Left or Right run.
 
@@ -411,3 +420,64 @@ Left and Right remain independent. Completing one side never navigates away from
 the Calibration screen; if the other side still needs attention, the next-action
 message continues to guide the user there. Global calibration validity becomes OK
 only when both stored channel factors are valid.
+
+## Event-based measurement core (v0.2.0 — superseding decision)
+
+The v0.1 live-conversion/filter approach is replaced for operational weighing.
+The retained UI, menu structure, calibration interaction, persistence and
+hardware pin mapping are unchanged.
+
+Ownership is now deliberately narrow:
+
+- `LoadCellChannel` reads one HX711 and reports signed raw conversions only;
+- `MeasurementChannel` owns temporary zero, slow raw tracking, load-change
+  detection, robust acquisition and the held display result;
+- `CalibrationController` owns the single 30-second known-mass workflow,
+  calculates signed counts-per-gram K and persists it;
+- `CreepDiagnostic` logs absolute raw/reference/delta evidence and cannot change
+  operational tare or K;
+- `main.cpp` coordinates those modules and does not implement alternative
+  measurement maths.
+
+The operational convention is:
+
+1. Every power-up requires deliberate TARE before weighing. TARE averages 20
+   fresh conversions and declares the complete current physical setup to be
+   zero. It does not erase K.
+2. K persists independently for Left and Right across ordinary power cycles.
+   The v0.2.0 compatibility bump deliberately invalidates older stored factors.
+3. While the load is physically unchanged, a private slow raw tracker follows
+   creep/drift and the accepted display remains fixed.
+4. Four consecutive fresh samples beyond the provisional 300-count threshold
+   freeze the pre-change tracker.
+5. The new state is robustly averaged after at least two stable seconds, with a
+   hard ten-second maximum. Only its raw difference from the frozen reference is
+   converted through K and added to the held result.
+6. Removal is handled as a negative event. A small return residual is clamped to
+   zero within the provisional larger of 0.5 g or 0.2% of the preceding held
+   load.
+
+This is a sample-and-hold measurement, not presentation-only smoothing and not
+unrestricted auto-zero. Tracking stops at the start of a candidate step, so a
+real static small mass is retained rather than absorbed. The accepted displayed
+mass does not wander merely because the cell creeps while nothing physically
+changes.
+
+Calibration anchors the held result to the entered known mass when the 30-second
+workflow completes. Ordinary readings then use the persistent K and the
+event-based maximum-ten-second acquisition. The separate time intervals are
+intentional: one establishes K repeatably; the other keeps normal operation
+responsive.
+
+The earlier diagnostic prerequisite chain is also superseded. A v3 raw run
+captures a private 20-sample reference, and records only raw count, run reference
+and raw delta. No baseline state is persisted on the ESP; the acknowledged CSV
+is the evidence. Operational TARE and stored K neither gate nor alter diagnostic
+evidence. TARE and CAL are absent from the raw logger screen and remain available
+in the normal Settings -> Calibration workflow.
+
+Host tests cover drift with a held display, unloading to zero, 20 g and 50 g
+steps, both signal polarities, re-tare with retained K, calibration anchoring,
+power-cycle-equivalent K restore, and raw diagnostics without operational
+preconditions. Detection and stability thresholds remain provisional pending
+the real dual-HX711 hardware test.
