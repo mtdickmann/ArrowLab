@@ -75,6 +75,10 @@ namespace
     ArrowLabUI::DiagnosticChannelState diagnosticLeftState;
     ArrowLabUI::DiagnosticChannelState diagnosticRightState;
     bool diagnosticHostConnected = false;
+    bool leftCalibrationSetupActive = false;
+    bool rightCalibrationSetupActive = false;
+    bool leftCalibrationReady = false;
+    bool rightCalibrationReady = false;
     uint32_t developerPressStart = 0;
     bool developerPressActive = false;
     constexpr uint32_t DEVELOPER_REVEAL_HOLD_MS = 2000;
@@ -95,6 +99,13 @@ namespace
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
     float calibrationReferenceGrams = 0.0f;
+    enum class MassInputPurpose
+    {
+        DiagnosticLoad,
+        Calibration
+    };
+    MassInputPurpose massInputPurpose = MassInputPurpose::DiagnosticLoad;
+    ArrowLabUI::LoadSide massInputSide = ArrowLabUI::LoadSide::Left;
     ArrowLabUI::LoadSide pendingSide =
         ArrowLabUI::LoadSide::Left;
     ConfirmationAction pendingAction =
@@ -333,7 +344,7 @@ namespace
             else if (
                 pendingAction == ConfirmationAction::Calibration && calibrationCallback != nullptr)
             {
-                calibrationCallback(pendingSide);
+                calibrationCallback(pendingSide, 0.0f);
             }
         }
 
@@ -402,11 +413,11 @@ namespace
         snprintf(
             message,
             sizeof(message),
-            "Keep the calibration platform on %s.\n"
-            "Place the %.1f g reference weight on it "
-            "and allow it to settle.",
-            isLeft ? "LEFT" : "RIGHT",
-            calibrationReferenceGrams);
+            "Keep the %.1f g reference weight stable on %s.\n"
+            "CALIBRATE starts the 30-second stabilization, then "
+            "records and stores the new factor.",
+            calibrationReferenceGrams,
+            isLeft ? "LEFT" : "RIGHT");
 
         confirmationBox = lv_msgbox_create(
             nullptr,
@@ -442,12 +453,29 @@ namespace
         }
     }
 
+    void showCalibrationMassInput(ArrowLabUI::LoadSide side);
+
+    void handleCalibrationButton(ArrowLabUI::LoadSide side)
+    {
+        const bool setupActive = side == ArrowLabUI::LoadSide::Left
+            ? leftCalibrationSetupActive
+            : rightCalibrationSetupActive;
+        const bool ready = side == ArrowLabUI::LoadSide::Left
+            ? leftCalibrationReady
+            : rightCalibrationReady;
+
+        if (ready) {
+            showCalibrationConfirmation(side);
+        } else if (!setupActive) {
+            showCalibrationMassInput(side);
+        }
+    }
+
     void calibrationLeftButtonEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED)
         {
-            showCalibrationConfirmation(
-                ArrowLabUI::LoadSide::Left);
+            handleCalibrationButton(ArrowLabUI::LoadSide::Left);
         }
     }
 
@@ -455,8 +483,7 @@ namespace
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED)
         {
-            showCalibrationConfirmation(
-                ArrowLabUI::LoadSide::Right);
+            handleCalibrationButton(ArrowLabUI::LoadSide::Right);
         }
     }
 
@@ -518,9 +545,10 @@ namespace
         if (currentPage == calibrationPage) {
             title = "CALIBRATION HELP";
             message =
-                "For either side: fit the empty platform, TARE, place "
-                "the reference weight, wait for CAL READY, then CAL. "
-                "Calibration may be repeated whenever required.";
+                "For either side: fit the empty platform and TARE. "
+                "Press CAL, enter the actual reference mass, then place "
+                "that weight. When prompted, press CAL again to start "
+                "the 30-second stabilization and calibration.";
         } else if (currentPage == diagnosticSidePage) {
             title = "CREEP TEST HELP";
             message =
@@ -642,15 +670,6 @@ namespace
         return selectedDiagnosticState().calibrated;
     }
 
-    bool selectedDiagnosticCalibrationReady()
-    {
-        if (!diagnosticSideSelected) {
-            return false;
-        }
-
-        return selectedDiagnosticState().calibrationReady;
-    }
-
     void refreshDiagnosticSideLabel()
     {
         if (diagnosticSideLabel == nullptr) {
@@ -668,26 +687,26 @@ namespace
             selectedDiagnosticState();
 
         const char *tareText =
-            !state.tareComplete
+            state.tareInProgress
                 ? "TARING"
                 : (state.userTareConfirmed ? "TARE OK" : "TARE REQ");
 
         char calibrationText[20];
-        if (state.calibrationInProgress) {
-            snprintf(calibrationText, sizeof(calibrationText), "CAL...");
-        } else if (state.calibrated) {
-            snprintf(calibrationText, sizeof(calibrationText), "CAL OK");
-        } else if (
-            state.calibrationLoadDetected
-            && !state.calibrationReady
+        if (
+            state.calibrationInProgress
+            && state.settleRemainingSeconds > 0
         ) {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL %lus",
                 static_cast<unsigned long>(state.settleRemainingSeconds));
+        } else if (state.calibrationInProgress) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL...");
         } else if (state.calibrationReady) {
             snprintf(calibrationText, sizeof(calibrationText), "CAL READY");
+        } else if (state.calibrated) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL OK");
         } else {
             snprintf(calibrationText, sizeof(calibrationText), "CAL REQ");
         }
@@ -765,8 +784,10 @@ namespace
 
             if (
                 canConfigure
-                && !state.calibrated
-                && selectedDiagnosticCalibrationReady()
+                && state.tareComplete
+                && state.userTareConfirmed
+                && (!state.calibrationSetupActive || state.calibrationReady)
+                && !state.calibrationInProgress
             ) {
                 lv_obj_clear_state(
                     diagnosticCalibrationButton,
@@ -867,20 +888,22 @@ namespace
                 instruction =
                     "NEXT: Fit empty calibration platform and press TARE";
             } else if (state.calibrationInProgress) {
-                instruction = "WAIT: Calibration sampling in progress";
-            } else if (!state.calibrated) {
-                if (state.calibrationReady) {
-                    instruction = "NEXT: Press CAL";
-                } else if (state.calibrationLoadDetected) {
+                if (state.settleRemainingSeconds > 0) {
                     static char settlingText[64];
                     snprintf(
                         settlingText,
                         sizeof(settlingText),
-                        "WAIT: Calibration weight settling - %lus",
+                        "WAIT: Stabilizing calibration weight - %lus",
                         static_cast<unsigned long>(
                             state.settleRemainingSeconds));
                     instruction = settlingText;
                 } else {
+                    instruction = "WAIT: Calibration sampling in progress";
+                }
+            } else if (state.calibrationReady) {
+                instruction = "NEXT: Press CAL to start 30 s stabilization";
+            } else if (state.calibrationSetupActive) {
+                if (!state.calibrationLoadDetected) {
                     static char placeReferenceText[72];
                     snprintf(
                         placeReferenceText,
@@ -888,7 +911,11 @@ namespace
                         "NEXT: Place %.1f g calibration weight",
                         calibrationReferenceGrams);
                     instruction = placeReferenceText;
+                } else {
+                    instruction = "NEXT: Press CAL";
                 }
+            } else if (!state.calibrated) {
+                instruction = "NEXT: Press CAL and enter reference mass";
             } else if (diagnosticMassGrams <= 0.0f) {
                 instruction =
                     "NEXT: Remove calibration weight and press SET MASS";
@@ -950,7 +977,16 @@ namespace
             lv_textarea_get_text(massInputTextArea);
         const float value = std::strtof(text, nullptr);
 
-        if (value > 0.0f && value <= 1850.0f) {
+        if (value <= 0.0f || value > 1850.0f) {
+            return;
+        }
+
+        if (massInputPurpose == MassInputPurpose::Calibration) {
+            calibrationReferenceGrams = value;
+            if (calibrationCallback != nullptr) {
+                calibrationCallback(massInputSide, value);
+            }
+        } else {
             diagnosticMassGrams = value;
 
             char label[40];
@@ -959,14 +995,89 @@ namespace
                 sizeof(label),
                 "MASS: %.3f g",
                 diagnosticMassGrams);
-            lv_label_set_text(
-                diagnosticMassLabel,
-                label);
+            lv_label_set_text(diagnosticMassLabel, label);
             refreshDiagnosticControls();
             diagnosticUseAutomaticInstruction = true;
             refreshDiagnosticInstruction();
-            closeMassInput();
         }
+
+        closeMassInput();
+    }
+
+    void createMassInput(
+        MassInputPurpose purpose,
+        ArrowLabUI::LoadSide side)
+    {
+        if (massInputBox != nullptr) {
+            return;
+        }
+
+        massInputPurpose = purpose;
+        massInputSide = side;
+
+        lv_obj_t *screen = lv_scr_act();
+
+        massInputBox = lv_obj_create(screen);
+        lv_obj_set_size(massInputBox, 456, 250);
+        lv_obj_center(massInputBox);
+        lv_obj_set_style_bg_color(
+            massInputBox,
+            lv_color_hex(COLOUR_PANEL),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_color(
+            massInputBox,
+            lv_color_hex(COLOUR_ACCENT),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(massInputBox, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(massInputBox, 8, LV_PART_MAIN);
+        lv_obj_clear_flag(massInputBox, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *heading = createTextLabel(
+            massInputBox,
+            purpose == MassInputPurpose::Calibration
+                ? "ENTER CALIBRATION MASS (g)"
+                : "ENTER ACTUAL TEST MASS (g)",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_align(heading, LV_ALIGN_TOP_MID, 0, 0);
+
+        massInputTextArea = lv_textarea_create(massInputBox);
+        lv_obj_set_size(massInputTextArea, 180, 38);
+        lv_obj_align(massInputTextArea, LV_ALIGN_TOP_MID, 0, 25);
+        lv_textarea_set_one_line(massInputTextArea, true);
+        lv_textarea_set_accepted_chars(massInputTextArea, "0123456789.");
+        lv_textarea_set_max_length(massInputTextArea, 8);
+
+        if (
+            purpose == MassInputPurpose::Calibration
+            && calibrationReferenceGrams > 0.0f
+        ) {
+            char currentMass[16];
+            snprintf(
+                currentMass,
+                sizeof(currentMass),
+                "%.3f",
+                calibrationReferenceGrams);
+            lv_textarea_set_text(massInputTextArea, currentMass);
+        }
+
+        lv_obj_t *keyboard = lv_keyboard_create(massInputBox);
+        lv_obj_set_size(keyboard, 430, 160);
+        lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_NUMBER);
+        lv_keyboard_set_textarea(keyboard, massInputTextArea);
+        lv_obj_add_event_cb(
+            keyboard,
+            massKeyboardEvent,
+            LV_EVENT_ALL,
+            nullptr);
+
+        lv_obj_move_foreground(massInputBox);
+    }
+
+    void showCalibrationMassInput(ArrowLabUI::LoadSide side)
+    {
+        createMassInput(MassInputPurpose::Calibration, side);
     }
 
     void diagnosticMassEvent(lv_event_t *event)
@@ -982,81 +1093,9 @@ namespace
             return;
         }
 
-        lv_obj_t *screen = lv_scr_act();
-
-        massInputBox = lv_obj_create(screen);
-        lv_obj_set_size(massInputBox, 456, 250);
-        lv_obj_center(massInputBox);
-        lv_obj_set_style_bg_color(
-            massInputBox,
-            lv_color_hex(COLOUR_PANEL),
-            LV_PART_MAIN);
-        lv_obj_set_style_border_color(
-            massInputBox,
-            lv_color_hex(COLOUR_ACCENT),
-            LV_PART_MAIN);
-        lv_obj_set_style_border_width(
-            massInputBox,
-            2,
-            LV_PART_MAIN);
-        lv_obj_set_style_pad_all(
-            massInputBox,
-            8,
-            LV_PART_MAIN);
-        lv_obj_clear_flag(
-            massInputBox,
-            LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t *heading = createTextLabel(
-            massInputBox,
-            "ENTER ACTUAL TEST MASS (g)",
-            &lv_font_montserrat_16,
-            lv_color_hex(COLOUR_TEXT));
-        lv_obj_align(
-            heading,
-            LV_ALIGN_TOP_MID,
-            0,
-            0);
-
-        massInputTextArea =
-            lv_textarea_create(massInputBox);
-        lv_obj_set_size(massInputTextArea, 180, 38);
-        lv_obj_align(
-            massInputTextArea,
-            LV_ALIGN_TOP_MID,
-            0,
-            25);
-        lv_textarea_set_one_line(
-            massInputTextArea,
-            true);
-        lv_textarea_set_accepted_chars(
-            massInputTextArea,
-            "0123456789.");
-        lv_textarea_set_max_length(
-            massInputTextArea,
-            8);
-
-        lv_obj_t *keyboard =
-            lv_keyboard_create(massInputBox);
-        lv_obj_set_size(keyboard, 430, 160);
-        lv_obj_align(
-            keyboard,
-            LV_ALIGN_BOTTOM_MID,
-            0,
-            0);
-        lv_keyboard_set_mode(
-            keyboard,
-            LV_KEYBOARD_MODE_NUMBER);
-        lv_keyboard_set_textarea(
-            keyboard,
-            massInputTextArea);
-        lv_obj_add_event_cb(
-            keyboard,
-            massKeyboardEvent,
-            LV_EVENT_ALL,
-            nullptr);
-
-        lv_obj_move_foreground(massInputBox);
+        createMassInput(
+            MassInputPurpose::DiagnosticLoad,
+            diagnosticSide);
     }
 
     void diagnosticConfirmEvent(lv_event_t *event)
@@ -1196,7 +1235,7 @@ namespace
     void diagnosticCalibrationEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
-            showCalibrationConfirmation(diagnosticSide);
+            handleCalibrationButton(diagnosticSide);
         }
     }
 
@@ -2086,8 +2125,7 @@ namespace ArrowLabUI
             const DiagnosticChannelState &state =
                 selectedDiagnosticState();
             const uint8_t progress =
-                state.calibrationLoadDetected
-                && !state.calibrated
+                state.calibrationInProgress
                     ? state.settlePercent
                     : 0;
             lv_bar_set_value(
@@ -2226,11 +2264,12 @@ namespace ArrowLabUI
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
+        bool tareInProgress,
         bool userTareConfirmed,
         bool calibrationReady,
         bool calibrationInProgress,
         bool calibrated,
-        bool calibrationLoadDetected,
+        bool calibrationSetupActive,
         uint32_t settleRemainingSeconds,
         uint8_t settlePercent)
     {
@@ -2247,27 +2286,21 @@ namespace ArrowLabUI
         char text[32];
 
         const char *tareText =
-            !tareComplete
+            tareInProgress
                 ? "TARING"
                 : (userTareConfirmed ? "TARE OK" : "TARE REQ");
 
         char calibrationText[16];
 
-        if (calibrationInProgress) {
-            snprintf(
-                calibrationText,
-                sizeof(calibrationText),
-                "CAL...");
-        } else if (
-            calibrationLoadDetected
-            && !calibrationReady
-        ) {
+        if (calibrationInProgress && settleRemainingSeconds > 0) {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL %lus",
                 static_cast<unsigned long>(
                     settleRemainingSeconds));
+        } else if (calibrationInProgress) {
+            snprintf(calibrationText, sizeof(calibrationText), "CAL...");
         } else if (calibrationReady) {
             snprintf(
                 calibrationText,
@@ -2301,11 +2334,7 @@ namespace ArrowLabUI
 
         if (panel.settleBar != nullptr)
         {
-            if (
-                calibrationLoadDetected
-                && !calibrationReady
-                && !calibrationInProgress
-            ) {
+            if (calibrationInProgress && settleRemainingSeconds > 0) {
                 lv_bar_set_value(
                     panel.settleBar,
                     settlePercent,
@@ -2336,7 +2365,7 @@ namespace ArrowLabUI
             lv_obj_set_style_bg_color(
                 panel.calibrationButton,
                 lv_color_hex(
-                    calibrated && !calibrationLoadDetected
+                    calibrated && !calibrationSetupActive
                         ? COLOUR_OK
                         : COLOUR_REQUIRED),
                 LV_PART_MAIN);
@@ -2361,7 +2390,10 @@ namespace ArrowLabUI
         if (panel.calibrationButton != nullptr)
         {
             if (
-                !tareComplete || !userTareConfirmed || !calibrationReady || calibrationInProgress)
+                !tareComplete
+                || !userTareConfirmed
+                || calibrationInProgress
+                || (calibrationSetupActive && !calibrationReady))
             {
                 lv_obj_add_state(
                     panel.calibrationButton,
@@ -2373,6 +2405,14 @@ namespace ArrowLabUI
                     panel.calibrationButton,
                     LV_STATE_DISABLED);
             }
+        }
+
+        if (side == LoadSide::Left) {
+            leftCalibrationSetupActive = calibrationSetupActive;
+            leftCalibrationReady = calibrationReady;
+        } else {
+            rightCalibrationSetupActive = calibrationSetupActive;
+            rightCalibrationReady = calibrationReady;
         }
     }
 

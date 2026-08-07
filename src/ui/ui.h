@@ -14,8 +14,10 @@ namespace ArrowLabUI
     {
         bool baselineCaptured = false;
         bool tareComplete = false;
+        bool tareInProgress = false;
         bool userTareConfirmed = false;
         bool calibrated = false;
+        bool calibrationSetupActive = false;
         bool calibrationReady = false;
         bool calibrationInProgress = false;
         bool calibrationLoadDetected = false;
@@ -24,7 +26,7 @@ namespace ArrowLabUI
     };
 
     using TareCallback = void (*)(LoadSide side);
-    using CalibrationCallback = void (*)(LoadSide side);
+    using CalibrationCallback = void (*)(LoadSide side, float referenceGrams);
     using DiagnosticStartCallback = void (*)(
         LoadSide side,
         float testMassGrams,
@@ -84,11 +86,12 @@ namespace ArrowLabUI
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
+        bool tareInProgress,
         bool userTareConfirmed,
         bool calibrationReady,
         bool calibrationInProgress,
         bool calibrated,
-        bool calibrationLoadDetected,
+        bool calibrationSetupActive,
         uint32_t settleRemainingSeconds,
         uint8_t settlePercent
     );

@@ -103,7 +103,7 @@ void LoadCellChannel::startTare(bool confirmAsUserTare)
     userTareConfirmed_ = false;
     confirmUserTareOnCompletion_ = confirmAsUserTare;
     calibrationLoadDetectSamples_ = 0;
-    calibrationLoadDetectedTime_ = 0;
+    calibrationLoadDetected_ = false;
 
     // A new tare cancels any calibration sample run, but does not
     // erase an already established calibration factor.
@@ -128,7 +128,7 @@ void LoadCellChannel::updateCalibrationLoadDetection(
         || thresholdCounts <= 0
     ) {
         calibrationLoadDetectSamples_ = 0;
-        calibrationLoadDetectedTime_ = 0;
+        calibrationLoadDetected_ = false;
         return;
     }
 
@@ -141,7 +141,7 @@ void LoadCellChannel::updateCalibrationLoadDetection(
 
     if (magnitude < thresholdCounts) {
         calibrationLoadDetectSamples_ = 0;
-        calibrationLoadDetectedTime_ = 0;
+        calibrationLoadDetected_ = false;
         return;
     }
 
@@ -155,10 +155,9 @@ void LoadCellChannel::updateCalibrationLoadDetection(
     if (
         calibrationLoadDetectSamples_
             >= CALIBRATION_LOAD_CONFIRM_SAMPLES
-        && calibrationLoadDetectedTime_ == 0
+        && !calibrationLoadDetected_
     ) {
-        calibrationLoadDetectedTime_ =
-            lastReadingTime_;
+        calibrationLoadDetected_ = true;
 
         Serial.printf(
             "%s calibration load detected: %ld counts\n",
@@ -168,14 +167,18 @@ void LoadCellChannel::updateCalibrationLoadDetection(
     }
 }
 
-bool LoadCellChannel::startCalibration(
-    float referenceGrams,
-    uint32_t currentTime,
-    uint32_t settleTimeMs
-)
+void LoadCellChannel::resetCalibrationLoadDetection()
+{
+    calibrationLoadDetectSamples_ = 0;
+    calibrationLoadDetected_ = false;
+}
+
+bool LoadCellChannel::startCalibration(float referenceGrams)
 {
     if (
-        !calibrationReady(currentTime, settleTimeMs)
+        !tareComplete_
+        || !userTareConfirmed_
+        || !calibrationLoadDetected_
         || calibrationInProgress_
         || referenceGrams <= 0.0f
     ) {
@@ -184,13 +187,14 @@ bool LoadCellChannel::startCalibration(
 
     calibrationAccumulator_ = 0;
     calibrationSamples_ = 0;
-    calibrationReferenceGrams_ = referenceGrams;
+    pendingCalibrationReferenceGrams_ = referenceGrams;
     calibrationInProgress_ = true;
+    calibrationRunSucceeded_ = false;
 
     Serial.printf(
         "%s calibration started: reference=%.1f g\n",
         name_,
-        calibrationReferenceGrams_
+        pendingCalibrationReferenceGrams_
     );
 
     return true;
@@ -221,7 +225,7 @@ void LoadCellChannel::updateTare()
     if (confirmUserTareOnCompletion_) {
         userTareConfirmed_ = true;
         calibrationLoadDetectSamples_ = 0;
-        calibrationLoadDetectedTime_ = 0;
+        calibrationLoadDetected_ = false;
         confirmUserTareOnCompletion_ = false;
     }
 
@@ -311,6 +315,7 @@ void LoadCellChannel::updateCalibration()
 
     if (averageCounts == 0.0f) {
         calibrationInProgress_ = false;
+        calibrationRunSucceeded_ = false;
 
         Serial.printf(
             "%s calibration failed: zero signal\n",
@@ -320,12 +325,14 @@ void LoadCellChannel::updateCalibration()
     }
 
     calibrationFactor_ =
-        averageCounts / calibrationReferenceGrams_;
+        averageCounts / pendingCalibrationReferenceGrams_;
+    calibrationReferenceGrams_ = pendingCalibrationReferenceGrams_;
 
     calibrated_ = true;
     calibrationInProgress_ = false;
+    calibrationRunSucceeded_ = true;
     calibrationLoadDetectSamples_ = 0;
-    calibrationLoadDetectedTime_ = 0;
+    calibrationLoadDetected_ = false;
 
     Serial.printf(
         "%s calibration complete: %.3f counts/g "
@@ -367,77 +374,19 @@ bool LoadCellChannel::userTareConfirmed() const
     return userTareConfirmed_;
 }
 
-bool LoadCellChannel::calibrationReady(
-    uint32_t currentTime,
-    uint32_t settleTimeMs
-) const
-{
-    if (
-        !tareComplete_
-        || !userTareConfirmed_
-        || calibrationLoadDetectedTime_ == 0
-    ) {
-        return false;
-    }
-
-    return (
-        currentTime - calibrationLoadDetectedTime_
-        >= settleTimeMs
-    );
-}
-
 bool LoadCellChannel::calibrationLoadDetected() const
 {
-    return calibrationLoadDetectedTime_ != 0;
-}
-
-uint32_t LoadCellChannel::calibrationSettleRemainingSeconds(
-    uint32_t currentTime,
-    uint32_t settleTimeMs
-) const
-{
-    if (calibrationLoadDetectedTime_ == 0) {
-        return settleTimeMs / 1000;
-    }
-
-    const uint32_t elapsed =
-        currentTime - calibrationLoadDetectedTime_;
-
-    if (elapsed >= settleTimeMs) {
-        return 0;
-    }
-
-    return (settleTimeMs - elapsed + 999) / 1000;
-}
-
-uint8_t LoadCellChannel::calibrationSettlePercent(
-    uint32_t currentTime,
-    uint32_t settleTimeMs
-) const
-{
-    if (
-        calibrationLoadDetectedTime_ == 0
-        || settleTimeMs == 0
-    ) {
-        return 0;
-    }
-
-    const uint32_t elapsed =
-        currentTime - calibrationLoadDetectedTime_;
-
-    if (elapsed >= settleTimeMs) {
-        return 100;
-    }
-
-    return static_cast<uint8_t>(
-        (static_cast<uint64_t>(elapsed) * 100)
-        / settleTimeMs
-    );
+    return calibrationLoadDetected_;
 }
 
 bool LoadCellChannel::calibrationInProgress() const
 {
     return calibrationInProgress_;
+}
+
+bool LoadCellChannel::calibrationRunSucceeded() const
+{
+    return calibrationRunSucceeded_;
 }
 
 bool LoadCellChannel::calibrated() const
@@ -467,8 +416,10 @@ void LoadCellChannel::restoreCalibration(
 
     calibrationFactor_ = factor;
     calibrationReferenceGrams_ = referenceGrams;
+    pendingCalibrationReferenceGrams_ = 0.0f;
     calibrated_ = true;
     calibrationInProgress_ = false;
+    calibrationRunSucceeded_ = false;
 }
 
 void LoadCellChannel::clearCalibration()
@@ -476,8 +427,10 @@ void LoadCellChannel::clearCalibration()
     calibrationAccumulator_ = 0;
     calibrationSamples_ = 0;
     calibrationReferenceGrams_ = 0.0f;
+    pendingCalibrationReferenceGrams_ = 0.0f;
     calibrationFactor_ = 0.0f;
     calibrationInProgress_ = false;
+    calibrationRunSucceeded_ = false;
     calibrated_ = false;
 }
 

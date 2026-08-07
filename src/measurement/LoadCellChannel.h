@@ -24,11 +24,8 @@ public:
     void updateCalibrationLoadDetection(
         long thresholdCounts
     );
-    bool startCalibration(
-        float referenceGrams,
-        uint32_t currentTime,
-        uint32_t settleTimeMs
-    );
+    void resetCalibrationLoadDetection();
+    bool startCalibration(float referenceGrams);
 
     const char *name() const;
     long rawValue() const;
@@ -36,20 +33,9 @@ public:
     long filteredZeroedValue() const;
     bool tareComplete() const;
     bool userTareConfirmed() const;
-    bool calibrationReady(
-        uint32_t currentTime,
-        uint32_t settleTimeMs
-    ) const;
     bool calibrationLoadDetected() const;
-    uint32_t calibrationSettleRemainingSeconds(
-        uint32_t currentTime,
-        uint32_t settleTimeMs
-    ) const;
-    uint8_t calibrationSettlePercent(
-        uint32_t currentTime,
-        uint32_t settleTimeMs
-    ) const;
     bool calibrationInProgress() const;
+    bool calibrationRunSucceeded() const;
     bool calibrated() const;
     float calibrationFactor() const;
     float calibrationReferenceGrams() const;
@@ -89,12 +75,14 @@ private:
     bool confirmUserTareOnCompletion_ = false;
 
     uint8_t calibrationLoadDetectSamples_ = 0;
-    uint32_t calibrationLoadDetectedTime_ = 0;
+    bool calibrationLoadDetected_ = false;
     int64_t calibrationAccumulator_ = 0;
     uint8_t calibrationSamples_ = 0;
     float calibrationReferenceGrams_ = 0.0f;
+    float pendingCalibrationReferenceGrams_ = 0.0f;
     float calibrationFactor_ = 0.0f;
     bool calibrationInProgress_ = false;
+    bool calibrationRunSucceeded_ = false;
     bool calibrated_ = false;
 
     bool hasReading_ = false;

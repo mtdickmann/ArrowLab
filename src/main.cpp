@@ -2,7 +2,8 @@
  * ArrowLab firmware
  * Development firmware; version is defined only in Version.h.
  *
- * Dual HX711 zero-adjusted raw-count test
+ * Top-level hardware, diagnostics and UI coordinator.
+ * Tare/calibration workflow lives in CalibrationController.
  */
 
 #include <Arduino.h>
@@ -12,6 +13,7 @@
 
 #include "lvgl_v8_port.h"
 #include "measurement/LoadCellChannel.h"
+#include "calibration/CalibrationController.h"
 #include "diagnostics/CreepDiagnostic.h"
 #include "storage/InstrumentStorage.h"
 #include "ui/ui.h"
@@ -24,18 +26,7 @@ namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
-    constexpr uint32_t CALIBRATION_SETTLE_TIME_MS = 30000;
-
-    /*
-     * Reference-load detection is intentionally far above observed
-     * tare noise, but below the expected signal from a 500 g minimum
-     * calibration mass so channel sensitivity can vary safely.
-     */
-    constexpr long CALIBRATION_LOAD_THRESHOLD_COUNTS = 250000;
-
-    // Default for the current development reference weight.
-    // This becomes user-editable from the calibration UI later.
-    float calibrationReferenceGrams = 999.8f;
+    float calibrationReferenceGrams = 0.0f;
     /*
      * Final GPIO assignment:
      *
@@ -51,14 +42,14 @@ namespace
     LoadCellChannel rightSensor("Right", 11, 12);
     CreepDiagnostic creepDiagnostic;
     InstrumentStorage instrumentStorage;
+    CalibrationController calibrationController(
+        leftSensor,
+        rightSensor,
+        instrumentStorage);
 
     Board *displayBoard = nullptr;
 
     uint32_t lastSensorUpdate = 0;
-    volatile bool leftTareRequested = false;
-    volatile bool rightTareRequested = false;
-    volatile bool leftCalibrationRequested = false;
-    volatile bool rightCalibrationRequested = false;
     volatile bool diagnosticStartRequested = false;
     volatile bool diagnosticCancelRequested = false;
     volatile bool diagnosticFinishRequested = false;
@@ -69,37 +60,36 @@ namespace
     volatile bool diagnosticResetChannelRequested = false;
     ArrowLabUI::LoadSide diagnosticMaintenanceSide =
         ArrowLabUI::LoadSide::Left;
-    bool leftCalibrationStored = false;
-    bool rightCalibrationStored = false;
     bool leftBaselineStored = false;
     bool rightBaselineStored = false;
 
     char serialLine[128];
     size_t serialLineLength = 0;
 
-    StoredLoadSide storedSide(ArrowLabUI::LoadSide side)
+    CalibrationSide calibrationSide(ArrowLabUI::LoadSide side)
     {
         return side == ArrowLabUI::LoadSide::Left
-            ? StoredLoadSide::Left
-            : StoredLoadSide::Right;
+            ? CalibrationSide::Left
+            : CalibrationSide::Right;
     }
 
     void requestTare(ArrowLabUI::LoadSide side)
     {
-        if (side == ArrowLabUI::LoadSide::Left) {
-            leftTareRequested = true;
-        } else {
-            rightTareRequested = true;
-        }
+        calibrationController.requestTare(calibrationSide(side));
     }
 
-    void requestCalibration(ArrowLabUI::LoadSide side)
+    void requestCalibration(
+        ArrowLabUI::LoadSide side,
+        float referenceGrams)
     {
-        if (side == ArrowLabUI::LoadSide::Left) {
-            leftCalibrationRequested = true;
-        } else {
-            rightCalibrationRequested = true;
+        if (referenceGrams > 0.0f) {
+            calibrationReferenceGrams = referenceGrams;
+            ArrowLabUI::setCalibrationReferenceGrams(referenceGrams);
         }
+
+        calibrationController.requestCalibration(
+            calibrationSide(side),
+            referenceGrams);
     }
 
     void requestDiagnosticStart(
@@ -158,66 +148,6 @@ namespace
         }
     }
 
-    void startRequestedTares()
-    {
-        if (leftTareRequested) {
-            leftSensor.startUserTare();
-            leftTareRequested = false;
-
-            Serial.println(
-                "Manual LEFT tare confirmed"
-            );
-        }
-
-        if (rightTareRequested) {
-            rightSensor.startUserTare();
-            rightTareRequested = false;
-
-            Serial.println(
-                "Manual RIGHT tare confirmed"
-            );
-        }
-    }
-
-    void startRequestedCalibrations(uint32_t currentTime)
-    {
-        if (leftCalibrationRequested) {
-            leftCalibrationRequested = false;
-
-            if (
-                !rightSensor.calibrationInProgress()
-                && leftSensor.startCalibration(
-                    calibrationReferenceGrams,
-                    currentTime,
-                    CALIBRATION_SETTLE_TIME_MS
-                )
-            ) {
-                leftCalibrationStored = false;
-                Serial.println(
-                    "LEFT calibration confirmed"
-                );
-            }
-        }
-
-        if (rightCalibrationRequested) {
-            rightCalibrationRequested = false;
-
-            if (
-                !leftSensor.calibrationInProgress()
-                && rightSensor.startCalibration(
-                    calibrationReferenceGrams,
-                    currentTime,
-                    CALIBRATION_SETTLE_TIME_MS
-                )
-            ) {
-                rightCalibrationStored = false;
-                Serial.println(
-                    "RIGHT calibration confirmed"
-                );
-            }
-        }
-    }
-
     void processDiagnosticRequests(uint32_t currentTime)
     {
         if (diagnosticResetChannelRequested) {
@@ -227,16 +157,11 @@ namespace
                     ? DiagnosticSide::Left
                     : DiagnosticSide::Right;
             creepDiagnostic.setBaselineCaptured(side, false);
-            instrumentStorage.resetChannel(
-                storedSide(diagnosticMaintenanceSide)
-            );
+            calibrationController.resetChannel(
+                calibrationSide(diagnosticMaintenanceSide));
             if (side == DiagnosticSide::Left) {
-                leftSensor.clearCalibration();
-                leftCalibrationStored = false;
                 leftBaselineStored = false;
             } else {
-                rightSensor.clearCalibration();
-                rightCalibrationStored = false;
                 rightBaselineStored = false;
             }
             Serial.printf(
@@ -347,9 +272,24 @@ namespace
             rightLive
         );
 
+        const CalibrationController::ChannelStatus leftCalibration =
+            calibrationController.status(CalibrationSide::Left, currentTime);
+        const CalibrationController::ChannelStatus rightCalibration =
+            calibrationController.status(CalibrationSide::Right, currentTime);
+
+        const auto setupActive = [](CalibrationController::Stage stage) {
+            return stage == CalibrationController::Stage::AwaitingLoad
+                || stage == CalibrationController::Stage::ReadyToCalibrate
+                || stage == CalibrationController::Stage::Settling
+                || stage == CalibrationController::Stage::Sampling;
+        };
+        const auto calibrationBusy = [](CalibrationController::Stage stage) {
+            return stage == CalibrationController::Stage::Settling
+                || stage == CalibrationController::Stage::Sampling;
+        };
         const bool tareInProgress =
-            (leftLive && !leftSensor.tareComplete())
-            || (rightLive && !rightSensor.tareComplete());
+            leftCalibration.stage == CalibrationController::Stage::Taring
+            || rightCalibration.stage == CalibrationController::Stage::Taring;
 
         lvgl_port_lock(-1);
 
@@ -438,49 +378,47 @@ namespace
         leftDiagnosticState.baselineCaptured =
             creepDiagnostic.baselineCaptured(DiagnosticSide::Left);
         leftDiagnosticState.tareComplete = leftSensor.tareComplete();
+        leftDiagnosticState.tareInProgress =
+            leftCalibration.stage == CalibrationController::Stage::Taring;
         leftDiagnosticState.userTareConfirmed =
             leftSensor.userTareConfirmed();
         leftDiagnosticState.calibrated = leftSensor.calibrated();
+        leftDiagnosticState.calibrationSetupActive =
+            setupActive(leftCalibration.stage);
         leftDiagnosticState.calibrationReady =
-            leftSensor.calibrationReady(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            leftCalibration.stage
+                == CalibrationController::Stage::ReadyToCalibrate;
         leftDiagnosticState.calibrationInProgress =
-            leftSensor.calibrationInProgress();
+            calibrationBusy(leftCalibration.stage);
         leftDiagnosticState.calibrationLoadDetected =
             leftSensor.calibrationLoadDetected();
         leftDiagnosticState.settleRemainingSeconds =
-            leftSensor.calibrationSettleRemainingSeconds(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            leftCalibration.settleRemainingSeconds;
         leftDiagnosticState.settlePercent =
-            leftSensor.calibrationSettlePercent(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            leftCalibration.settlePercent;
 
         ArrowLabUI::DiagnosticChannelState rightDiagnosticState;
         rightDiagnosticState.baselineCaptured =
             creepDiagnostic.baselineCaptured(DiagnosticSide::Right);
         rightDiagnosticState.tareComplete = rightSensor.tareComplete();
+        rightDiagnosticState.tareInProgress =
+            rightCalibration.stage == CalibrationController::Stage::Taring;
         rightDiagnosticState.userTareConfirmed =
             rightSensor.userTareConfirmed();
         rightDiagnosticState.calibrated = rightSensor.calibrated();
+        rightDiagnosticState.calibrationSetupActive =
+            setupActive(rightCalibration.stage);
         rightDiagnosticState.calibrationReady =
-            rightSensor.calibrationReady(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            rightCalibration.stage
+                == CalibrationController::Stage::ReadyToCalibrate;
         rightDiagnosticState.calibrationInProgress =
-            rightSensor.calibrationInProgress();
+            calibrationBusy(rightCalibration.stage);
         rightDiagnosticState.calibrationLoadDetected =
             rightSensor.calibrationLoadDetected();
         rightDiagnosticState.settleRemainingSeconds =
-            rightSensor.calibrationSettleRemainingSeconds(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            rightCalibration.settleRemainingSeconds;
         rightDiagnosticState.settlePercent =
-            rightSensor.calibrationSettlePercent(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS);
+            rightCalibration.settlePercent;
 
         ArrowLabUI::setDiagnosticChannelState(
             leftDiagnosticState,
@@ -507,48 +445,34 @@ namespace
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
             leftSensor.tareComplete(),
+            leftCalibration.stage == CalibrationController::Stage::Taring,
             leftSensor.userTareConfirmed(),
-            leftSensor.calibrationReady(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            ),
-            leftSensor.calibrationInProgress(),
+            leftCalibration.stage
+                == CalibrationController::Stage::ReadyToCalibrate,
+            calibrationBusy(leftCalibration.stage),
             leftSensor.calibrated(),
-            leftSensor.calibrationLoadDetected(),
-            leftSensor.calibrationSettleRemainingSeconds(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            ),
-            leftSensor.calibrationSettlePercent(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            )
+            setupActive(leftCalibration.stage),
+            leftCalibration.settleRemainingSeconds,
+            leftCalibration.settlePercent
         );
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Right,
             rightSensor.tareComplete(),
+            rightCalibration.stage == CalibrationController::Stage::Taring,
             rightSensor.userTareConfirmed(),
-            rightSensor.calibrationReady(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            ),
-            rightSensor.calibrationInProgress(),
+            rightCalibration.stage
+                == CalibrationController::Stage::ReadyToCalibrate,
+            calibrationBusy(rightCalibration.stage),
             rightSensor.calibrated(),
-            rightSensor.calibrationLoadDetected(),
-            rightSensor.calibrationSettleRemainingSeconds(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            ),
-            rightSensor.calibrationSettlePercent(
-                currentTime,
-                CALIBRATION_SETTLE_TIME_MS
-            )
+            setupActive(rightCalibration.stage),
+            rightCalibration.settleRemainingSeconds,
+            rightCalibration.settlePercent
         );
 
         const bool calibrationInProgress =
-            leftSensor.calibrationInProgress()
-            || rightSensor.calibrationInProgress();
+            calibrationBusy(leftCalibration.stage)
+            || calibrationBusy(rightCalibration.stage);
 
         if (tareInProgress) {
             ArrowLabUI::setStatus(
@@ -561,7 +485,7 @@ namespace
             );
         } else if (calibrationInProgress) {
             ArrowLabUI::setStatus(
-                leftSensor.calibrationInProgress()
+                calibrationBusy(leftCalibration.stage)
                     ? "Calibrating LEFT - keep weight stable"
                     : "Calibrating RIGHT - keep weight stable"
             );
@@ -572,6 +496,40 @@ namespace
             );
         } else if (leftLive && rightLive) {
             if (
+                leftCalibration.stage
+                    == CalibrationController::Stage::AwaitingLoad
+            ) {
+                char nextAction[72];
+                snprintf(
+                    nextAction,
+                    sizeof(nextAction),
+                    "NEXT: Place %.1f g calibration weight on LEFT",
+                    leftCalibration.referenceGrams);
+                ArrowLabUI::setStatus(nextAction);
+            } else if (
+                rightCalibration.stage
+                    == CalibrationController::Stage::AwaitingLoad
+            ) {
+                char nextAction[72];
+                snprintf(
+                    nextAction,
+                    sizeof(nextAction),
+                    "NEXT: Place %.1f g calibration weight on RIGHT",
+                    rightCalibration.referenceGrams);
+                ArrowLabUI::setStatus(nextAction);
+            } else if (
+                leftCalibration.stage
+                    == CalibrationController::Stage::ReadyToCalibrate
+            ) {
+                ArrowLabUI::setStatus(
+                    "NEXT: Press LEFT CAL to start 30 s stabilization");
+            } else if (
+                rightCalibration.stage
+                    == CalibrationController::Stage::ReadyToCalibrate
+            ) {
+                ArrowLabUI::setStatus(
+                    "NEXT: Press RIGHT CAL to start 30 s stabilization");
+            } else if (
                 leftSensor.calibrated()
                 && rightSensor.calibrated()
             ) {
@@ -726,28 +684,7 @@ void setup()
 
     leftSensor.begin();
     rightSensor.begin();
-
-    StoredCalibration leftCalibration;
-    if (instrumentStorage.loadCalibration(
-            StoredLoadSide::Left,
-            leftCalibration)) {
-        leftSensor.restoreCalibration(
-            leftCalibration.factor,
-            leftCalibration.referenceGrams);
-        leftCalibrationStored = true;
-        Serial.println("Restored LEFT calibration from NVS");
-    }
-
-    StoredCalibration rightCalibration;
-    if (instrumentStorage.loadCalibration(
-            StoredLoadSide::Right,
-            rightCalibration)) {
-        rightSensor.restoreCalibration(
-            rightCalibration.factor,
-            rightCalibration.referenceGrams);
-        rightCalibrationStored = true;
-        Serial.println("Restored RIGHT calibration from NVS");
-    }
+    calibrationController.begin();
 
     leftBaselineStored = instrumentStorage.baselineCaptured(
         StoredLoadSide::Left);
@@ -784,20 +721,6 @@ void loop()
     lastSensorUpdate = now;
 
     if (
-        leftTareRequested
-        || rightTareRequested
-    ) {
-        startRequestedTares();
-    }
-
-    if (
-        leftCalibrationRequested
-        || rightCalibrationRequested
-    ) {
-        startRequestedCalibrations(now);
-    }
-
-    if (
         diagnosticStartRequested
         || diagnosticCancelRequested
         || diagnosticFinishRequested
@@ -813,18 +736,16 @@ void loop()
     const bool leftFresh = leftSensor.read(now);
 
     if (leftFresh) {
-        leftSensor.updateCalibrationLoadDetection(
-            CALIBRATION_LOAD_THRESHOLD_COUNTS
-        );
+        calibrationController.onFreshReading(CalibrationSide::Left);
     }
 
     const bool rightFresh = rightSensor.read(now);
 
     if (rightFresh) {
-        rightSensor.updateCalibrationLoadDetection(
-            CALIBRATION_LOAD_THRESHOLD_COUNTS
-        );
+        calibrationController.onFreshReading(CalibrationSide::Right);
     }
+
+    calibrationController.update(now);
 
     creepDiagnostic.update(
         now,
@@ -833,34 +754,6 @@ void loop()
         leftSensor,
         rightSensor
     );
-
-    if (
-        leftSensor.calibrated()
-        && !leftSensor.calibrationInProgress()
-        && !leftCalibrationStored
-    ) {
-        leftCalibrationStored = instrumentStorage.saveCalibration(
-            StoredLoadSide::Left,
-            leftSensor.calibrationFactor(),
-            leftSensor.calibrationReferenceGrams());
-        if (leftCalibrationStored) {
-            Serial.println("Stored LEFT calibration in NVS");
-        }
-    }
-
-    if (
-        rightSensor.calibrated()
-        && !rightSensor.calibrationInProgress()
-        && !rightCalibrationStored
-    ) {
-        rightCalibrationStored = instrumentStorage.saveCalibration(
-            StoredLoadSide::Right,
-            rightSensor.calibrationFactor(),
-            rightSensor.calibrationReferenceGrams());
-        if (rightCalibrationStored) {
-            Serial.println("Stored RIGHT calibration in NVS");
-        }
-    }
 
     const bool leftBaselineNow = creepDiagnostic.baselineCaptured(
         DiagnosticSide::Left);

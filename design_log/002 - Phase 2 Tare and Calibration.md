@@ -68,12 +68,17 @@ Calibration must not become available merely because an arbitrary amount of time
 Current calibration gating:
 
 1. The selected side must have a deliberate `TARE OK`.
-2. A significant zero-adjusted load of at least 250,000 raw counts must be detected.
-3. The threshold must be exceeded for 5 consecutive fresh HX711 samples.
-4. Only then does the 30-second calibration settling timer start.
-5. If the load drops below the detection threshold, the timer is reset.
-6. CAL becomes available only after the full settling interval.
-7. The measurement layer enforces the rule independently of the disabled/enabled state of the UI button.
+2. The first CAL action records the user's actual reference mass and arms load
+   detection.
+3. A significant zero-adjusted load of at least 250,000 raw counts must be
+   detected for 5 consecutive fresh HX711 samples.
+4. CAL then becomes available for the explicit second action.
+5. The second CAL action starts one fixed 30-second settling timer. Leaving the
+   weight in place does not restart it.
+6. After the full interval, filtered calibration sampling and persistent save
+   run automatically.
+7. The shared calibration controller enforces the rule independently of the
+   disabled/enabled state of either normal or diagnostic UI buttons.
 
 ### Why 250,000 counts?
 
@@ -130,8 +135,9 @@ Jitter and drift must not be treated as the same problem.
 
 ## Next validation steps
 
-1. Verify the load-triggered 30-second CAL lockout on hardware.
-2. Verify the timer resets if the reference load is removed.
+1. Verify the two-action CAL workflow and fixed 30-second stabilization on
+   hardware.
+2. Verify leaving the reference weight in place cannot restart stabilization.
 3. Characterise zero stability and under-load creep independently for Left and Right.
 4. Verify both calibrated channels using the 113.8 g secondary reference.
 5. Decide the measurement averaging/stability method from observed data.
@@ -363,3 +369,45 @@ Generated diagnostic CSV files are ignored by Git by default. A reviewed dataset
 ### High-load reference comparison
 
 A later engineering reference run may follow the timing and conditioning structure of OIML R 60 creep testing without claiming accredited type evaluation. For each independent channel, the planned reference uses approximately 1,800 g total physical load on the 2 kg cell, three brief preload/removal conditioning cycles, a one-hour minimum-load rest, and one 30-minute acquisition near 20 C. The calibration platform and all other supported hardware count toward the total physical load; SET MASS still receives only the separately measured added test-piece mass. The explicit 10-second sample, 20-minute sample and 30-minute endpoint are preserved in the CSV.
+
+## Shared calibration workflow controller (v0.1.3)
+
+Calibration workflow ownership is separated from `main.cpp`. `LoadCellChannel`
+continues to own HX711 acquisition, tare sampling, filtering and the actual
+counts-per-gram calculation. The new `CalibrationController` owns the user
+workflow, 30-second stabilization timer and persistent calibration save. Normal
+Calibration and the developer creep diagnostic therefore use the same controller
+instead of maintaining parallel calibration state machines.
+
+Calibration factor/state and tare state deliberately have different lifetimes:
+
+- a valid Left/Right calibration factor is restored from NVS across normal power
+  cycles when its firmware compatibility version still matches;
+- tare is a temporary zero for the current physical setup and is never restored
+  across power cycles;
+- a fresh tare changes the zero offset without deleting an established factor;
+- firmware compatibility changes still invalidate the stored factor and require
+  a deliberate new calibration.
+
+For each side the normal calibration interaction is:
+
+1. `TARE` is always available unless a calibration is actively stabilizing or
+   sampling. Fit the empty calibration platform and deliberately tare that side.
+2. A completed tare turns `TARE` green but leaves it actionable.
+3. `CAL` becomes actionable immediately after tare. Orange means calibration is
+   required; green means a valid factor already exists and CAL may be pressed to
+   deliberately recalibrate.
+4. The first `CAL` action requests the user's actual reference mass. ArrowLab does
+   not treat 999.8 g or any other development weight as a universal constant.
+5. ArrowLab instructs the user to place that reference weight. A confirmed
+   significant raw-count change arms the second CAL action.
+6. The second `CAL` action starts one fixed 30-second stabilization period. The
+   weight remaining in place cannot restart that timer. CAL is disabled and the
+   progress indicator provides positive feedback while stabilizing.
+7. After the timer, the normal filtered calibration samples are collected, the
+   new factor is calculated and stored in NVS, and CAL returns green/actionable.
+
+Left and Right remain independent. Completing one side never navigates away from
+the Calibration screen; if the other side still needs attention, the next-action
+message continues to guide the user there. Global calibration validity becomes OK
+only when both stored channel factors are valid.

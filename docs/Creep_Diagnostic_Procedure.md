@@ -39,7 +39,10 @@ The required order is:
 
 1. `ZERO BASE`
 2. `TARE`
-3. `CAL` when calibration is required or deliberately being renewed
+3. `CAL` when calibration is required or deliberately being renewed. After a
+   platform tare, the first CAL press opens actual reference-mass entry. Place
+   that weight when instructed; the second CAL press starts the fixed 30-second
+   stabilization and calibration.
 4. one or more `LOAD TEST` runs
 
 The instruction line states the next operator action. The state line says what
@@ -62,18 +65,21 @@ If USB disconnects, leave ArrowLab powered. The run continues in RAM and is repl
 
 1. Fit the empty calibration platform to the selected channel.
 2. Press `TARE` and confirm.
-3. Place the known reference mass centrally.
-4. Wait for the 30-second stability gate.
-5. Press `CAL` when enabled.
+3. Press `CAL`, enter the known reference mass, and confirm the entry.
+4. Place that reference mass centrally when instructed.
+5. When `CAL READY` appears, press `CAL` again.
+6. Leave the weight untouched during the 30-second stabilization and automatic
+   calibration sampling.
 
-During the gate the screen counts down and shows progress. `CAL READY` means the
-button may be pressed. `CAL OK` and a green CAL button mean a factor is already
+During stabilization the screen counts down and shows progress. `CAL READY`
+means load presence is confirmed and the second CAL action may be pressed.
+`CAL OK` and a green, still-actionable CAL button mean a factor is already
 stored. Normal Calibration remains independently available at any time; the
 diagnostic screen merely reuses the same tare and calibration routines.
 
 Calibration stores counts-per-gram for the selected channel in ESP32 non-volatile storage. It survives normal power cycles. A firmware version change deliberately invalidates it so the user must recalibrate; the other channel remains independent.
 
-The zero-baseline record and calibration factor are different things. A baseline characterises drift. Calibration converts counts to grams.
+The zero-baseline record and calibration factor are different things. A baseline characterises drift. Calibration converts counts to grams. Calibration performed here uses the same `CalibrationController` as the normal Settings > Calibration screen and is therefore stored persistently for the selected channel; the diagnostic does not own a second calibration implementation.
 
 ### 3. Loaded run
 
