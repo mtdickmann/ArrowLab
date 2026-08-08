@@ -20,7 +20,7 @@ except ImportError:
     raise SystemExit(2)
 
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 HEARTBEAT_INTERVAL_S = 1.0
 RECONNECT_DELAY_S = 2.0
 
@@ -33,16 +33,15 @@ CSV_HEADER = [
     "test_mass_g",
     "elapsed_ms",
     "raw_count",
-    "zeroed_count",
-    "calculated_g",
-    "calibration_factor",
+    "run_reference_raw",
+    "delta_count",
     "host_timestamp_utc",
 ]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Capture ArrowLab creep-test protocol v2 records."
+        description="Capture ArrowLab creep-test protocol v3 raw records."
     )
     parser.add_argument("port", help="Serial port, for example COM3")
     parser.add_argument(
@@ -194,7 +193,7 @@ def main() -> int:
                     continue
 
                 parts = line.split(",")
-                if len(parts) != 13:
+                if len(parts) != 12:
                     print(
                         f"Ignored malformed diagnostic line: {line}",
                         file=sys.stderr,
@@ -258,20 +257,14 @@ def main() -> int:
                 mass = parts[7]
                 elapsed_s = int(parts[8]) / 1000.0
                 raw_count = parts[9]
-                zeroed_count = parts[10]
-                grams = parts[11]
-                factor = float(parts[12])
-
-                reading_text = (
-                    f"raw={raw_count} zeroed={zeroed_count} grams=UNCAL"
-                    if factor == 0.0
-                    else f"reading={grams} g"
-                )
+                reference_raw = parts[10]
+                delta_count = parts[11]
 
                 print(
                     f"#{row_count:04d} run={run_id} {side:5s} "
                     f"{run_type:4s} {mass} g t={elapsed_s:7.1f}s "
-                    f"{reading_text}"
+                    f"raw={raw_count} reference={reference_raw} "
+                    f"delta={delta_count}"
                 )
 
             except serial.SerialException as exc:
