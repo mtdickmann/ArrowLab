@@ -40,7 +40,7 @@ namespace
      *   DT  = GPIO11
      *   SCK = GPIO12
      */
-    LoadCellChannel leftSensor("Left", 17, 10);
+    LoadCellChannel leftSensor("Left", 17, 13);
     LoadCellChannel rightSensor("Right", 11, 12);
     MeasurementChannel leftMeasurement;
     MeasurementChannel rightMeasurement;
