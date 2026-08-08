@@ -40,7 +40,7 @@ namespace
      *   DT  = GPIO11
      *   SCK = GPIO12
      */
-    LoadCellChannel leftSensor("Left", 13, 10);
+    LoadCellChannel leftSensor("Left", 17, 10);
     LoadCellChannel rightSensor("Right", 11, 12);
     MeasurementChannel leftMeasurement;
     MeasurementChannel rightMeasurement;
@@ -67,8 +67,8 @@ namespace
     CalibrationSide calibrationSide(ArrowLabUI::LoadSide side)
     {
         return side == ArrowLabUI::LoadSide::Left
-            ? CalibrationSide::Left
-            : CalibrationSide::Right;
+                   ? CalibrationSide::Left
+                   : CalibrationSide::Right;
     }
 
     void requestTare(ArrowLabUI::LoadSide side)
@@ -80,7 +80,8 @@ namespace
         ArrowLabUI::LoadSide side,
         float referenceGrams)
     {
-        if (referenceGrams > 0.0f) {
+        if (referenceGrams > 0.0f)
+        {
             calibrationReferenceGrams = referenceGrams;
             ArrowLabUI::setCalibrationReferenceGrams(referenceGrams);
         }
@@ -113,28 +114,34 @@ namespace
 
     void processSerialInput(uint32_t currentTime)
     {
-        while (Serial.available() > 0) {
+        while (Serial.available() > 0)
+        {
             const char value = static_cast<char>(Serial.read());
 
-            if (value == '\r') {
+            if (value == '\r')
+            {
                 continue;
             }
 
-            if (value == '\n') {
-                if (serialLineLength > 0) {
+            if (value == '\n')
+            {
+                if (serialLineLength > 0)
+                {
                     serialLine[serialLineLength] = '\0';
                     creepDiagnostic.handleHostCommand(
                         serialLine,
-                        currentTime
-                    );
+                        currentTime);
                     serialLineLength = 0;
                 }
                 continue;
             }
 
-            if (serialLineLength < sizeof(serialLine) - 1) {
+            if (serialLineLength < sizeof(serialLine) - 1)
+            {
                 serialLine[serialLineLength++] = value;
-            } else {
+            }
+            else
+            {
                 serialLineLength = 0;
             }
         }
@@ -142,31 +149,33 @@ namespace
 
     void processDiagnosticRequests(uint32_t currentTime)
     {
-        if (diagnosticCancelRequested) {
+        if (diagnosticCancelRequested)
+        {
             diagnosticCancelRequested = false;
             diagnosticStartRequested = false;
             creepDiagnostic.cancel();
         }
 
-        if (diagnosticFinishRequested) {
+        if (diagnosticFinishRequested)
+        {
             diagnosticFinishRequested = false;
 
-            if (!creepDiagnostic.finishSession()) {
+            if (!creepDiagnostic.finishSession())
+            {
                 Serial.println(
-                    "AL_DIAG,EVENT,FINISH_REJECTED"
-                );
+                    "AL_DIAG,EVENT,FINISH_REJECTED");
             }
         }
 
-        if (!diagnosticStartRequested) {
+        if (!diagnosticStartRequested)
+        {
             return;
         }
 
         diagnosticStartRequested = false;
 
         const DiagnosticSide side =
-            diagnosticRequestedSide
-                    == ArrowLabUI::LoadSide::Left
+            diagnosticRequestedSide == ArrowLabUI::LoadSide::Left
                 ? DiagnosticSide::Left
                 : DiagnosticSide::Right;
 
@@ -174,11 +183,10 @@ namespace
                 side,
                 diagnosticRequestedMassGrams,
                 diagnosticRequestedZeroBaseline,
-                currentTime
-            )) {
+                currentTime))
+        {
             Serial.println(
-                "AL_DIAG,EVENT,START_REJECTED"
-            );
+                "AL_DIAG,EVENT,START_REJECTED");
         }
     }
 
@@ -186,26 +194,27 @@ namespace
         char *buffer,
         size_t bufferSize,
         const MeasurementChannel &measurement,
-        bool live
-    )
+        bool live)
     {
-        if (!live) {
+        if (!live)
+        {
             snprintf(buffer, bufferSize, "---");
             return;
         }
 
-        if (!measurement.tareComplete()) {
+        if (!measurement.tareComplete())
+        {
             snprintf(buffer, bufferSize, "TARE");
             return;
         }
 
-        if (measurement.calibrated()) {
+        if (measurement.calibrated())
+        {
             snprintf(
                 buffer,
                 bufferSize,
                 "%.1f",
-                measurement.heldGrams()
-            );
+                measurement.heldGrams());
             return;
         }
 
@@ -213,8 +222,7 @@ namespace
             buffer,
             bufferSize,
             "%ld",
-            measurement.heldRawCounts()
-        );
+            measurement.heldRawCounts());
     }
 
     void updateDisplay(uint32_t currentTime)
@@ -232,34 +240,29 @@ namespace
             leftText,
             sizeof(leftText),
             leftMeasurement,
-            leftLive
-        );
+            leftLive);
 
         formatReading(
             rightText,
             sizeof(rightText),
             rightMeasurement,
-            rightLive
-        );
+            rightLive);
 
         const CalibrationController::ChannelStatus leftCalibration =
             calibrationController.status(CalibrationSide::Left, currentTime);
         const CalibrationController::ChannelStatus rightCalibration =
             calibrationController.status(CalibrationSide::Right, currentTime);
 
-        const auto setupActive = [](CalibrationController::Stage stage) {
-            return stage == CalibrationController::Stage::AwaitingLoad
-                || stage == CalibrationController::Stage::ReadyToCalibrate
-                || stage == CalibrationController::Stage::Settling
-                || stage == CalibrationController::Stage::Sampling;
+        const auto setupActive = [](CalibrationController::Stage stage)
+        {
+            return stage == CalibrationController::Stage::AwaitingLoad || stage == CalibrationController::Stage::ReadyToCalibrate || stage == CalibrationController::Stage::Settling || stage == CalibrationController::Stage::Sampling;
         };
-        const auto calibrationBusy = [](CalibrationController::Stage stage) {
-            return stage == CalibrationController::Stage::Settling
-                || stage == CalibrationController::Stage::Sampling;
+        const auto calibrationBusy = [](CalibrationController::Stage stage)
+        {
+            return stage == CalibrationController::Stage::Settling || stage == CalibrationController::Stage::Sampling;
         };
         const bool tareInProgress =
-            leftCalibration.stage == CalibrationController::Stage::Taring
-            || rightCalibration.stage == CalibrationController::Stage::Taring;
+            leftCalibration.stage == CalibrationController::Stage::Taring || rightCalibration.stage == CalibrationController::Stage::Taring;
 
         lvgl_port_lock(-1);
 
@@ -271,13 +274,11 @@ namespace
                 ? "LEFT"
                 : "RIGHT";
         const bool diagnosticActive =
-            diagnosticState == CreepDiagnostic::State::WaitingForHost
-            ||
-            diagnosticState == CreepDiagnostic::State::CapturingReference
-            || diagnosticState == CreepDiagnostic::State::AwaitingLoad
-            || diagnosticState == CreepDiagnostic::State::Running;
+            diagnosticState == CreepDiagnostic::State::WaitingForHost ||
+            diagnosticState == CreepDiagnostic::State::CapturingReference || diagnosticState == CreepDiagnostic::State::AwaitingLoad || diagnosticState == CreepDiagnostic::State::Running;
 
-        switch (diagnosticState) {
+        switch (diagnosticState)
+        {
         case CreepDiagnostic::State::WaitingForHost:
             snprintf(
                 diagnosticStatus,
@@ -302,7 +303,8 @@ namespace
                 diagnosticSideText);
             break;
 
-        case CreepDiagnostic::State::Running: {
+        case CreepDiagnostic::State::Running:
+        {
             const uint32_t elapsedSeconds =
                 creepDiagnostic.elapsedMs(currentTime) / 1000;
             snprintf(
@@ -342,8 +344,7 @@ namespace
             diagnosticStatus,
             creepDiagnostic.progressPercent(currentTime),
             diagnosticActive,
-            creepDiagnostic.awaitingSave()
-        );
+            creepDiagnostic.awaitingSave());
         ArrowLabUI::setDiagnosticHostConnected(
             creepDiagnostic.hostConnected(currentTime));
 
@@ -352,75 +353,67 @@ namespace
         ArrowLabUI::setSensorHealth(leftLive, rightLive);
         ArrowLabUI::setCalibrationValidity(
             leftMeasurement.calibrated(),
-            rightMeasurement.calibrated()
-        );
+            rightMeasurement.calibrated());
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
-            leftMeasurement.calibrated() ? "g" : "RAW"
-        );
+            leftMeasurement.calibrated() ? "g" : "RAW");
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Right,
-            rightMeasurement.calibrated() ? "g" : "RAW"
-        );
+            rightMeasurement.calibrated() ? "g" : "RAW");
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
             leftMeasurement.tareComplete(),
             leftCalibration.stage == CalibrationController::Stage::Taring,
             leftMeasurement.userTareConfirmed(),
-            leftCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate,
+            leftCalibration.stage == CalibrationController::Stage::ReadyToCalibrate,
             calibrationBusy(leftCalibration.stage),
             leftMeasurement.calibrated(),
             setupActive(leftCalibration.stage),
             leftCalibration.settleRemainingSeconds,
-            leftCalibration.settlePercent
-        );
+            leftCalibration.settlePercent);
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Right,
             rightMeasurement.tareComplete(),
             rightCalibration.stage == CalibrationController::Stage::Taring,
             rightMeasurement.userTareConfirmed(),
-            rightCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate,
+            rightCalibration.stage == CalibrationController::Stage::ReadyToCalibrate,
             calibrationBusy(rightCalibration.stage),
             rightMeasurement.calibrated(),
             setupActive(rightCalibration.stage),
             rightCalibration.settleRemainingSeconds,
-            rightCalibration.settlePercent
-        );
+            rightCalibration.settlePercent);
 
         const bool calibrationInProgress =
-            calibrationBusy(leftCalibration.stage)
-            || calibrationBusy(rightCalibration.stage);
+            calibrationBusy(leftCalibration.stage) || calibrationBusy(rightCalibration.stage);
 
-        if (tareInProgress) {
+        if (tareInProgress)
+        {
             ArrowLabUI::setStatus(
-                "Taring load cell - keep setup stable"
-            );
+                "Taring load cell - keep setup stable");
 
             ArrowLabUI::setState(
                 "TARING",
-                lv_color_hex(0xFFB020)
-            );
-        } else if (calibrationInProgress) {
+                lv_color_hex(0xFFB020));
+        }
+        else if (calibrationInProgress)
+        {
             ArrowLabUI::setStatus(
                 calibrationBusy(leftCalibration.stage)
                     ? "Calibrating LEFT - keep weight stable"
-                    : "Calibrating RIGHT - keep weight stable"
-            );
+                    : "Calibrating RIGHT - keep weight stable");
 
             ArrowLabUI::setState(
                 "CALIBRATING",
-                lv_color_hex(0xFFB020)
-            );
-        } else if (leftLive && rightLive) {
+                lv_color_hex(0xFFB020));
+        }
+        else if (leftLive && rightLive)
+        {
             if (
-                leftCalibration.stage
-                    == CalibrationController::Stage::AwaitingLoad
-            ) {
+                leftCalibration.stage == CalibrationController::Stage::AwaitingLoad)
+            {
                 char nextAction[72];
                 snprintf(
                     nextAction,
@@ -428,10 +421,10 @@ namespace
                     "NEXT: Place %.1f g calibration weight on LEFT",
                     leftCalibration.referenceGrams);
                 ArrowLabUI::setStatus(nextAction);
-            } else if (
-                rightCalibration.stage
-                    == CalibrationController::Stage::AwaitingLoad
-            ) {
+            }
+            else if (
+                rightCalibration.stage == CalibrationController::Stage::AwaitingLoad)
+            {
                 char nextAction[72];
                 snprintf(
                     nextAction,
@@ -439,87 +432,90 @@ namespace
                     "NEXT: Place %.1f g calibration weight on RIGHT",
                     rightCalibration.referenceGrams);
                 ArrowLabUI::setStatus(nextAction);
-            } else if (
-                leftCalibration.stage
-                    == CalibrationController::Stage::ReadyToCalibrate
-            ) {
+            }
+            else if (
+                leftCalibration.stage == CalibrationController::Stage::ReadyToCalibrate)
+            {
                 ArrowLabUI::setStatus(
                     "NEXT: Press LEFT CAL to start 30 s stabilization");
-            } else if (
-                rightCalibration.stage
-                    == CalibrationController::Stage::ReadyToCalibrate
-            ) {
+            }
+            else if (
+                rightCalibration.stage == CalibrationController::Stage::ReadyToCalibrate)
+            {
                 ArrowLabUI::setStatus(
                     "NEXT: Press RIGHT CAL to start 30 s stabilization");
-            } else if (
-                leftMeasurement.calibrated()
-                && rightMeasurement.calibrated()
-            ) {
+            }
+            else if (
+                leftMeasurement.calibrated() && rightMeasurement.calibrated())
+            {
                 ArrowLabUI::setStatus(
-                    "Both load channels calibrated"
-                );
-            } else if (
-                leftMeasurement.userTareConfirmed()
-                && rightMeasurement.userTareConfirmed()
-            ) {
-                if (leftMeasurement.calibrated()) {
+                    "Both load channels calibrated");
+            }
+            else if (
+                leftMeasurement.userTareConfirmed() && rightMeasurement.userTareConfirmed())
+            {
+                if (leftMeasurement.calibrated())
+                {
                     ArrowLabUI::setStatus(
-                        "Calibrate RIGHT with reference weight"
-                    );
-                } else if (rightMeasurement.calibrated()) {
-                    ArrowLabUI::setStatus(
-                        "Calibrate LEFT with reference weight"
-                    );
-                } else {
-                    ArrowLabUI::setStatus(
-                        "Both loads ready for calibration"
-                    );
+                        "Calibrate RIGHT with reference weight");
                 }
-            } else if (leftMeasurement.userTareConfirmed()) {
+                else if (rightMeasurement.calibrated())
+                {
+                    ArrowLabUI::setStatus(
+                        "Calibrate LEFT with reference weight");
+                }
+                else
+                {
+                    ArrowLabUI::setStatus(
+                        "Both loads ready for calibration");
+                }
+            }
+            else if (leftMeasurement.userTareConfirmed())
+            {
                 ArrowLabUI::setStatus(
-                    "Tare RIGHT before calibration"
-                );
-            } else if (rightMeasurement.userTareConfirmed()) {
+                    "Tare RIGHT before calibration");
+            }
+            else if (rightMeasurement.userTareConfirmed())
+            {
                 ArrowLabUI::setStatus(
-                    "Tare LEFT before calibration"
-                );
-            } else {
+                    "Tare LEFT before calibration");
+            }
+            else
+            {
                 ArrowLabUI::setStatus(
-                    "Tare each load before calibration"
-                );
+                    "Tare each load before calibration");
             }
 
             ArrowLabUI::setState(
                 "DUAL LIVE",
-                lv_color_hex(0x4CD964)
-            );
-        } else if (leftLive) {
+                lv_color_hex(0x4CD964));
+        }
+        else if (leftLive)
+        {
             ArrowLabUI::setStatus(
-                "Left live - waiting for right HX711"
-            );
+                "Left live - waiting for right HX711");
 
             ArrowLabUI::setState(
                 "LEFT LIVE",
-                lv_color_hex(0xFFB020)
-            );
-        } else if (rightLive) {
+                lv_color_hex(0xFFB020));
+        }
+        else if (rightLive)
+        {
             ArrowLabUI::setStatus(
-                "Right live - waiting for left HX711"
-            );
+                "Right live - waiting for left HX711");
 
             ArrowLabUI::setState(
                 "RIGHT LIVE",
-                lv_color_hex(0xFFB020)
-            );
-        } else {
+                lv_color_hex(0xFFB020));
+        }
+        else
+        {
             ArrowLabUI::setStatus(
-                "Waiting for HX711 data"
-            );
+                "Waiting for HX711 data");
 
             ArrowLabUI::setState(
                 "NO DATA",
-                lv_color_hex(0xFF4D4D)
-            );
+                lv_color_hex(0xFF4D4D));
         }
 
         lvgl_port_unlock();
@@ -535,10 +531,10 @@ void setup()
         Version::MAJOR,
         Version::MINOR,
         Version::PATCH,
-        Version::STATUS
-    );
+        Version::STATUS);
 
-    if (!instrumentStorage.begin()) {
+    if (!instrumentStorage.begin())
+    {
         Serial.println("WARNING: persistent instrument storage unavailable");
     }
 
@@ -548,20 +544,17 @@ void setup()
 #if LVGL_PORT_AVOID_TEARING_MODE
     auto lcd = displayBoard->getLCD();
     lcd->configFrameBufferNumber(
-        LVGL_PORT_DISP_BUFFER_NUM
-    );
+        LVGL_PORT_DISP_BUFFER_NUM);
 
 #if ESP_PANEL_DRIVERS_BUS_ENABLE_RGB && CONFIG_IDF_TARGET_ESP32S3
     auto lcdBus = lcd->getBus();
 
     if (
-        lcdBus->getBasicAttributes().type
-        == ESP_PANEL_BUS_TYPE_RGB
-    ) {
+        lcdBus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB)
+    {
         static_cast<BusRGB *>(lcdBus)
             ->configRGB_BounceBufferSize(
-                lcd->getFrameWidth() * 10
-            );
+                lcd->getFrameWidth() * 10);
     }
 #endif
 #endif
@@ -572,34 +565,28 @@ void setup()
 
     lvgl_port_init(
         displayBoard->getLCD(),
-        displayBoard->getTouch()
-    );
+        displayBoard->getTouch());
 
     lvgl_port_lock(-1);
 
     ArrowLabUI::create();
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setCalibrationCallback(
-        requestCalibration
-    );
+        requestCalibration);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,
-        requestDiagnosticFinish
-    );
+        requestDiagnosticFinish);
     ArrowLabUI::setCalibrationReferenceGrams(
-        calibrationReferenceGrams
-    );
+        calibrationReferenceGrams);
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");
     ArrowLabUI::setStatus(
-        "Starting dual HX711 system"
-    );
+        "Starting dual HX711 system");
 
     ArrowLabUI::setState(
         "INITIALIZING",
-        lv_color_hex(0xFFB020)
-    );
+        lv_color_hex(0xFFB020));
 
     lvgl_port_unlock();
 
@@ -608,8 +595,7 @@ void setup()
     calibrationController.begin();
 
     Serial.println(
-        "Dual HX711 initialization complete - awaiting deliberate tare"
-    );
+        "Dual HX711 initialization complete - awaiting deliberate tare");
 }
 
 void loop()
@@ -621,9 +607,8 @@ void loop()
     processSerialInput(now);
 
     if (
-        now - lastSensorUpdate
-        < SENSOR_UPDATE_INTERVAL_MS
-    ) {
+        now - lastSensorUpdate < SENSOR_UPDATE_INTERVAL_MS)
+    {
         delay(5);
         return;
     }
@@ -631,10 +616,8 @@ void loop()
     lastSensorUpdate = now;
 
     if (
-        diagnosticStartRequested
-        || diagnosticCancelRequested
-        || diagnosticFinishRequested
-    ) {
+        diagnosticStartRequested || diagnosticCancelRequested || diagnosticFinishRequested)
+    {
         processDiagnosticRequests(now);
     }
 
@@ -644,14 +627,16 @@ void loop()
      */
     const bool leftFresh = leftSensor.read(now);
 
-    if (leftFresh) {
+    if (leftFresh)
+    {
         leftMeasurement.onRawSample(leftSensor.rawValue(), now);
         calibrationController.onFreshReading(CalibrationSide::Left);
     }
 
     const bool rightFresh = rightSensor.read(now);
 
-    if (rightFresh) {
+    if (rightFresh)
+    {
         rightMeasurement.onRawSample(rightSensor.rawValue(), now);
         calibrationController.onFreshReading(CalibrationSide::Right);
     }
@@ -663,8 +648,7 @@ void loop()
         leftFresh,
         rightFresh,
         leftSensor,
-        rightSensor
-    );
+        rightSensor);
 
     updateDisplay(now);
 
