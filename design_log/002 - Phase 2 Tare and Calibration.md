@@ -95,6 +95,30 @@ Initial hardware observation is approximately one million counts for a mass near
 
 This raw threshold is necessary before first calibration because a trustworthy counts-to-grams factor does not yet exist.
 
+## Post-calibration verification
+
+Completing the calibration calculation does not by itself prove that the new
+factor is trustworthy. Hardware testing has occasionally produced a completed
+calibration that does not reproduce the reference mass accurately when the
+weight is reapplied.
+
+Approved verification workflow:
+
+1. A newly calculated calibration factor is provisional.
+2. ArrowLab prompts the operator to remove and then replace the same reference
+   weight.
+3. The normal stable/held measurement is compared with the entered reference
+   mass.
+4. A result within +/-0.1 g is accepted as `CAL VERIFIED` and shown green.
+5. A result outside +/-0.1 g is reported as a failed check and recalibration is
+   required.
+6. A previously verified persistent factor is not overwritten by a failed
+   recalibration attempt. The replacement factor becomes trusted persistent
+   state only after verification succeeds.
+
+This keeps calibration completion and calibration validity as separate states
+and removes the need for the operator to remember an informal manual check.
+
 ## Status and colour conventions
 
 Status uses text and colour together. Colour is a quick visual cue, not the only source of state information.
@@ -139,6 +163,56 @@ Jitter and drift must not be treated as the same problem.
 - If creep proves repeatable per channel, a bounded per-channel correction may be considered.
 - Calibration should eventually have a limited valid action window after settling so a reference mass cannot remain loaded indefinitely before calibration is accepted.
 - Ordinary arrow mass/FOC measurements should use a controlled settle/sample/freeze window rather than indefinite live readings when a final measurement is required.
+
+### Long-idle zero drift and user confidence
+
+Extended unloaded testing has shown that indicated zero may move by several
+grams over long idle periods even though a deliberate re-tare immediately
+restores sensible, repeatable readings. This is treated as a zero-reference
+maintenance problem unless separate health evidence indicates a failed signal
+path.
+
+- Small/slow long-term zero movement must not automatically produce a hardware
+  fault alarm.
+- Calibration factor K and operational tare remain separate: refreshing tare
+  must not erase a verified calibration.
+- A blind periodic auto-tare is forbidden because a genuine static load could
+  otherwise be silently zeroed out.
+- Future idle/sleep behaviour may refresh zero automatically only when ArrowLab
+  can establish that the measurement channel is unloaded.
+- Otherwise the UI should recommend a re-tare before a new precision
+  measurement after prolonged idle.
+- Help/manual text must explain that long-term load-cell/HX711 zero drift is an
+  expected hardware characteristic and that re-taring refreshes the zero
+  reference.
+
+The objective is honest measurement without presenting normal analogue drift
+as an alarming instrument failure.
+
+## Dual-processor measurement architecture
+
+GPIO investigation of the VIEWE display board established that GPIO10-13 are
+the onboard SD-card interface rather than genuinely spare general-purpose
+connections. GPIO17 is the only currently validated spare GPIO that ArrowLab
+will reserve for exceptional future use. Display, touch and other board-owned
+GPIOs are treated as unavailable to ArrowLab peripherals.
+
+The permanent architecture therefore adds an ESP32-S3-WROOM-1 N16R8 as a
+dedicated measurement and physical-I/O processor:
+
+- the VIEWE ESP32-S3 owns UI, touch, SD storage, networking, OTA and high-level
+  application behaviour;
+- the measurement ESP32-S3 owns both HX711 interfaces and future
+  timing-sensitive sensors/physical I/O;
+- completed measurements and commands will cross a small inter-processor I2C
+  protocol rather than exposing HX711 timing to the display processor;
+- VIEWE GPIO10-13 return exclusively to their intended SD-card role;
+- GPIO17 remains reserved rather than being consumed merely because it is
+  available.
+
+The first measurement-node firmware is deliberately raw-only and is used as
+an independent hardware diagnostic before the permanent I2C protocol is
+introduced.
 
 ## Next validation steps
 
