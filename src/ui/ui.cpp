@@ -6,15 +6,24 @@
 namespace
 {
     // Main colours
+    // constexpr uint32_t COLOUR_BACKGROUND = 0x101419;
+    // constexpr uint32_t COLOUR_PANEL = 0x1A2027;
+    // constexpr uint32_t COLOUR_HEADER = 0x141A20;
+    // constexpr uint32_t COLOUR_BORDER = 0x303A44;
+    // constexpr uint32_t COLOUR_TEXT = 0xF2F5F7;
+    // constexpr uint32_t COLOUR_MUTED = 0x9AA6B2;
+    // constexpr uint32_t COLOUR_ACCENT = 0x4EA3FF;
+    // constexpr uint32_t COLOUR_OK = 0x4CD964;
+    // constexpr uint32_t COLOUR_REQUIRED = 0xFFB020;
     constexpr uint32_t COLOUR_BACKGROUND = 0x101419;
     constexpr uint32_t COLOUR_PANEL = 0x1A2027;
     constexpr uint32_t COLOUR_HEADER = 0x141A20;
     constexpr uint32_t COLOUR_BORDER = 0x303A44;
-    constexpr uint32_t COLOUR_TEXT = 0xF2F5F7;
+    constexpr uint32_t COLOUR_TEXT = 0xffffff;
     constexpr uint32_t COLOUR_MUTED = 0x9AA6B2;
     constexpr uint32_t COLOUR_ACCENT = 0x4EA3FF;
-    constexpr uint32_t COLOUR_OK = 0x4CD964;
-    constexpr uint32_t COLOUR_REQUIRED = 0xFFB020;
+    constexpr uint32_t COLOUR_OK = 0x00ff00;
+    constexpr uint32_t COLOUR_REQUIRED = 0xFFA500;
 
     struct ReadingPanelRefs
     {
@@ -450,15 +459,18 @@ namespace
     void handleCalibrationButton(ArrowLabUI::LoadSide side)
     {
         const bool setupActive = side == ArrowLabUI::LoadSide::Left
-            ? leftCalibrationSetupActive
-            : rightCalibrationSetupActive;
+                                     ? leftCalibrationSetupActive
+                                     : rightCalibrationSetupActive;
         const bool ready = side == ArrowLabUI::LoadSide::Left
-            ? leftCalibrationReady
-            : rightCalibrationReady;
+                               ? leftCalibrationReady
+                               : rightCalibrationReady;
 
-        if (ready) {
+        if (ready)
+        {
             showCalibrationConfirmation(side);
-        } else if (!setupActive) {
+        }
+        else if (!setupActive)
+        {
             showCalibrationMassInput(side);
         }
     }
@@ -479,7 +491,6 @@ namespace
         }
     }
 
-
     void showPage(lv_obj_t *page)
     {
         lv_obj_add_flag(homePage, LV_OBJ_FLAG_HIDDEN);
@@ -491,19 +502,31 @@ namespace
         lv_obj_clear_flag(page, LV_OBJ_FLAG_HIDDEN);
         currentPage = page;
 
-        if (headerContextLabel != nullptr) {
+        if (headerContextLabel != nullptr)
+        {
             const char *title = "";
-            if (page == homePage) {
+            if (page == homePage)
+            {
                 title = "HOME";
-            } else if (page == settingsPage) {
+            }
+            else if (page == settingsPage)
+            {
                 title = "SETTINGS";
-            } else if (page == calibrationPage) {
+            }
+            else if (page == calibrationPage)
+            {
                 title = "CALIBRATION";
-            } else if (page == diagnosticsMenuPage) {
+            }
+            else if (page == diagnosticsMenuPage)
+            {
                 title = "DIAGNOSTICS";
-            } else if (page == diagnosticSidePage) {
+            }
+            else if (page == diagnosticSidePage)
+            {
                 title = "CREEP TEST";
-            } else if (page == diagnosticsPage) {
+            }
+            else if (page == diagnosticsPage)
+            {
                 title = "CREEP DIAGNOSTIC";
             }
             lv_label_set_text(headerContextLabel, title);
@@ -512,7 +535,8 @@ namespace
 
     void helpCloseEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED) {
+        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED)
+        {
             return;
         }
 
@@ -523,9 +547,8 @@ namespace
     void helpButtonEvent(lv_event_t *event)
     {
         if (
-            lv_event_get_code(event) != LV_EVENT_CLICKED
-            || helpBox != nullptr
-        ) {
+            lv_event_get_code(event) != LV_EVENT_CLICKED || helpBox != nullptr)
+        {
             return;
         }
 
@@ -534,19 +557,24 @@ namespace
             "Follow the highlighted next action. Red faults must be "
             "corrected before measurement.";
 
-        if (currentPage == calibrationPage) {
+        if (currentPage == calibrationPage)
+        {
             title = "CALIBRATION HELP";
             message =
                 "For either side: fit the empty platform and TARE. "
                 "Press CAL, enter the actual reference mass, then place "
                 "that weight. When prompted, press CAL again to start "
                 "the 30-second stabilization and calibration.";
-        } else if (currentPage == diagnosticSidePage) {
+        }
+        else if (currentPage == diagnosticSidePage)
+        {
             title = "CREEP TEST HELP";
             message =
                 "Choose one raw channel. Left and Right runs are "
                 "independent and never change operational calibration.";
-        } else if (currentPage == diagnosticsPage) {
+        }
+        else if (currentPage == diagnosticsPage)
+        {
             title = "CREEP DIAGNOSTIC HELP";
             message =
                 "Start the PC logger first. Follow the NEXT/WAIT line. "
@@ -573,28 +601,32 @@ namespace
 
     void homeButtonEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(homePage);
         }
     }
 
     void settingsButtonEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(settingsPage);
         }
     }
 
     void calibrationPageButtonEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(calibrationPage);
         }
     }
 
     void closeInformationBoxEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED) {
+        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED)
+        {
             return;
         }
 
@@ -603,7 +635,8 @@ namespace
 
     void diagnosticsButtonEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(diagnosticsMenuPage);
         }
     }
@@ -611,42 +644,45 @@ namespace
     void diagnosticBackEvent(lv_event_t *event)
     {
         if (
-            lv_event_get_code(event) == LV_EVENT_CLICKED
-            && !diagnosticRunActive
-            && !diagnosticAwaitingSave
-        ) {
+            lv_event_get_code(event) == LV_EVENT_CLICKED && !diagnosticRunActive && !diagnosticAwaitingSave)
+        {
             showPage(diagnosticSidePage);
         }
     }
 
     void diagnosticsMenuBackEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(settingsPage);
         }
     }
 
     void diagnosticToolEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(diagnosticSidePage);
         }
     }
 
     void diagnosticSideBackEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showPage(diagnosticsMenuPage);
         }
     }
 
     void refreshDiagnosticSideLabel()
     {
-        if (diagnosticSideLabel == nullptr) {
+        if (diagnosticSideLabel == nullptr)
+        {
             return;
         }
 
-        if (!diagnosticSideSelected) {
+        if (!diagnosticSideSelected)
+        {
             lv_label_set_text(
                 diagnosticSideLabel,
                 "SIDE: --");
@@ -665,74 +701,88 @@ namespace
     void refreshDiagnosticControls()
     {
         const bool canConfigure =
-            !diagnosticRunActive
-            && !diagnosticAwaitingSave
-            && diagnosticSideSelected;
+            !diagnosticRunActive && !diagnosticAwaitingSave && diagnosticSideSelected;
 
         const bool canConfigureLoad = canConfigure;
 
         const bool canLoad =
-            canConfigureLoad
-            && diagnosticMassGrams > 0.0f;
+            canConfigureLoad && diagnosticMassGrams > 0.0f;
 
-        if (diagnosticStartZeroButton != nullptr) {
-            if (canConfigure) {
+        if (diagnosticStartZeroButton != nullptr)
+        {
+            if (canConfigure)
+            {
                 lv_obj_clear_state(
                     diagnosticStartZeroButton,
                     LV_STATE_DISABLED);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_state(
                     diagnosticStartZeroButton,
                     LV_STATE_DISABLED);
             }
         }
 
-        if (diagnosticMassButton != nullptr) {
-            if (canConfigureLoad) {
+        if (diagnosticMassButton != nullptr)
+        {
+            if (canConfigureLoad)
+            {
                 lv_obj_clear_state(
                     diagnosticMassButton,
                     LV_STATE_DISABLED);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_state(
                     diagnosticMassButton,
                     LV_STATE_DISABLED);
             }
         }
 
-        if (diagnosticStartLoadButton != nullptr) {
-            if (canLoad) {
+        if (diagnosticStartLoadButton != nullptr)
+        {
+            if (canLoad)
+            {
                 lv_obj_clear_state(
                     diagnosticStartLoadButton,
                     LV_STATE_DISABLED);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_state(
                     diagnosticStartLoadButton,
                     LV_STATE_DISABLED);
             }
         }
 
-        if (diagnosticCancelButton != nullptr) {
-            if (diagnosticRunActive && !diagnosticAwaitingSave) {
+        if (diagnosticCancelButton != nullptr)
+        {
+            if (diagnosticRunActive && !diagnosticAwaitingSave)
+            {
                 lv_obj_clear_state(
                     diagnosticCancelButton,
                     LV_STATE_DISABLED);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_state(
                     diagnosticCancelButton,
                     LV_STATE_DISABLED);
             }
         }
 
-        if (diagnosticFinishButton != nullptr) {
+        if (diagnosticFinishButton != nullptr)
+        {
             if (
-                !diagnosticRunActive
-                && !diagnosticAwaitingSave
-                && diagnosticSideSelected
-            ) {
+                !diagnosticRunActive && !diagnosticAwaitingSave && diagnosticSideSelected)
+            {
                 lv_obj_clear_state(
                     diagnosticFinishButton,
                     LV_STATE_DISABLED);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_state(
                     diagnosticFinishButton,
                     LV_STATE_DISABLED);
@@ -743,19 +793,22 @@ namespace
     void refreshDiagnosticInstruction()
     {
         if (
-            diagnosticStatusLabel == nullptr
-            || !diagnosticUseAutomaticInstruction
-        ) {
+            diagnosticStatusLabel == nullptr || !diagnosticUseAutomaticInstruction)
+        {
             return;
         }
 
         const char *instruction = "NEXT: Select a load cell";
 
-        if (diagnosticSideSelected) {
-            if (diagnosticMassGrams <= 0.0f) {
+        if (diagnosticSideSelected)
+        {
+            if (diagnosticMassGrams <= 0.0f)
+            {
                 instruction =
                     "NEXT: ZERO BASE or SET MASS for a load test";
-            } else {
+            }
+            else
+            {
                 instruction =
                     "NEXT: Keep test mass off platform; press LOAD TEST";
             }
@@ -766,7 +819,8 @@ namespace
 
     void diagnosticSideEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED)
+        {
             return;
         }
 
@@ -776,7 +830,8 @@ namespace
                     lv_event_get_user_data(event)));
         diagnosticSideSelected = true;
         diagnosticMassGrams = 0.0f;
-        if (diagnosticMassLabel != nullptr) {
+        if (diagnosticMassLabel != nullptr)
+        {
             lv_label_set_text(diagnosticMassLabel, "MASS: -- g");
         }
         diagnosticUseAutomaticInstruction = true;
@@ -788,7 +843,8 @@ namespace
 
     void closeMassInput()
     {
-        if (massInputBox != nullptr) {
+        if (massInputBox != nullptr)
+        {
             lv_obj_del_async(massInputBox);
             massInputBox = nullptr;
             massInputTextArea = nullptr;
@@ -800,12 +856,14 @@ namespace
         const lv_event_code_t code =
             lv_event_get_code(event);
 
-        if (code == LV_EVENT_CANCEL) {
+        if (code == LV_EVENT_CANCEL)
+        {
             closeMassInput();
             return;
         }
 
-        if (code != LV_EVENT_READY) {
+        if (code != LV_EVENT_READY)
+        {
             return;
         }
 
@@ -813,16 +871,21 @@ namespace
             lv_textarea_get_text(massInputTextArea);
         const float value = std::strtof(text, nullptr);
 
-        if (value <= 0.0f || value > 1850.0f) {
+        if (value <= 0.0f || value > 1850.0f)
+        {
             return;
         }
 
-        if (massInputPurpose == MassInputPurpose::Calibration) {
+        if (massInputPurpose == MassInputPurpose::Calibration)
+        {
             calibrationReferenceGrams = value;
-            if (calibrationCallback != nullptr) {
+            if (calibrationCallback != nullptr)
+            {
                 calibrationCallback(massInputSide, value);
             }
-        } else {
+        }
+        else
+        {
             diagnosticMassGrams = value;
 
             char label[40];
@@ -844,7 +907,8 @@ namespace
         MassInputPurpose purpose,
         ArrowLabUI::LoadSide side)
     {
-        if (massInputBox != nullptr) {
+        if (massInputBox != nullptr)
+        {
             return;
         }
 
@@ -885,9 +949,8 @@ namespace
         lv_textarea_set_max_length(massInputTextArea, 8);
 
         if (
-            purpose == MassInputPurpose::Calibration
-            && calibrationReferenceGrams > 0.0f
-        ) {
+            purpose == MassInputPurpose::Calibration && calibrationReferenceGrams > 0.0f)
+        {
             char currentMass[16];
             snprintf(
                 currentMass,
@@ -919,11 +982,8 @@ namespace
     void diagnosticMassEvent(lv_event_t *event)
     {
         if (
-            lv_event_get_code(event) != LV_EVENT_CLICKED
-            || massInputBox != nullptr
-            || diagnosticRunActive
-            || diagnosticAwaitingSave
-        ) {
+            lv_event_get_code(event) != LV_EVENT_CLICKED || massInputBox != nullptr || diagnosticRunActive || diagnosticAwaitingSave)
+        {
             return;
         }
 
@@ -934,7 +994,8 @@ namespace
 
     void diagnosticConfirmEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED) {
+        if (lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED)
+        {
             return;
         }
 
@@ -944,9 +1005,8 @@ namespace
             lv_msgbox_get_active_btn(box);
 
         if (
-            selectedButton == 1
-            && diagnosticStartCallback != nullptr
-        ) {
+            selectedButton == 1 && diagnosticStartCallback != nullptr)
+        {
             diagnosticStartCallback(
                 diagnosticSide,
                 diagnosticMassGrams,
@@ -959,11 +1019,13 @@ namespace
 
     void showDiagnosticStartConfirmation(bool zeroRun)
     {
-        if (diagnosticConfirmBox != nullptr) {
+        if (diagnosticConfirmBox != nullptr)
+        {
             return;
         }
 
-        if (!diagnosticSideSelected) {
+        if (!diagnosticSideSelected)
+        {
             static const char *buttons[] = {"OK", ""};
             diagnosticConfirmBox = lv_msgbox_create(
                 nullptr,
@@ -981,7 +1043,8 @@ namespace
             return;
         }
 
-        if (!zeroRun && diagnosticMassGrams <= 0.0f) {
+        if (!zeroRun && diagnosticMassGrams <= 0.0f)
+        {
             static const char *buttons[] = {"OK", ""};
             diagnosticConfirmBox = lv_msgbox_create(
                 nullptr,
@@ -1004,19 +1067,21 @@ namespace
         static const char *buttons[] = {
             "CANCEL",
             "START",
-            ""
-        };
+            ""};
 
         char message[220];
 
-        if (zeroRun) {
+        if (zeroRun)
+        {
             snprintf(
                 message,
                 sizeof(message),
                 "Normal fixed arrow rest only.\n"
                 "Remove calibration platform and all added weight.\n"
                 "START captures a private raw reference, then logging begins.");
-        } else {
+        }
+        else
+        {
             snprintf(
                 message,
                 sizeof(message),
@@ -1047,14 +1112,16 @@ namespace
 
     void diagnosticStartZeroEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showDiagnosticStartConfirmation(true);
         }
     }
 
     void diagnosticStartLoadEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED)
+        {
             showDiagnosticStartConfirmation(false);
         }
     }
@@ -1062,9 +1129,8 @@ namespace
     void diagnosticCancelEvent(lv_event_t *event)
     {
         if (
-            lv_event_get_code(event) == LV_EVENT_CLICKED
-            && diagnosticCancelCallback != nullptr
-        ) {
+            lv_event_get_code(event) == LV_EVENT_CLICKED && diagnosticCancelCallback != nullptr)
+        {
             diagnosticCancelCallback();
         }
     }
@@ -1072,9 +1138,8 @@ namespace
     void diagnosticFinishEvent(lv_event_t *event)
     {
         if (
-            lv_event_get_code(event) == LV_EVENT_CLICKED
-            && diagnosticFinishCallback != nullptr
-        ) {
+            lv_event_get_code(event) == LV_EVENT_CLICKED && diagnosticFinishCallback != nullptr)
+        {
             diagnosticFinishCallback();
         }
     }
@@ -1084,21 +1149,22 @@ namespace
         const lv_event_code_t code =
             lv_event_get_code(event);
 
-        if (code == LV_EVENT_PRESSED) {
+        if (code == LV_EVENT_PRESSED)
+        {
             developerPressStart = lv_tick_get();
             developerPressActive = true;
             return;
         }
 
-        if (code == LV_EVENT_PRESS_LOST) {
+        if (code == LV_EVENT_PRESS_LOST)
+        {
             developerPressActive = false;
             return;
         }
 
         if (
-            code != LV_EVENT_RELEASED
-            || !developerPressActive
-        ) {
+            code != LV_EVENT_RELEASED || !developerPressActive)
+        {
             return;
         }
 
@@ -1107,11 +1173,13 @@ namespace
         const uint32_t heldMs =
             lv_tick_elaps(developerPressStart);
 
-        if (heldMs < DEVELOPER_REVEAL_HOLD_MS) {
+        if (heldMs < DEVELOPER_REVEAL_HOLD_MS)
+        {
             return;
         }
 
-        if (!developerMode) {
+        if (!developerMode)
+        {
             developerMode = true;
             lv_obj_clear_flag(
                 diagnosticsButton,
@@ -1153,7 +1221,8 @@ namespace
             lv_color_hex(COLOUR_BORDER),
             LV_PART_MAIN);
         lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
-        if (callback != nullptr) {
+        if (callback != nullptr)
+        {
             lv_obj_add_event_cb(
                 button,
                 callback,
@@ -1761,17 +1830,22 @@ namespace ArrowLabUI
         diagnosticUseAutomaticInstruction =
             text == nullptr || text[0] == '\0';
 
-        if (diagnosticStatusLabel != nullptr) {
-            if (diagnosticUseAutomaticInstruction) {
+        if (diagnosticStatusLabel != nullptr)
+        {
+            if (diagnosticUseAutomaticInstruction)
+            {
                 refreshDiagnosticInstruction();
-            } else {
+            }
+            else
+            {
                 lv_label_set_text(
                     diagnosticStatusLabel,
                     text);
             }
         }
 
-        if (diagnosticProgressBar != nullptr) {
+        if (diagnosticProgressBar != nullptr)
+        {
             lv_bar_set_value(
                 diagnosticProgressBar,
                 progressPercent,
@@ -1786,7 +1860,8 @@ namespace ArrowLabUI
     {
         diagnosticHostConnected = hostConnected;
 
-        if (diagnosticHostLabel != nullptr) {
+        if (diagnosticHostLabel != nullptr)
+        {
             lv_label_set_text(
                 diagnosticHostLabel,
                 hostConnected
@@ -1876,14 +1951,13 @@ namespace ArrowLabUI
     void setSensorHealth(bool leftLive, bool rightLive)
     {
         if (
-            homeHealthLabel == nullptr
-            || faultBar == nullptr
-            || faultLabel == nullptr
-        ) {
+            homeHealthLabel == nullptr || faultBar == nullptr || faultLabel == nullptr)
+        {
             return;
         }
 
-        if (leftLive && rightLive) {
+        if (leftLive && rightLive)
+        {
             lv_label_set_text(
                 homeHealthLabel,
                 "LOAD CELLS ONLINE");
@@ -1905,8 +1979,8 @@ namespace ArrowLabUI
             !leftLive && !rightLive
                 ? "FAULT: LEFT + RIGHT LOAD CELLS"
                 : (!leftLive
-                    ? "FAULT: LEFT LOAD CELL"
-                    : "FAULT: RIGHT LOAD CELL");
+                       ? "FAULT: LEFT LOAD CELL"
+                       : "FAULT: RIGHT LOAD CELL");
 
         lv_label_set_text(faultLabel, faultText);
         lv_obj_clear_flag(
@@ -1961,26 +2035,35 @@ namespace ArrowLabUI
 
         char calibrationText[16];
 
-        if (calibrationInProgress && settleRemainingSeconds > 0) {
+        if (calibrationInProgress && settleRemainingSeconds > 0)
+        {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL %lus",
                 static_cast<unsigned long>(
                     settleRemainingSeconds));
-        } else if (calibrationInProgress) {
+        }
+        else if (calibrationInProgress)
+        {
             snprintf(calibrationText, sizeof(calibrationText), "CAL...");
-        } else if (calibrationReady) {
+        }
+        else if (calibrationReady)
+        {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL READY");
-        } else if (calibrated) {
+        }
+        else if (calibrated)
+        {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
                 "CAL OK");
-        } else {
+        }
+        else
+        {
             snprintf(
                 calibrationText,
                 sizeof(calibrationText),
@@ -2003,7 +2086,8 @@ namespace ArrowLabUI
 
         if (panel.settleBar != nullptr)
         {
-            if (calibrationInProgress && settleRemainingSeconds > 0) {
+            if (calibrationInProgress && settleRemainingSeconds > 0)
+            {
                 lv_bar_set_value(
                     panel.settleBar,
                     settlePercent,
@@ -2011,7 +2095,9 @@ namespace ArrowLabUI
                 lv_obj_clear_flag(
                     panel.settleBar,
                     LV_OBJ_FLAG_HIDDEN);
-            } else {
+            }
+            else
+            {
                 lv_obj_add_flag(
                     panel.settleBar,
                     LV_OBJ_FLAG_HIDDEN);
@@ -2059,10 +2145,7 @@ namespace ArrowLabUI
         if (panel.calibrationButton != nullptr)
         {
             if (
-                !tareComplete
-                || !userTareConfirmed
-                || calibrationInProgress
-                || (calibrationSetupActive && !calibrationReady))
+                !tareComplete || !userTareConfirmed || calibrationInProgress || (calibrationSetupActive && !calibrationReady))
             {
                 lv_obj_add_state(
                     panel.calibrationButton,
@@ -2076,10 +2159,13 @@ namespace ArrowLabUI
             }
         }
 
-        if (side == LoadSide::Left) {
+        if (side == LoadSide::Left)
+        {
             leftCalibrationSetupActive = calibrationSetupActive;
             leftCalibrationReady = calibrationReady;
-        } else {
+        }
+        else
+        {
             rightCalibrationSetupActive = calibrationSetupActive;
             rightCalibrationReady = calibrationReady;
         }
