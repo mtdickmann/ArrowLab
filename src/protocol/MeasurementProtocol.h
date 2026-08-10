@@ -6,7 +6,6 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t I2C_ADDRESS = 0x42;
     constexpr uint8_t VERSION = 1;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
