@@ -1,128 +1,117 @@
 # ArrowLab Measurement Node
 
-ArrowLab uses a second ESP32-S3 as the dedicated measurement and physical-I/O
-processor. The VIEWE display ESP32-S3 remains responsible for UI, touch,
-storage, networking and high-level application logic.
+ArrowLab uses an ESP32-S3-WROOM-1 N16R8 as its dedicated metrology processor.
+The VIEWE ESP32-S3 is the HMI: display, touch, navigation and user commands.
+The WROOM owns both HX711 interfaces, all measurement maths, tare, calibration
+and persistent calibration factors.
 
-The first firmware stage is intentionally a raw HX711 diagnostic. It is used
-to test load cells and HX711 modules without the VIEWE board, LVGL,
-calibration, filtering, held readings or drift compensation influencing the
-result.
+This boundary is intentional. No HX711 conversion, tare offset, calibration
+factor or held mass is calculated independently on the display processor.
 
-## Development board
+## Pin-conflict correction
 
-- Module: ESP32-S3-WROOM-1 N16R8
-- Flash: 16 MB
-- PSRAM: 8 MB
-- PlatformIO environment: `ARROWLAB_MEASUREMENT_S3`
-- Serial monitor: 115200 baud
+The project-specific VIEWE board configuration establishes that GPIO10,
+GPIO11, GPIO12 and GPIO13 are the first four lines of the 16-bit RGB LCD data
+bus. GPIO17 is the LCD data-enable signal. They are not spare HX711 or future
+peripheral pins. The earlier dual-HX711 prototype electrically shared these
+display signals, which explains why the same sensor assemblies behaved
+differently when moved to the isolated WROOM test fixture.
 
-## Raw diagnostic wiring
+Do not reconnect an HX711 or terminal block to VIEWE GPIO10-13 or GPIO17.
 
-Power the S3-WROOM development board from USB. Power each HX711 from the
-WROOM's 3.3 V and GND pins. Do not connect the VIEWE display during this test.
+## Production wiring
 
-| Function | WROOM GPIO |
+### HX711s to WROOM
+
+| Function | WROOM pin |
 | --- | ---: |
-| Left HX711 DT | 4 |
-| Left HX711 SCK | 5 |
-| Right HX711 DT | 6 |
-| Right HX711 SCK | 7 |
-| HX711 VCC | 3.3 V |
-| HX711 GND | GND |
+| Left HX711 DT | GPIO4 |
+| Left HX711 SCK | GPIO5 |
+| Right HX711 DT | GPIO6 |
+| Right HX711 SCK | GPIO7 |
+| Both HX711 VCC | WROOM 3.3 V |
+| Both HX711 GND | WROOM GND |
 
-One channel may be connected and tested by itself; a disconnected DT input is
-held high so it does not report false data.
+### VIEWE to WROOM
+
+The measurement link shares the VIEWE touch-controller I2C bus. The GT911
+remains on the same bus and keeps its own I2C address.
+
+| Signal | VIEWE | WROOM |
+| --- | ---: | ---: |
+| SDA | GPIO8 / header marked SDA | GPIO8 |
+| SCL | GPIO18 / header marked SCL | GPIO9 |
+| Reference | GND | GND |
+
+Do not cross SDA and SCL. Confirm the VIEWE header labels before soldering;
+do not infer a pad from physical position alone.
+
+During initial development both boards are powered from their own USB cables.
+Connect only SDA, SCL and common GND between them. Do **not** join their 3.3 V
+or 5 V rails while both USB supplies are connected. The WROOM alone supplies
+the two HX711 modules.
+
+The current I2C configuration is:
+
+- VIEWE: master, 400 kHz, SDA GPIO8, SCL GPIO18;
+- WROOM: slave address `0x42`, SDA GPIO8, SCL GPIO9;
+- checked binary protocol version 1;
+- invalid, truncated or checksum-failed packets are ignored;
+- loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
+  fault on the HMI.
+
+## Firmware ownership
+
+The WROOM runs the same production classes previously validated on the VIEWE:
+
+- `LoadCellChannel` reads signed raw HX711 conversions;
+- `MeasurementChannel` owns tare, drift tracking, change acquisition and the
+  held result;
+- `CalibrationController` owns load detection, the 30-second stabilization,
+  calibration sampling and K calculation;
+- `InstrumentStorage` stores independent Left and Right K values in WROOM NVS.
+
+The VIEWE sends only deliberate commands: TARE, prepare calibration with the
+entered reference mass, and start calibration. It receives raw evidence,
+held readings, units, calibration stages, progress and health flags. The
+existing calibration screen therefore behaves the same while execution moves
+to the metrology processor.
+
+Calibration factors previously stored on the VIEWE are not copied to the
+WROOM. Perform one fresh calibration on each side after installing this
+architecture. Thereafter K survives ordinary WROOM power cycles and is
+invalidated by the existing firmware-version compatibility rule.
 
 ## Build and upload
 
-The normal ArrowLab display environment remains the project's default. In
-PlatformIO Project Tasks choose `ARROWLAB_MEASUREMENT_S3` when building or
-uploading the WROOM firmware.
+Two firmware uploads are required.
 
-Command-line equivalents are:
+1. Select `ARROWLAB_MEASUREMENT_S3` and upload to the WROOM COM port.
+2. Select `BOARD_VIEWE_UEDX48270043E_WB_A` and upload to the VIEWE COM port.
+3. Remove power, connect SDA, SCL and common GND, then power both boards.
+4. Confirm the Home screen reports both channels online.
+5. Open Settings -> Calibration, fit the platform, TARE and calibrate Left and
+   Right using the normal guided procedure.
+
+Command-line equivalents:
 
 ```text
-pio run -e ARROWLAB_MEASUREMENT_S3
 pio run -e ARROWLAB_MEASUREMENT_S3 -t upload
-pio device monitor -b 115200
+pio run -e BOARD_VIEWE_UEDX48270043E_WB_A -t upload
 ```
 
-When both ESP32 boards are attached to the PC, verify the intended COM port
-before uploading. Do not assume the WROOM will use the same COM number after
-reconnection.
+When both boards are attached, always confirm which COM port belongs to which
+processor before uploading.
 
-## Diagnostic output
+## Bench diagnostic history
 
-Each fresh conversion is printed without filtering:
+The `tools/capture_measurement_node.py` logger and the self-describing WROOM
+CSV files remain engineering evidence and a reusable hardware-isolation tool.
+The controlled schedule is connection samples followed by 0 s, 10 s, 30 s and
+every 30 seconds through 30 minutes. It established that the isolated WROOM
+results were stable and that GPIO4/5 and GPIO6/7 behaved equivalently.
 
-```text
-AL_NODE,DATA,millis,side,raw,delta
-```
-
-`raw` is the signed HX711 ADC count. `delta` is the difference from that
-channel's current diagnostic baseline. The first valid sample automatically
-becomes the initial baseline.
-
-Serial commands:
-
-- `BL` / `BR` - make the latest Left/Right raw value the baseline.
-- `BB` - set both baselines from the latest readings.
-- `RL` / `RR` - clear one baseline; the next sample becomes the new baseline.
-- `RB` - clear both baselines.
-- `?` - show command help.
-
-These diagnostic baselines are not ArrowLab tare values and are never stored.
-The purpose of this mode is to expose the hardware honestly.
-
-## Controlled 30-minute hardware capture
-
-Use the terminal logger when comparing load cells, HX711 modules, cassettes and
-bench-mounted assemblies. Close PlatformIO Serial Monitor first because only
-one program may own the WROOM COM port.
-
-From the ArrowLab project directory run:
-
-```text
-"%USERPROFILE%\.platformio\penv\Scripts\python.exe" tools\capture_measurement_node.py COM3
-```
-
-Replace `COM3` if Windows assigns a different port. The logger asks for:
-
-- the load-cell number;
-- the HX711 number;
-- the cassette number, or `NONE` for a bench-mounted load cell;
-- WROOM GPIO set A (DT 4 / SCK 5) or B (DT 6 / SCK 7); and
-- the applied test mass in grams, where `0` means no added test load.
-
-After the variables are confirmed, disconnect WROOM USB power, connect the
-identified assembly, restore USB power and press Enter. The logger waits if
-Windows has not recreated the requested COM port yet. There is no second Start
-command. The first valid HX711 data received on the chosen GPIO set is the
-connection event and starts the run automatically.
-
-The logger retains the first 20 raw conversions as `CONNECT` rows and uses
-their mean as the raw reference. `TIMED` rows are then recorded at 0 seconds,
-10 seconds, 30 seconds and every 30 seconds through 30 minutes. This produces
-the same 62-point timed series used by the original ArrowLab creep diagnostic,
-while also preserving the connection burst for short-term noise analysis.
-
-CSV files are written to `calibration/diagnostics/` with the load cell, HX711,
-cassette and GPIO pair in the filename. Every CSV row repeats those identifiers
-and the applied mass, so a file remains self-describing if it is renamed.
-
-The CSV and its header are created before the logger attempts to open the COM
-port. `Ctrl+C` closes the serial port and retains a partial CSV. A complete run
-closes the CSV and serial port automatically after the 1800-second reading.
-
-## Planned permanent link
-
-After independent HX711/load-cell behaviour is established, the measurement
-node will own both HX711 interfaces and future timing-sensitive physical I/O.
-It will exchange completed measurements and commands with the VIEWE processor
-over I2C. This returns VIEWE GPIO10-13 to the onboard SD-card interface and
-keeps GPIO17 as the only reserved spare VIEWE GPIO.
-
-The planned inter-processor link is SDA, SCL and common GND. During USB-powered
-development the two boards must not have their separate 3.3 V outputs tied
-together.
+The production measurement-node firmware emits `AL_NODE,DATA` raw lines only
+after the logger sends `STREAM ON`; the tool sends `STREAM OFF` when it closes.
+Normal operation therefore carries no continuous USB-printing workload. This
+diagnostic stream never changes tare, K or the I2C result supplied to the HMI.

@@ -35,6 +35,16 @@ bool LoadCellChannel::read(uint32_t currentTime)
     return true;
 }
 
+void LoadCellChannel::acceptRemoteRaw(
+    long rawValue,
+    uint32_t currentTime
+)
+{
+    rawValue_ = rawValue;
+    hasReading_ = true;
+    lastReadingTime_ = currentTime;
+}
+
 bool LoadCellChannel::isLive(
     uint32_t currentTime,
     uint32_t timeoutMs

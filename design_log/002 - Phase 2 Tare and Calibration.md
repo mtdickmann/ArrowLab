@@ -191,11 +191,12 @@ as an alarming instrument failure.
 
 ## Dual-processor measurement architecture
 
-GPIO investigation of the VIEWE display board established that GPIO10-13 are
-the onboard SD-card interface rather than genuinely spare general-purpose
-connections. GPIO17 is the only currently validated spare GPIO that ArrowLab
-will reserve for exceptional future use. Display, touch and other board-owned
-GPIOs are treated as unavailable to ArrowLab peripherals.
+Inspection of the exact project board configuration established that GPIO10,
+GPIO11, GPIO12 and GPIO13 are RGB LCD data lines DATA0-DATA3. GPIO17 is the RGB
+LCD data-enable signal. They are not spare general-purpose connections. The
+earlier prototype therefore placed the HX711 interfaces in direct contention
+with active display signals. Display, touch and all other board-owned GPIOs
+are treated as unavailable to ArrowLab peripherals.
 
 The permanent architecture therefore adds an ESP32-S3-WROOM-1 N16R8 as a
 dedicated measurement and physical-I/O processor:
@@ -206,13 +207,40 @@ dedicated measurement and physical-I/O processor:
   timing-sensitive sensors/physical I/O;
 - completed measurements and commands will cross a small inter-processor I2C
   protocol rather than exposing HX711 timing to the display processor;
-- VIEWE GPIO10-13 return exclusively to their intended SD-card role;
-- GPIO17 remains reserved rather than being consumed merely because it is
-  available.
+- VIEWE GPIO10-13 and GPIO17 remain exclusively under the RGB display bus;
+- the existing GT911 I2C host on VIEWE GPIO8/GPIO18 is deliberately shared
+  with the measurement node instead of claiming another board-owned pin set.
 
-The first measurement-node firmware is deliberately raw-only and is used as
-an independent hardware diagnostic before the permanent I2C protocol is
+The first measurement-node firmware was deliberately raw-only and was used as
+an independent hardware diagnostic before the permanent I2C protocol was
 introduced.
+
+### Implemented measurement-node link (2026-08-10)
+
+Hardware isolation runs showed that the same load-cell/HX711 assemblies became
+well behaved on the WROOM and that GPIO4/5 and GPIO6/7 produced equivalent
+30-minute trends. The relevant comparison for LC1/HX1/Cassette1 was a raw shift
+of approximately +114 counts on GPIO4/5 and +112 counts on GPIO6/7. This
+eliminated the GPIO pair as a meaningful variable and exposed the VIEWE RGB pin
+contention as the architectural fault.
+
+The permanent division is now implemented:
+
+- WROOM GPIO4/5 owns Left HX711 DT/SCK;
+- WROOM GPIO6/7 owns Right HX711 DT/SCK;
+- WROOM GPIO8/GPIO9 is I2C slave SDA/SCL at address `0x42`;
+- VIEWE GPIO8/GPIO18 is the I2C master and continues to host the GT911;
+- WROOM owns `LoadCellChannel`, `MeasurementChannel`,
+  `CalibrationController` and `InstrumentStorage`;
+- VIEWE owns the existing calibration presentation and sends deliberate
+  commands over a versioned, checksummed protocol;
+- raw counts are mirrored to VIEWE solely for the hidden evidence logger;
+- a 1.5-second protocol timeout creates a persistent cross-screen node fault.
+
+During dual-USB development the boards share SDA, SCL and GND only. Their 3.3 V
+and 5 V rails must not be tied together. Existing VIEWE calibration records are
+not portable to the WROOM NVS, so the architecture transition intentionally
+requires one fresh Left and Right calibration.
 
 ## Next validation steps
 
@@ -498,8 +526,9 @@ only when both stored channel factors are valid.
 ## Event-based measurement core (v0.2.0 — superseding decision)
 
 The v0.1 live-conversion/filter approach is replaced for operational weighing.
-The retained UI, menu structure, calibration interaction, persistence and
-hardware pin mapping are unchanged.
+The retained UI, menu structure, calibration interaction and persistence rules
+are unchanged. Physical HX711 ownership and pin mapping subsequently moved to
+the WROOM as recorded in the implemented dual-processor section above.
 
 Ownership is now deliberately narrow:
 

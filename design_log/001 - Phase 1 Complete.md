@@ -17,6 +17,10 @@
 
 ## GPIO assignments
 
+> Historical prototype only. Superseded on 2026-08-10 after the exact board
+> configuration proved these pins belong to the RGB LCD bus. Do not reuse this
+> wiring; see `docs/Measurement_Node.md`.
+
 Left HX711
 DT  -> GPIO13
 SCK -> GPIO10

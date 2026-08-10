@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0 DEV
+
+### Added
+- Production dual-processor architecture with WROOM-owned metrology
+- Versioned, checksummed I2C command/status protocol
+- Shared GT911/measurement-node I2C host on the VIEWE
+- Persistent cross-screen measurement-node link fault reporting
+- Host test for valid and corrupted protocol packets
+
+### Changed
+- Moved HX711 acquisition, tare, event-based measurement, calibration and
+  calibration-factor persistence from VIEWE to the WROOM
+- Retained the existing guided calibration UI as an HMI for WROOM operations
+- Corrected VIEWE pin ownership: GPIO10-13 are RGB data and GPIO17 is RGB DE
+- Reclassified the original VIEWE HX711 wiring as a superseded prototype
+
 ## v0.1.0 DEV
 
 ### Added

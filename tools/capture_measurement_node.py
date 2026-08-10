@@ -306,6 +306,8 @@ def main() -> int:
     try:
         print(f"Opening {args.port} @ {args.baud}...")
         device = wait_for_device(args.port, args.baud)
+        device.write(b"STREAM ON\n")
+        device.flush()
         print(
             "Serial connected. Waiting for the first valid HX711 reading "
             f"on GPIO{channel.dt_pin}/{channel.sck_pin}..."
@@ -433,6 +435,11 @@ def main() -> int:
         csv_file.flush()
         csv_file.close()
         if device is not None and device.is_open:
+            try:
+                device.write(b"STREAM OFF\n")
+                device.flush()
+            except serial.SerialException:
+                pass
             device.close()
 
 

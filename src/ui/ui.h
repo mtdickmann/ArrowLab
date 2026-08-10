@@ -46,7 +46,10 @@ namespace ArrowLabUI
     );
     void setDiagnosticHostConnected(bool hostConnected);
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
-    void setSensorHealth(bool leftLive, bool rightLive);
+    void setSensorHealth(
+        bool measurementNodeOnline,
+        bool leftLive,
+        bool rightLive);
 
     /**
      * Update the displayed raw reading for the left sensor.

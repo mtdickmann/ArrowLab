@@ -18,6 +18,7 @@ public:
 
     void begin();
     bool read(uint32_t currentTime);
+    void acceptRemoteRaw(long rawValue, uint32_t currentTime);
     bool isLive(uint32_t currentTime, uint32_t timeoutMs) const;
 
     const char *name() const;

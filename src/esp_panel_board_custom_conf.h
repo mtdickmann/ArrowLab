@@ -376,7 +376,7 @@
  * So it is not necessary to set the macro to `1`. For other drivers (like `Wire`), please set the macro to `1`
  * ensure that the host is initialized only once.
  */
-#define ESP_PANEL_BOARD_TOUCH_BUS_SKIP_INIT_HOST        (0)     // 0/1. Typically set to 0
+#define ESP_PANEL_BOARD_TOUCH_BUS_SKIP_INIT_HOST        (1)     // Arduino Wire owns shared touch/node I2C host
 #endif
 
 /**

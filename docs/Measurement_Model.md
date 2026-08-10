@@ -17,6 +17,10 @@ Tare is temporary and must be established after every power-up before weighing.
 K is persistent across ordinary power cycles and changes only after deliberate
 calibration, reset, or firmware-version invalidation.
 
+All four facts are now owned by the WROOM measurement processor. The VIEWE
+receives completed state over I2C and does not maintain a second tare, K or
+held-result calculation.
+
 ## Equations
 
 Calibration uses the known reference mass after the fixed 30-second settling
