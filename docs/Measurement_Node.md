@@ -8,16 +8,17 @@ and persistent calibration factors.
 This boundary is intentional. No HX711 conversion, tare offset, calibration
 factor or held mass is calculated independently on the display processor.
 
-## Pin-conflict correction
+## VIEWE pin-map correction
 
-The project-specific VIEWE board configuration establishes that GPIO10,
-GPIO11, GPIO12 and GPIO13 are the first four lines of the 16-bit RGB LCD data
-bus. GPIO17 is the LCD data-enable signal. They are not spare HX711 or future
-peripheral pins. The earlier dual-HX711 prototype electrically shared these
-display signals, which explains why the same sensor assemblies behaved
-differently when moved to the isolated WROOM test fixture.
+Only the active supported-board definition is authoritative. The disabled
+generic `esp_panel_board_custom_conf.h` template does not describe this board
+and must not be used to identify pin conflicts. In the active VIEWE
+UEDX48270043E-WB-A definition, GPIO10-13 serve the optional SD-card interface;
+they are not RGB data pins. GPIO17 and GPIO18 are available for the dedicated
+measurement-node UART used below.
 
-Do not reconnect an HX711 or terminal block to VIEWE GPIO10-13 or GPIO17.
+The HX711s nevertheless remain on the WROOM. This keeps metrology, display and
+touch workloads isolated and gives the instrument one measurement authority.
 
 ## Production wiring
 
@@ -34,30 +35,30 @@ Do not reconnect an HX711 or terminal block to VIEWE GPIO10-13 or GPIO17.
 
 ### VIEWE to WROOM
 
-The measurement link shares the VIEWE touch-controller I2C bus. The GT911
-remains on the same bus and keeps its own I2C address.
+The measurement link uses a dedicated full-duplex UART. It does not share the
+GT911 touch-controller I2C bus.
 
 | Signal | VIEWE | WROOM |
 | --- | ---: | ---: |
-| SDA | GPIO8 / header marked SDA | GPIO8 |
-| SCL | GPIO18 / header marked SCL | GPIO9 |
+| VIEWE TX -> WROOM RX | GPIO17 | GPIO8 |
+| WROOM TX -> VIEWE RX | GPIO18 | GPIO9 |
 | Reference | GND | GND |
 
-Do not cross SDA and SCL. Confirm the VIEWE header labels before soldering;
-do not infer a pad from physical position alone.
+Confirm the GPIO labels before soldering; do not infer a pad from physical
+position alone. The two signal wires are crossed by function: TX always goes
+to the other processor's RX.
 
 During initial development both boards are powered from their own USB cables.
-Connect only SDA, SCL and common GND between them. Do **not** join their 3.3 V
-or 5 V rails while both USB supplies are connected. The WROOM alone supplies
-the two HX711 modules.
+Connect only the two UART signals and common GND between them. Do **not** join
+their 3.3 V or 5 V rails while both USB supplies are connected. The WROOM
+alone supplies the two HX711 modules.
 
-The current I2C configuration is:
+The current UART configuration is:
 
-- VIEWE: master, 400 kHz, SDA GPIO8, SCL GPIO18;
-- WROOM: slave address `0x42`, SDA GPIO8, SCL GPIO9;
-- the ESP32 Display Panel driver owns the VIEWE I2C host used by GT911;
-- the measurement client reuses that installed host through ESP-IDF and must
-  not call Arduino `Wire.begin()` on the VIEWE;
+- 115200 baud, 8 data bits, no parity, one stop bit;
+- VIEWE: RX GPIO18, TX GPIO17;
+- WROOM: RX GPIO8, TX GPIO9;
+- status packets are sent by the WROOM every 50 ms;
 - checked binary protocol version 1;
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
@@ -91,7 +92,8 @@ Two firmware uploads are required.
 
 1. Select `ARROWLAB_MEASUREMENT_S3` and upload to the WROOM COM port.
 2. Select `BOARD_VIEWE_UEDX48270043E_WB_A` and upload to the VIEWE COM port.
-3. Remove power, connect SDA, SCL and common GND, then power both boards.
+3. Remove power, connect the crossed UART signals and common GND, then power
+   both boards.
 4. Confirm the Home screen reports both channels online.
 5. Open Settings -> Calibration, fit the platform, TARE and calibrate Left and
    Right using the normal guided procedure.
@@ -117,4 +119,4 @@ results were stable and that GPIO4/5 and GPIO6/7 behaved equivalently.
 The production measurement-node firmware emits `AL_NODE,DATA` raw lines only
 after the logger sends `STREAM ON`; the tool sends `STREAM OFF` when it closes.
 Normal operation therefore carries no continuous USB-printing workload. This
-diagnostic stream never changes tare, K or the I2C result supplied to the HMI.
+diagnostic stream never changes tare, K or the UART result supplied to the HMI.
