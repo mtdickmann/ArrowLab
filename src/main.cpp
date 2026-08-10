@@ -395,7 +395,7 @@ namespace
 
         if (!nodeConnected) {
             ArrowLabUI::setStatus(
-                "FAULT: Measurement node offline - check I2C and power"
+                "Check node power and UART wiring"
             );
             ArrowLabUI::setState(
                 "NODE OFFLINE",
@@ -563,8 +563,8 @@ void setup()
 
     assert(displayBoard->begin());
 
-    // The display library owns the shared GPIO8/18 I2C host. The measurement
-    // client uses that already-installed ESP-IDF bus without reinitializing it.
+    // The measurement node uses a dedicated UART on free GPIO17/18. Keeping
+    // it off the GT911 I2C bus prevents either processor disturbing touch.
     measurementNode.begin();
 
     Serial.println("Initializing LVGL");
