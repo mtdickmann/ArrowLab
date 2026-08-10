@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import statistics
 import sys
+import time
 
 try:
     import serial
@@ -24,6 +25,7 @@ except ImportError:
 
 BAUD_RATE = 115200
 CONNECT_SAMPLE_COUNT = 20
+CONNECT_RETRY_DELAY_S = 2.0
 RUN_DURATION_MS = 30 * 60 * 1000
 UINT32_MASK = 0xFFFFFFFF
 
@@ -228,6 +230,25 @@ def open_device(port: str, baud: int) -> serial.Serial:
     return device
 
 
+def wait_for_device(port: str, baud: int) -> serial.Serial:
+    announced_wait = False
+
+    while True:
+        try:
+            device = open_device(port, baud)
+            if announced_wait:
+                print(f"Detected {port}.")
+            return device
+        except serial.SerialException:
+            if not announced_wait:
+                print(
+                    f"{port} is not available yet. Waiting for the WROOM "
+                    "to be connected..."
+                )
+                announced_wait = True
+            time.sleep(CONNECT_RETRY_DELAY_S)
+
+
 def main() -> int:
     args = parse_args()
 
@@ -258,9 +279,10 @@ def main() -> int:
     print(f"  Test mass : {applied_mass_g} g")
     print(f"  CSV       : {output}")
     print()
-    print("Connect the identified assembly to the stated GPIO set.")
-    print("Arrange the load and leave the setup completely untouched.")
-    input("Press Enter to connect and begin recording automatically...")
+    print("Disconnect WROOM USB power before connecting the assembly.")
+    print("Connect the assembly, restore USB power, and arrange the load.")
+    print("The logger will wait if Windows has not recreated the COM port yet.")
+    input("Press Enter to arm automatic connection detection...")
 
     output.parent.mkdir(parents=True, exist_ok=True)
     targets = timed_targets_ms()
@@ -275,21 +297,19 @@ def main() -> int:
     ]
 
     device: serial.Serial | None = None
-    csv_file = None
+    csv_file = output.open("w", newline="", encoding="utf-8")
+    writer = csv.writer(csv_file)
+    writer.writerow(CSV_HEADER)
+    csv_file.flush()
     row_count = 0
 
     try:
         print(f"Opening {args.port} @ {args.baud}...")
-        device = open_device(args.port, args.baud)
+        device = wait_for_device(args.port, args.baud)
         print(
             "Serial connected. Waiting for the first valid HX711 reading "
             f"on GPIO{channel.dt_pin}/{channel.sck_pin}..."
         )
-
-        csv_file = output.open("w", newline="", encoding="utf-8")
-        writer = csv.writer(csv_file)
-        writer.writerow(CSV_HEADER)
-        csv_file.flush()
 
         connect_samples: list[NodeSample] = []
         first_sample: NodeSample | None = None
@@ -410,9 +430,8 @@ def main() -> int:
         print(f"Partial CSV retained: {output}", file=sys.stderr)
         return 1
     finally:
-        if csv_file is not None:
-            csv_file.flush()
-            csv_file.close()
+        csv_file.flush()
+        csv_file.close()
         if device is not None and device.is_open:
             device.close()
 

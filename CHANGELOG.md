@@ -35,3 +35,4 @@
 - Right HX711 DT/SCK wiring
 - Raw unit label alignment
 - Left HX711 DT GPIO documentation
+- WROOM logger now waits for its COM port and creates the CSV before connection

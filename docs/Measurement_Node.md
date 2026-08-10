@@ -95,9 +95,11 @@ Replace `COM3` if Windows assigns a different port. The logger asks for:
 - WROOM GPIO set A (DT 4 / SCK 5) or B (DT 6 / SCK 7); and
 - the applied test mass in grams, where `0` means no added test load.
 
-After the variables are confirmed, connect the identified assembly and press
-Enter. There is no second Start command. The first valid HX711 data received on
-the chosen GPIO set is the connection event and starts the run automatically.
+After the variables are confirmed, disconnect WROOM USB power, connect the
+identified assembly, restore USB power and press Enter. The logger waits if
+Windows has not recreated the requested COM port yet. There is no second Start
+command. The first valid HX711 data received on the chosen GPIO set is the
+connection event and starts the run automatically.
 
 The logger retains the first 20 raw conversions as `CONNECT` rows and uses
 their mean as the raw reference. `TIMED` rows are then recorded at 0 seconds,
@@ -109,8 +111,9 @@ CSV files are written to `calibration/diagnostics/` with the load cell, HX711,
 cassette and GPIO pair in the filename. Every CSV row repeats those identifiers
 and the applied mass, so a file remains self-describing if it is renamed.
 
-`Ctrl+C` closes the serial port and retains a partial CSV. A complete run closes
-the CSV and serial port automatically after the 1800-second reading.
+The CSV and its header are created before the logger attempts to open the COM
+port. `Ctrl+C` closes the serial port and retains a partial CSV. A complete run
+closes the CSV and serial port automatically after the 1800-second reading.
 
 ## Planned permanent link
 
