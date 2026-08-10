@@ -537,18 +537,8 @@ void setup()
         Version::STATUS
     );
 
-    if (!measurementNode.begin()) {
-        Serial.println("ERROR: shared touch/measurement I2C failed to start");
-    }
-
     displayBoard = new Board();
     displayBoard->init();
-
-    // The measurement-node link shares the Viewe touch I2C host on GPIO8/18.
-    // Arduino Wire already initialized that host above, so the GT911 bus must
-    // reuse it rather than attempting to install the ESP-IDF I2C driver again.
-    static_cast<BusI2C *>(displayBoard->getTouch()->getBus())
-        ->configI2C_HostSkipInit();
 
 #if LVGL_PORT_AVOID_TEARING_MODE
     auto lcd = displayBoard->getLCD();
@@ -572,6 +562,10 @@ void setup()
 #endif
 
     assert(displayBoard->begin());
+
+    // The display library owns the shared GPIO8/18 I2C host. The measurement
+    // client uses that already-installed ESP-IDF bus without reinitializing it.
+    measurementNode.begin();
 
     Serial.println("Initializing LVGL");
 
