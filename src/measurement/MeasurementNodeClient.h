@@ -7,9 +7,6 @@
 class MeasurementNodeClient
 {
 public:
-    static constexpr uint8_t SDA_PIN = 8;
-    static constexpr uint8_t SCL_PIN = 18;
-    static constexpr uint32_t BUS_FREQUENCY_HZ = 400000;
     static constexpr uint32_t LINK_TIMEOUT_MS = 1500;
 
     bool begin();
