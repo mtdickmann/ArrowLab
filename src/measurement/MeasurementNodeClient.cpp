@@ -1,15 +1,21 @@
 #include "MeasurementNodeClient.h"
 
-#include <Wire.h>
+#include <driver/i2c.h>
 
 #include <cmath>
+
+namespace
+{
+    constexpr i2c_port_t SHARED_I2C_PORT = I2C_NUM_0;
+    constexpr TickType_t I2C_TIMEOUT_TICKS = pdMS_TO_TICKS(20);
+}
 
 bool MeasurementNodeClient::begin()
 {
     hasPacket_ = false;
     freshPacket_ = false;
     lastValidPacketTime_ = 0;
-    return Wire.begin(SDA_PIN, SCL_PIN, BUS_FREQUENCY_HZ);
+    return true;
 }
 
 bool MeasurementNodeClient::poll(uint32_t currentTime)
@@ -19,22 +25,18 @@ bool MeasurementNodeClient::poll(uint32_t currentTime)
     auto *destination = reinterpret_cast<uint8_t *>(&incoming);
 
     const size_t expected = sizeof(incoming);
-    const size_t received = Wire.requestFrom(
+    const esp_err_t result = i2c_master_read_from_device(
+        SHARED_I2C_PORT,
         ArrowLabProtocol::I2C_ADDRESS,
+        destination,
         expected,
-        true);
+        I2C_TIMEOUT_TICKS);
 
-    if (received != expected) {
-        while (Wire.available() > 0) Wire.read();
+    if (result != ESP_OK) {
         return false;
     }
 
-    size_t index = 0;
-    while (Wire.available() > 0 && index < expected) {
-        destination[index++] = static_cast<uint8_t>(Wire.read());
-    }
-
-    if (index != expected || !ArrowLabProtocol::valid(incoming)) {
+    if (!ArrowLabProtocol::valid(incoming)) {
         return false;
     }
 
@@ -102,9 +104,10 @@ bool MeasurementNodeClient::send(
     packet.referenceMilliGrams = referenceMilliGrams;
     ArrowLabProtocol::seal(packet);
 
-    Wire.beginTransmission(ArrowLabProtocol::I2C_ADDRESS);
-    Wire.write(
+    return i2c_master_write_to_device(
+        SHARED_I2C_PORT,
+        ArrowLabProtocol::I2C_ADDRESS,
         reinterpret_cast<const uint8_t *>(&packet),
-        sizeof(packet));
-    return Wire.endTransmission(true) == 0;
+        sizeof(packet),
+        I2C_TIMEOUT_TICKS) == ESP_OK;
 }
