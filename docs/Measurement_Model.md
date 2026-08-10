@@ -18,8 +18,8 @@ K is persistent across ordinary power cycles and changes only after deliberate
 calibration, reset, or firmware-version invalidation.
 
 All four facts are now owned by the WROOM measurement processor. The VIEWE
-receives completed state over I2C and does not maintain a second tare, K or
-held-result calculation.
+receives completed state over the dedicated UART and does not maintain a
+second tare, K or held-result calculation.
 
 ## Equations
 
