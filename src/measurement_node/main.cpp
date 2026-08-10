@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Wire.h>
 
 #include <cmath>
 #include <cstring>
@@ -17,11 +16,16 @@ namespace
     constexpr uint8_t LEFT_SCK_PIN = 5;
     constexpr uint8_t RIGHT_DT_PIN = 6;
     constexpr uint8_t RIGHT_SCK_PIN = 7;
-    constexpr uint8_t I2C_SDA_PIN = 8;
-    constexpr uint8_t I2C_SCL_PIN = 9;
-    constexpr uint32_t I2C_FREQUENCY_HZ = 400000;
+    constexpr uint8_t NODE_UART_RX_PIN = 8;
+    constexpr uint8_t NODE_UART_TX_PIN = 9;
+    constexpr uint32_t NODE_UART_BAUD = 115200;
     constexpr uint32_t SENSOR_INTERVAL_MS = 10;
+    constexpr uint32_t STATUS_INTERVAL_MS = 50;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
+    constexpr uint8_t COMMAND_MAGIC_LOW =
+        ArrowLabProtocol::COMMAND_MAGIC & 0xFF;
+    constexpr uint8_t COMMAND_MAGIC_HIGH =
+        ArrowLabProtocol::COMMAND_MAGIC >> 8;
 
     LoadCellChannel leftSensor("Left", LEFT_DT_PIN, LEFT_SCK_PIN);
     LoadCellChannel rightSensor("Right", RIGHT_DT_PIN, RIGHT_SCK_PIN);
@@ -32,13 +36,17 @@ namespace
         leftMeasurement,
         rightMeasurement,
         instrumentStorage);
+    HardwareSerial nodeSerial(1);
 
     ArrowLabProtocol::StatusPacket statusPacket;
     ArrowLabProtocol::CommandPacket pendingCommand;
-    volatile bool commandPending = false;
+    uint8_t commandBuffer[sizeof(ArrowLabProtocol::CommandPacket)] = {};
+    size_t commandLength = 0;
+    bool commandPending = false;
     uint16_t statusSequence = 0;
     uint16_t lastCommandSequence = 0;
     uint32_t lastSensorUpdate = 0;
+    uint32_t lastStatusTransmit = 0;
     bool streamRawUsb = false;
     char serialCommand[24] = {};
     size_t serialCommandLength = 0;
@@ -127,44 +135,42 @@ namespace
         ArrowLabProtocol::seal(statusPacket);
     }
 
-    void receiveCommand(int byteCount)
+    void acceptCommandByte(uint8_t value)
     {
-        ArrowLabProtocol::CommandPacket incoming;
-        auto *bytes = reinterpret_cast<uint8_t *>(&incoming);
-        size_t received = 0;
+        if (commandLength == 0 && value != COMMAND_MAGIC_LOW) return;
 
-        while (Wire.available() > 0 && received < sizeof(incoming)) {
-            bytes[received++] = static_cast<uint8_t>(Wire.read());
-        }
-        while (Wire.available() > 0) Wire.read();
-
-        if (
-            byteCount != static_cast<int>(sizeof(incoming))
-            || received != sizeof(incoming)
-            || !ArrowLabProtocol::valid(incoming)
-        ) {
+        if (commandLength == 1 && value != COMMAND_MAGIC_HIGH) {
+            commandLength = value == COMMAND_MAGIC_LOW ? 1 : 0;
+            if (commandLength == 1) commandBuffer[0] = value;
             return;
         }
+
+        commandBuffer[commandLength++] = value;
+        if (commandLength < sizeof(commandBuffer)) return;
+
+        ArrowLabProtocol::CommandPacket incoming;
+        std::memcpy(&incoming, commandBuffer, sizeof(incoming));
+        commandLength = 0;
+
+        if (!ArrowLabProtocol::valid(incoming)) return;
 
         pendingCommand = incoming;
         commandPending = true;
     }
 
-    void sendStatus()
+    void processNodeSerial()
     {
-        Wire.write(
-            reinterpret_cast<const uint8_t *>(&statusPacket),
-            sizeof(statusPacket));
+        while (nodeSerial.available() > 0) {
+            acceptCommandByte(static_cast<uint8_t>(nodeSerial.read()));
+        }
     }
 
     void processPendingCommand()
     {
         if (!commandPending) return;
 
-        noInterrupts();
         const ArrowLabProtocol::CommandPacket command = pendingCommand;
         commandPending = false;
-        interrupts();
 
         if (
             command.side > static_cast<uint8_t>(ArrowLabProtocol::Side::Right)
@@ -276,23 +282,18 @@ void setup()
     rightSensor.begin();
     calibrationController.begin();
 
-    Wire.onReceive(receiveCommand);
-    Wire.onRequest(sendStatus);
-    if (!Wire.begin(
-            ArrowLabProtocol::I2C_ADDRESS,
-            I2C_SDA_PIN,
-            I2C_SCL_PIN,
-            I2C_FREQUENCY_HZ
-        )) {
-        Serial.println("ERROR: measurement-node I2C slave failed to start");
-    }
+    nodeSerial.begin(
+        NODE_UART_BAUD,
+        SERIAL_8N1,
+        NODE_UART_RX_PIN,
+        NODE_UART_TX_PIN);
 
     refreshStatus(millis());
     Serial.printf(
-        "AL_NODE,CONFIG,I2C,ADDR=0x%02X,SDA=%u,SCL=%u\n",
-        ArrowLabProtocol::I2C_ADDRESS,
-        I2C_SDA_PIN,
-        I2C_SCL_PIN);
+        "AL_NODE,CONFIG,UART,BAUD=%lu,RX=%u,TX=%u\n",
+        static_cast<unsigned long>(NODE_UART_BAUD),
+        NODE_UART_RX_PIN,
+        NODE_UART_TX_PIN);
     Serial.printf(
         "AL_NODE,CONFIG,LEFT,DT=%u,SCK=%u\n",
         LEFT_DT_PIN,
@@ -307,6 +308,7 @@ void loop()
 {
     const uint32_t now = millis();
     processSerialCommands();
+    processNodeSerial();
     processPendingCommand();
 
     if (now - lastSensorUpdate >= SENSOR_INTERVAL_MS) {
@@ -325,6 +327,13 @@ void loop()
             now);
         calibrationController.update(now);
         refreshStatus(now);
+    }
+
+    if (now - lastStatusTransmit >= STATUS_INTERVAL_MS) {
+        lastStatusTransmit = now;
+        nodeSerial.write(
+            reinterpret_cast<const uint8_t *>(&statusPacket),
+            sizeof(statusPacket));
     }
 
     delay(1);
