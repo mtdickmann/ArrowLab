@@ -25,12 +25,16 @@ public:
         ArrowLabProtocol::Side side) const;
 
 private:
+    void acceptByte(uint8_t value, uint32_t currentTime);
     bool send(
         ArrowLabProtocol::CommandType command,
         ArrowLabProtocol::Side side,
         int32_t referenceMilliGrams);
 
+    HardwareSerial nodeSerial_{1};
     ArrowLabProtocol::StatusPacket status_;
+    uint8_t receiveBuffer_[sizeof(ArrowLabProtocol::StatusPacket)] = {};
+    size_t receiveLength_ = 0;
     uint32_t lastValidPacketTime_ = 0;
     uint16_t commandSequence_ = 0;
     bool hasPacket_ = false;
