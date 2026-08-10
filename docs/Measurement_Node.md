@@ -75,6 +75,43 @@ Serial commands:
 These diagnostic baselines are not ArrowLab tare values and are never stored.
 The purpose of this mode is to expose the hardware honestly.
 
+## Controlled 30-minute hardware capture
+
+Use the terminal logger when comparing load cells, HX711 modules, cassettes and
+bench-mounted assemblies. Close PlatformIO Serial Monitor first because only
+one program may own the WROOM COM port.
+
+From the ArrowLab project directory run:
+
+```text
+"%USERPROFILE%\.platformio\penv\Scripts\python.exe" tools\capture_measurement_node.py COM3
+```
+
+Replace `COM3` if Windows assigns a different port. The logger asks for:
+
+- the load-cell number;
+- the HX711 number;
+- the cassette number, or `NONE` for a bench-mounted load cell;
+- WROOM GPIO set A (DT 4 / SCK 5) or B (DT 6 / SCK 7); and
+- the applied test mass in grams, where `0` means no added test load.
+
+After the variables are confirmed, connect the identified assembly and press
+Enter. There is no second Start command. The first valid HX711 data received on
+the chosen GPIO set is the connection event and starts the run automatically.
+
+The logger retains the first 20 raw conversions as `CONNECT` rows and uses
+their mean as the raw reference. `TIMED` rows are then recorded at 0 seconds,
+10 seconds, 30 seconds and every 30 seconds through 30 minutes. This produces
+the same 62-point timed series used by the original ArrowLab creep diagnostic,
+while also preserving the connection burst for short-term noise analysis.
+
+CSV files are written to `calibration/diagnostics/` with the load cell, HX711,
+cassette and GPIO pair in the filename. Every CSV row repeats those identifiers
+and the applied mass, so a file remains self-describing if it is renamed.
+
+`Ctrl+C` closes the serial port and retains a partial CSV. A complete run closes
+the CSV and serial port automatically after the 1800-second reading.
+
 ## Planned permanent link
 
 After independent HX711/load-cell behaviour is established, the measurement

@@ -27,6 +27,8 @@
 - Explicit diagnostic FINISH / CSV session completion
 - Dedicated 10-second creep reference sample in every diagnostic run
 - Local-by-default diagnostic CSV ignore convention
+- Identified WROOM hardware-isolation CSV logger with controlled 30-minute
+  sampling
 
 ### Fixed
 - GT911 initialization issue

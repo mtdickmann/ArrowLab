@@ -28,6 +28,10 @@ loss is recoverable while the ESP32 remains powered.
 The deterministic host test proves that a loaded run can enter acquisition
 without operational tare, calibration or prior baseline evidence.
 
+The independent WROOM hardware-isolation logger is documented separately in
+`docs/Measurement_Node.md`. It captures identified load-cell/HX711/cassette
+combinations without using the display-board creep protocol.
+
 ## Why runs cannot pause
 
 Creep continues while load remains applied. Pausing would create an unmeasured
