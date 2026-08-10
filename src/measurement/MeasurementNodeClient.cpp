@@ -1,13 +1,17 @@
 #include "MeasurementNodeClient.h"
 
-#include <driver/i2c.h>
-
 #include <cmath>
+#include <cstring>
 
 namespace
 {
-    constexpr i2c_port_t SHARED_I2C_PORT = I2C_NUM_0;
-    constexpr TickType_t I2C_TIMEOUT_TICKS = pdMS_TO_TICKS(20);
+    constexpr uint32_t NODE_UART_BAUD = 115200;
+    constexpr int8_t NODE_UART_RX_PIN = 18;
+    constexpr int8_t NODE_UART_TX_PIN = 17;
+    constexpr uint8_t STATUS_MAGIC_LOW =
+        ArrowLabProtocol::STATUS_MAGIC & 0xFF;
+    constexpr uint8_t STATUS_MAGIC_HIGH =
+        ArrowLabProtocol::STATUS_MAGIC >> 8;
 }
 
 bool MeasurementNodeClient::begin()
@@ -15,36 +19,47 @@ bool MeasurementNodeClient::begin()
     hasPacket_ = false;
     freshPacket_ = false;
     lastValidPacketTime_ = 0;
+    receiveLength_ = 0;
+    nodeSerial_.begin(
+        NODE_UART_BAUD,
+        SERIAL_8N1,
+        NODE_UART_RX_PIN,
+        NODE_UART_TX_PIN);
     return true;
 }
 
 bool MeasurementNodeClient::poll(uint32_t currentTime)
 {
     freshPacket_ = false;
+    while (nodeSerial_.available() > 0) {
+        acceptByte(static_cast<uint8_t>(nodeSerial_.read()), currentTime);
+    }
+    return freshPacket_;
+}
+
+void MeasurementNodeClient::acceptByte(uint8_t value, uint32_t currentTime)
+{
+    if (receiveLength_ == 0 && value != STATUS_MAGIC_LOW) return;
+
+    if (receiveLength_ == 1 && value != STATUS_MAGIC_HIGH) {
+        receiveLength_ = value == STATUS_MAGIC_LOW ? 1 : 0;
+        if (receiveLength_ == 1) receiveBuffer_[0] = value;
+        return;
+    }
+
+    receiveBuffer_[receiveLength_++] = value;
+    if (receiveLength_ < sizeof(receiveBuffer_)) return;
+
     ArrowLabProtocol::StatusPacket incoming;
-    auto *destination = reinterpret_cast<uint8_t *>(&incoming);
+    std::memcpy(&incoming, receiveBuffer_, sizeof(incoming));
+    receiveLength_ = 0;
 
-    const size_t expected = sizeof(incoming);
-    const esp_err_t result = i2c_master_read_from_device(
-        SHARED_I2C_PORT,
-        ArrowLabProtocol::I2C_ADDRESS,
-        destination,
-        expected,
-        I2C_TIMEOUT_TICKS);
-
-    if (result != ESP_OK) {
-        return false;
-    }
-
-    if (!ArrowLabProtocol::valid(incoming)) {
-        return false;
-    }
+    if (!ArrowLabProtocol::valid(incoming)) return;
 
     freshPacket_ = !hasPacket_ || incoming.sequence != status_.sequence;
     status_ = incoming;
     hasPacket_ = true;
     lastValidPacketTime_ = currentTime;
-    return true;
 }
 
 bool MeasurementNodeClient::requestTare(ArrowLabProtocol::Side side)
@@ -104,10 +119,7 @@ bool MeasurementNodeClient::send(
     packet.referenceMilliGrams = referenceMilliGrams;
     ArrowLabProtocol::seal(packet);
 
-    return i2c_master_write_to_device(
-        SHARED_I2C_PORT,
-        ArrowLabProtocol::I2C_ADDRESS,
+    return nodeSerial_.write(
         reinterpret_cast<const uint8_t *>(&packet),
-        sizeof(packet),
-        I2C_TIMEOUT_TICKS) == ESP_OK;
+        sizeof(packet)) == sizeof(packet);
 }
