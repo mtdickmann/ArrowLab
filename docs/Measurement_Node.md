@@ -55,6 +55,9 @@ The current I2C configuration is:
 
 - VIEWE: master, 400 kHz, SDA GPIO8, SCL GPIO18;
 - WROOM: slave address `0x42`, SDA GPIO8, SCL GPIO9;
+- the ESP32 Display Panel driver owns the VIEWE I2C host used by GT911;
+- the measurement client reuses that installed host through ESP-IDF and must
+  not call Arduino `Wire.begin()` on the VIEWE;
 - checked binary protocol version 1;
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
