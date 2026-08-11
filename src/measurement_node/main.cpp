@@ -44,6 +44,8 @@ namespace
     size_t commandLength = 0;
     bool commandPending = false;
     bool statusReplyPending = false;
+    bool firstPollLogged = false;
+    bool firstStatusReplyLogged = false;
     uint32_t statusReplyReadyAt = 0;
     uint16_t statusSequence = 0;
     uint16_t lastCommandSequence = 0;
@@ -205,6 +207,12 @@ namespace
             break;
 
         case ArrowLabProtocol::CommandType::PollStatus:
+            if (!firstPollLogged) {
+                Serial.printf(
+                    "AL_NODE,LINK,POLL_RECEIVED,SEQ=%u\n",
+                    command.sequence);
+                firstPollLogged = true;
+            }
             break;
 
         case ArrowLabProtocol::CommandType::None:
@@ -370,6 +378,12 @@ void loop()
             reinterpret_cast<const uint8_t *>(&statusPacket),
             sizeof(statusPacket));
         nodeSerial.flush();
+        if (!firstStatusReplyLogged) {
+            Serial.printf(
+                "AL_NODE,LINK,STATUS_REPLY_SENT,SEQ=%u\n",
+                statusPacket.sequence);
+            firstStatusReplyLogged = true;
+        }
     }
 
     delay(1);
