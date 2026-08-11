@@ -40,4 +40,5 @@ private:
     uint16_t commandSequence_ = 0;
     bool hasPacket_ = false;
     bool freshPacket_ = false;
+    bool firstPollLogged_ = false;
 };
