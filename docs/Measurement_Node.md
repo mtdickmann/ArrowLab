@@ -71,17 +71,18 @@ The current UART configuration is:
 ## Firmware configuration
 
 `include/ArrowLab.conf` is the printer.cfg-style, human-editable source of truth
-for installation and development choices shared by both processors. Select
-`CONFIGURED_MEASUREMENT_LINK_MODE` there, then rebuild and upload **both** the
-VIEWE and WROOM. The implementation and pin-selection logic deliberately remain
-in `include/ArrowLabConfig.h`; they are not user settings. Do not connect more
-than one of the following link options at a time.
+for installation and development choices shared by both processors. Set the
+numeric `CONFIGURED_MEASUREMENT_LINK_MODE` documented in that file, then rebuild
+and upload **both** the VIEWE and WROOM. Invalid values are rejected at compile
+time. The implementation and strongly typed pin-selection logic deliberately
+remain in `include/ArrowLabConfig.h`; they are not user settings. Do not connect
+more than one of the following link options at a time.
 
 | Mode | VIEWE pins | WROOM pins | Consequence |
 | --- | --- | --- | --- |
-| `VieweGpio11And12` | RX 11, TX 12 | RX 8, TX 9 | Proven default; VIEWE onboard SD MOSI/SCK are occupied |
-| `VieweGpio17OneWire` | RX/TX 17 | RX/TX 8 | Experimental half-duplex; one signal wire plus GND and a 4.7 kOhm pull-up to 3.3 V |
-| `VieweGpio43And44` | RX 44, TX 43 | RX 8, TX 9 | Experimental; electrically shared with VIEWE UART0/CH340 |
+| `0` | RX 11, TX 12 | RX 8, TX 9 | Proven default; VIEWE onboard SD MOSI/SCK are occupied |
+| `1` | RX/TX 17 | RX/TX 8 | Experimental half-duplex; one signal wire plus GND and a 4.7 kOhm pull-up to 3.3 V |
+| `2` | RX 44, TX 43 | RX 8, TX 9 | Experimental; electrically shared with VIEWE UART0/CH340 |
 
 The one-wire mode is not the two-wire protocol with a conductor removed. The
 VIEWE becomes bus master and requests each status packet. Both UART pads are
