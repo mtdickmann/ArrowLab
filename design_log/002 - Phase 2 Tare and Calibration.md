@@ -191,28 +191,28 @@ as an alarming instrument failure.
 
 ## Dual-processor measurement architecture
 
-Inspection of the exact project board configuration established that GPIO10,
-GPIO11, GPIO12 and GPIO13 are RGB LCD data lines DATA0-DATA3. GPIO17 is the RGB
-LCD data-enable signal. They are not spare general-purpose connections. The
-earlier prototype therefore placed the HX711 interfaces in direct contention
-with active display signals. Display, touch and all other board-owned GPIOs
-are treated as unavailable to ArrowLab peripherals.
+Inspection originally relied on the disabled generic custom-board template
+and incorrectly classified GPIO10-13 and GPIO17 as RGB signals. The active
+supported-board definition is authoritative: GPIO8 is RGB DATA0; GPIO17 is
+unused; GPIO18 is routed in the board hardware to the GT911 touch interrupt;
+and GPIO13 is free after the HX711 interfaces move to the WROOM. This
+correction is recorded explicitly to prevent another pin-map regression.
 
 The permanent architecture therefore adds an ESP32-S3-WROOM-1 N16R8 as a
 dedicated measurement and physical-I/O processor:
 
-- the VIEWE ESP32-S3 owns UI, touch, SD storage, networking, OTA and high-level
+- the VIEWE ESP32-S3 owns UI, touch, networking, OTA and high-level
   application behaviour;
 - the measurement ESP32-S3 owns both HX711 interfaces and future
   timing-sensitive sensors/physical I/O;
-- completed measurements and commands will cross a small inter-processor I2C
-  protocol rather than exposing HX711 timing to the display processor;
-- VIEWE GPIO10-13 and GPIO17 remain exclusively under the RGB display bus;
-- the existing GT911 I2C host on VIEWE GPIO8/GPIO18 is deliberately shared
-  with the measurement node instead of claiming another board-owned pin set.
+- completed measurements and commands cross a dedicated inter-processor UART
+  rather than exposing HX711 timing to the display processor;
+- the first planned link was VIEWE TX GPIO17 to WROOM RX GPIO8 and WROOM TX
+  GPIO9 to VIEWE RX GPIO13, but bench testing replaced that provisional map;
+- GPIO18 is avoided because of its physical GT911 interrupt connection.
 
 The first measurement-node firmware was deliberately raw-only and was used as
-an independent hardware diagnostic before the permanent I2C protocol was
+an independent hardware diagnostic before the permanent UART protocol was
 introduced.
 
 ### Implemented measurement-node link (2026-08-10)
@@ -228,8 +228,13 @@ The permanent division is now implemented:
 
 - WROOM GPIO4/5 owns Left HX711 DT/SCK;
 - WROOM GPIO6/7 owns Right HX711 DT/SCK;
-- WROOM GPIO8/GPIO9 is I2C slave SDA/SCL at address `0x42`;
-- VIEWE GPIO8/GPIO18 is the I2C master and continues to host the GT911;
+- the proven link is WROOM GPIO8/GPIO9 UART RX/TX at 115200 baud;
+- the proven HMI link is VIEWE GPIO11/GPIO12 UART RX/TX at 115200 baud;
+- `include/ArrowLabConfig.h` also exposes controlled engineering trials for
+  VIEWE GPIO17 one-wire half-duplex and VIEWE GPIO43/GPIO44 full-duplex;
+- GPIO11/GPIO12 occupy VIEWE onboard-SD MOSI/SCK while that mode is selected,
+  whereas GPIO43/GPIO44 are physically shared with VIEWE UART0/CH340 and must
+  never be connected to WROOM TX while that USB-UART interface is attached;
 - WROOM owns `LoadCellChannel`, `MeasurementChannel`,
   `CalibrationController` and `InstrumentStorage`;
 - VIEWE owns the existing calibration presentation and sends deliberate
@@ -237,7 +242,7 @@ The permanent division is now implemented:
 - raw counts are mirrored to VIEWE solely for the hidden evidence logger;
 - a 1.5-second protocol timeout creates a persistent cross-screen node fault.
 
-During dual-USB development the boards share SDA, SCL and GND only. Their 3.3 V
+During dual-USB development the boards share UART TX/RX and GND only. Their 3.3 V
 and 5 V rails must not be tied together. Existing VIEWE calibration records are
 not portable to the WROOM NVS, so the architecture transition intentionally
 requires one fresh Left and Right calibration.
