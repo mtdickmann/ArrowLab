@@ -4,9 +4,9 @@
 #include <cstring>
 
 #include "ArrowLabConfig.h"
+#include "OneWireUart.h"
 
 #include <driver/gpio.h>
-#include <driver/uart.h>
 
 namespace
 {
@@ -32,25 +32,15 @@ bool MeasurementNodeClient::begin()
     if (ArrowLabConfig::measurementLinkIsOneWire()) {
         const gpio_num_t signalPin = static_cast<gpio_num_t>(
             ArrowLabConfig::vieweMeasurementRxPin());
-        gpio_set_direction(
-            signalPin,
-            GPIO_MODE_INPUT_OUTPUT_OD);
-
-        // Arduino-ESP32 3.1.1's peripheral manager detaches RX when RX and TX
-        // are assigned to the same pad. Restore the UART1 RX matrix route
-        // directly after HardwareSerial::begin() has finished assigning TX.
-        const esp_err_t rxAttachResult = uart_set_pin(
-                UART_NUM_1,
-                UART_PIN_NO_CHANGE,
-                signalPin,
-                UART_PIN_NO_CHANGE,
-                UART_PIN_NO_CHANGE);
+        const bool matrixAttachOk = OneWireUart::attach(
+            UART_NUM_1,
+            signalPin);
         Serial.printf(
-            "AL_HMI,CONFIG,ONE_WIRE_RX_ATTACH=%s,RX=%d,TX=%d\n",
-            rxAttachResult == ESP_OK ? "OK" : "FAILED",
+            "AL_HMI,CONFIG,ONE_WIRE_MATRIX_ATTACH=%s,RX=%d,TX=%d\n",
+            matrixAttachOk ? "OK" : "FAILED",
             ArrowLabConfig::vieweMeasurementRxPin(),
             ArrowLabConfig::vieweMeasurementTxPin());
-        if (rxAttachResult != ESP_OK) {
+        if (!matrixAttachOk) {
             return false;
         }
         while (nodeSerial_.available() > 0) nodeSerial_.read();
