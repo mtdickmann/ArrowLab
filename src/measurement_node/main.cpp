@@ -47,6 +47,7 @@ namespace
     bool statusReplyPending = false;
     bool firstPollLogged = false;
     bool firstStatusReplyLogged = false;
+    bool firstBusLowLogged = false;
     uint32_t statusReplyReadyAt = 0;
     uint16_t statusSequence = 0;
     uint16_t lastCommandSequence = 0;
@@ -349,6 +350,16 @@ void setup()
 void loop()
 {
     const uint32_t now = millis();
+    if (
+        ArrowLabConfig::measurementLinkIsOneWire()
+        && !firstBusLowLogged
+        && gpio_get_level(
+            static_cast<gpio_num_t>(
+                ArrowLabConfig::wroomMeasurementRxPin())) == 0
+    ) {
+        firstBusLowLogged = true;
+        Serial.println("AL_NODE,LINK,BUS_LOW_SEEN");
+    }
     processSerialCommands();
     processNodeSerial();
     processPendingCommand();
