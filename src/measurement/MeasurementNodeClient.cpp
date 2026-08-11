@@ -22,6 +22,7 @@ bool MeasurementNodeClient::begin()
     freshPacket_ = false;
     lastValidPacketTime_ = 0;
     receiveLength_ = 0;
+    firstPollLogged_ = false;
     nodeSerial_.begin(
         ArrowLabConfig::MEASUREMENT_LINK_BAUD,
         SERIAL_8N1,
@@ -38,15 +39,18 @@ bool MeasurementNodeClient::begin()
         // Arduino-ESP32 3.1.1's peripheral manager detaches RX when RX and TX
         // are assigned to the same pad. Restore the UART1 RX matrix route
         // directly after HardwareSerial::begin() has finished assigning TX.
-        if (
-            uart_set_pin(
+        const esp_err_t rxAttachResult = uart_set_pin(
                 UART_NUM_1,
                 UART_PIN_NO_CHANGE,
                 signalPin,
                 UART_PIN_NO_CHANGE,
-                UART_PIN_NO_CHANGE)
-            != ESP_OK
-        ) {
+                UART_PIN_NO_CHANGE);
+        Serial.printf(
+            "AL_HMI,CONFIG,ONE_WIRE_RX_ATTACH=%s,RX=%d,TX=%d\n",
+            rxAttachResult == ESP_OK ? "OK" : "FAILED",
+            ArrowLabConfig::vieweMeasurementRxPin(),
+            ArrowLabConfig::vieweMeasurementTxPin());
+        if (rxAttachResult != ESP_OK) {
             return false;
         }
         while (nodeSerial_.available() > 0) nodeSerial_.read();
@@ -165,6 +169,16 @@ bool MeasurementNodeClient::send(
     if (ArrowLabConfig::measurementLinkIsOneWire()) {
         nodeSerial_.flush();
         lastPollTime_ = millis();
+        if (
+            command == ArrowLabProtocol::CommandType::PollStatus
+            && !firstPollLogged_
+        ) {
+            Serial.printf(
+                "AL_HMI,LINK,POLL_QUEUED,SEQ=%u,WRITE=%s\n",
+                packet.sequence,
+                sent ? "OK" : "FAILED");
+            firstPollLogged_ = true;
+        }
     }
     return sent;
 }
