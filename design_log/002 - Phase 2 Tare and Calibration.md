@@ -244,6 +244,18 @@ The permanent division is now implemented:
 - raw counts are mirrored to VIEWE solely for the hidden evidence logger;
 - a 1.5-second protocol timeout creates a persistent cross-screen node fault.
 
+The initial GPIO17 half-duplex trial exposed a framework limitation rather
+than a protocol or wiring fault. Both processors reported successful UART
+initialization, the VIEWE queued its first poll, and the WROOM continued to
+read both HX711s, but the WROOM observed neither a packet nor a low level on
+the shared line. Arduino-ESP32 3.1.1's peripheral manager does not preserve
+both UART routes when RX and TX use the same GPIO. A direct RX-only repair was
+also insufficient. The implementation now mirrors the newer core behaviour:
+configure the pad as input/output open-drain, then explicitly connect both the
+UART1 TX output matrix and UART1 RX input matrix to that pad. This diagnostic
+sequence and the first-low/first-packet tracing remain available until the
+GPIO17 bench trial is conclusively accepted or rejected.
+
 During dual-USB development the boards share UART TX/RX and GND only. Their 3.3 V
 and 5 V rails must not be tied together. Existing VIEWE calibration records are
 not portable to the WROOM NVS, so the architecture transition intentionally
