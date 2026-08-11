@@ -3,6 +3,9 @@
 #include <cmath>
 #include <cstring>
 
+#include <driver/gpio.h>
+
+#include "ArrowLabConfig.h"
 #include "Version.h"
 #include "calibration/CalibrationController.h"
 #include "measurement/LoadCellChannel.h"
@@ -16,12 +19,9 @@ namespace
     constexpr uint8_t LEFT_SCK_PIN = 5;
     constexpr uint8_t RIGHT_DT_PIN = 6;
     constexpr uint8_t RIGHT_SCK_PIN = 7;
-    constexpr uint8_t NODE_UART_RX_PIN = 8;
-    constexpr uint8_t NODE_UART_TX_PIN = 9;
-    constexpr uint32_t NODE_UART_BAUD = 115200;
     constexpr uint32_t SENSOR_INTERVAL_MS = 10;
-    constexpr uint32_t STATUS_INTERVAL_MS = 50;
     constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
+    constexpr uint32_t ONE_WIRE_REPLY_GUARD_MS = 2;
     constexpr uint8_t COMMAND_MAGIC_LOW =
         ArrowLabProtocol::COMMAND_MAGIC & 0xFF;
     constexpr uint8_t COMMAND_MAGIC_HIGH =
@@ -43,6 +43,8 @@ namespace
     uint8_t commandBuffer[sizeof(ArrowLabProtocol::CommandPacket)] = {};
     size_t commandLength = 0;
     bool commandPending = false;
+    bool statusReplyPending = false;
+    uint32_t statusReplyReadyAt = 0;
     uint16_t statusSequence = 0;
     uint16_t lastCommandSequence = 0;
     uint32_t lastSensorUpdate = 0;
@@ -156,6 +158,10 @@ namespace
 
         pendingCommand = incoming;
         commandPending = true;
+        if (ArrowLabConfig::measurementLinkIsOneWire()) {
+            statusReplyPending = true;
+            statusReplyReadyAt = millis() + ONE_WIRE_REPLY_GUARD_MS;
+        }
     }
 
     void processNodeSerial()
@@ -198,17 +204,22 @@ namespace
             calibrationController.requestCalibration(localSide, 0.0f);
             break;
 
+        case ArrowLabProtocol::CommandType::PollStatus:
+            break;
+
         case ArrowLabProtocol::CommandType::None:
         default:
             return;
         }
 
         lastCommandSequence = command.sequence;
-        Serial.printf(
-            "AL_NODE,EVENT,COMMAND,%u,%s,%u\n",
-            command.sequence,
-            side == ArrowLabProtocol::Side::Left ? "LEFT" : "RIGHT",
-            command.command);
+        if (type != ArrowLabProtocol::CommandType::PollStatus) {
+            Serial.printf(
+                "AL_NODE,EVENT,COMMAND,%u,%s,%u\n",
+                command.sequence,
+                side == ArrowLabProtocol::Side::Left ? "LEFT" : "RIGHT",
+                command.command);
+        }
     }
 
     void processSerialCommands()
@@ -283,17 +294,25 @@ void setup()
     calibrationController.begin();
 
     nodeSerial.begin(
-        NODE_UART_BAUD,
+        ArrowLabConfig::MEASUREMENT_LINK_BAUD,
         SERIAL_8N1,
-        NODE_UART_RX_PIN,
-        NODE_UART_TX_PIN);
+        ArrowLabConfig::wroomMeasurementRxPin(),
+        ArrowLabConfig::wroomMeasurementTxPin());
+
+    if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        gpio_set_direction(
+            static_cast<gpio_num_t>(
+                ArrowLabConfig::wroomMeasurementRxPin()),
+            GPIO_MODE_INPUT_OUTPUT_OD);
+        while (nodeSerial.available() > 0) nodeSerial.read();
+    }
 
     refreshStatus(millis());
     Serial.printf(
         "AL_NODE,CONFIG,UART,BAUD=%lu,RX=%u,TX=%u\n",
-        static_cast<unsigned long>(NODE_UART_BAUD),
-        NODE_UART_RX_PIN,
-        NODE_UART_TX_PIN);
+        static_cast<unsigned long>(ArrowLabConfig::MEASUREMENT_LINK_BAUD),
+        ArrowLabConfig::wroomMeasurementRxPin(),
+        ArrowLabConfig::wroomMeasurementTxPin());
     Serial.printf(
         "AL_NODE,CONFIG,LEFT,DT=%u,SCK=%u\n",
         LEFT_DT_PIN,
@@ -329,11 +348,28 @@ void loop()
         refreshStatus(now);
     }
 
-    if (now - lastStatusTransmit >= STATUS_INTERVAL_MS) {
+    if (
+        !ArrowLabConfig::measurementLinkIsOneWire()
+        && now - lastStatusTransmit
+            >= ArrowLabConfig::MEASUREMENT_STATUS_INTERVAL_MS
+    ) {
         lastStatusTransmit = now;
         nodeSerial.write(
             reinterpret_cast<const uint8_t *>(&statusPacket),
             sizeof(statusPacket));
+    }
+
+    if (
+        ArrowLabConfig::measurementLinkIsOneWire()
+        && statusReplyPending
+        && static_cast<int32_t>(now - statusReplyReadyAt) >= 0
+    ) {
+        statusReplyPending = false;
+        refreshStatus(now);
+        nodeSerial.write(
+            reinterpret_cast<const uint8_t *>(&statusPacket),
+            sizeof(statusPacket));
+        nodeSerial.flush();
     }
 
     delay(1);
