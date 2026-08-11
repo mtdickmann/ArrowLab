@@ -70,10 +70,12 @@ The current UART configuration is:
 
 ## Firmware configuration
 
-`include/ArrowLabConfig.h` is the single source of truth for installation and
-development switches shared by both processors. Change
-`MEASUREMENT_LINK_MODE`, then rebuild and upload **both** the VIEWE and WROOM.
-Do not connect more than one of the following link options at a time.
+`include/ArrowLab.conf` is the printer.cfg-style, human-editable source of truth
+for installation and development choices shared by both processors. Select
+`CONFIGURED_MEASUREMENT_LINK_MODE` there, then rebuild and upload **both** the
+VIEWE and WROOM. The implementation and pin-selection logic deliberately remain
+in `include/ArrowLabConfig.h`; they are not user settings. Do not connect more
+than one of the following link options at a time.
 
 | Mode | VIEWE pins | WROOM pins | Consequence |
 | --- | --- | --- | --- |
@@ -86,9 +88,16 @@ VIEWE becomes bus master and requests each status packet. Both UART pads are
 explicitly open-drain, and the WROOM never broadcasts without a request. This
 prevents electrical contention. The external pull-up is mandatory.
 
-`DEVELOPER_MODE_DEFAULT_ENABLED` controls whether Diagnostics is visible at
-boot. `false` preserves the production long-press reveal; `true` makes the
-developer menu immediately visible while firmware is under test.
+`CONFIGURED_DEVELOPER_MODE_DEFAULT_ENABLED` in `ArrowLab.conf` controls whether
+Diagnostics is visible at boot. `false` preserves the production long-press
+reveal; `true` makes the developer menu immediately visible while firmware is
+under test.
+
+For GPIO17 one-wire development, place the 4.7 kOhm resistor between WROOM
+3.3 V and the shared GPIO8/GPIO17 signal node; it is a pull-up, not a series
+resistor. Provide a removable jumper or plug in the signal conductor. Disconnect
+that signal while uploading the processors separately, then power both off,
+reconnect it and power the system normally. The shared ground may remain fitted.
 
 GPIO11 and GPIO12 are respectively MOSI and SCK for the VIEWE onboard SD slot.
 The slot is therefore unavailable only while the proven default link is
