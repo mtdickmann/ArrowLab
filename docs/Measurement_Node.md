@@ -15,9 +15,11 @@ generic `esp_panel_board_custom_conf.h` template does not describe this board
 and must not be used to identify pin conflicts. In the active VIEWE
 UEDX48270043E-WB-A definition, GPIO8 is RGB DATA0. GPIO18 is not claimed by
 the software driver, but the board hardware routes it to the GT911 touch
-interrupt, so ArrowLab does not use it for this link. The current hardware
-trial deliberately reuses GPIO11 and GPIO12, formerly the stable right-HX711
-pair, for the dedicated measurement-node UART.
+interrupt, so ArrowLab does not use it for this link. The proven hardware
+configuration deliberately reuses GPIO11 and GPIO12, formerly the stable
+right-HX711 pair, for the dedicated measurement-node UART. Alternative link
+pin-outs are compile-time engineering options rather than parallel
+connections.
 
 The HX711s nevertheless remain on the WROOM. This keeps metrology, display and
 touch workloads isolated and gives the instrument one measurement authority.
@@ -35,7 +37,7 @@ touch workloads isolated and gives the instrument one measurement authority.
 | Both HX711 VCC | WROOM 3.3 V |
 | Both HX711 GND | WROOM GND |
 
-### VIEWE to WROOM
+### VIEWE to WROOM — proven default
 
 The measurement link uses a dedicated full-duplex UART. It does not share the
 GT911 touch-controller I2C bus.
@@ -65,6 +67,56 @@ The current UART configuration is:
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
   fault on the HMI.
+
+## Firmware configuration
+
+`include/ArrowLabConfig.h` is the single source of truth for installation and
+development switches shared by both processors. Change
+`MEASUREMENT_LINK_MODE`, then rebuild and upload **both** the VIEWE and WROOM.
+Do not connect more than one of the following link options at a time.
+
+| Mode | VIEWE pins | WROOM pins | Consequence |
+| --- | --- | --- | --- |
+| `VieweGpio11And12` | RX 11, TX 12 | RX 8, TX 9 | Proven default; VIEWE onboard SD MOSI/SCK are occupied |
+| `VieweGpio17OneWire` | RX/TX 17 | RX/TX 8 | Experimental half-duplex; one signal wire plus GND and a 4.7 kOhm pull-up to 3.3 V |
+| `VieweGpio43And44` | RX 44, TX 43 | RX 8, TX 9 | Experimental; electrically shared with VIEWE UART0/CH340 |
+
+The one-wire mode is not the two-wire protocol with a conductor removed. The
+VIEWE becomes bus master and requests each status packet. Both UART pads are
+explicitly open-drain, and the WROOM never broadcasts without a request. This
+prevents electrical contention. The external pull-up is mandatory.
+
+`DEVELOPER_MODE_DEFAULT_ENABLED` controls whether Diagnostics is visible at
+boot. `false` preserves the production long-press reveal; `true` makes the
+developer menu immediately visible while firmware is under test.
+
+GPIO11 and GPIO12 are respectively MOSI and SCK for the VIEWE onboard SD slot.
+The slot is therefore unavailable only while the proven default link is
+selected. If that remains the production link, an external SD module can be
+placed on spare WROOM GPIOs later. Two additional WROOM GPIOs are also to be
+reserved for the proposed third 100 g load-cell/HX711 channel; their final pin
+assignments will be made only when those peripherals are implemented.
+
+### GPIO43/GPIO44 test safety
+
+Closing a serial monitor releases its Windows COM-port handle but does **not**
+electrically disconnect the onboard CH340. GPIO44 is the VIEWE UART0 receive
+line and is already driven by CH340 TX whenever that interface is powered.
+Connecting WROOM TX to it at the same time creates two push-pull transmitters
+on one conductor and risks damage.
+
+For a controlled GPIO43/GPIO44 trial:
+
+1. Leave the inter-processor signal wires disconnected while uploading both
+   firmwares.
+2. Disconnect the VIEWE USB/CH340 interface completely.
+3. Power the VIEWE through a board-approved supply that does not energize the
+   CH340 data interface.
+4. Connect VIEWE TX 43 to WROOM RX 8, WROOM TX 9 to VIEWE RX 44, and common
+   GND.
+5. Test from the touchscreen. VIEWE PC logging is unavailable in this mode.
+6. Disconnect the inter-processor wires before reconnecting VIEWE USB for the
+   next upload.
 
 ## Firmware ownership
 
@@ -111,6 +163,11 @@ pio run -e BOARD_VIEWE_UEDX48270043E_WB_A -t upload
 
 When both boards are attached, always confirm which COM port belongs to which
 processor before uploading.
+
+Opening a PlatformIO monitor does not make its COM port part of the measurement
+link. It merely gives the PC process exclusive access to that USB serial port.
+Press `Ctrl+C` or close the monitor terminal to release the port for another
+program. The WROOM firmware and the VIEWE-WROOM link continue running.
 
 ## Bench diagnostic history
 
