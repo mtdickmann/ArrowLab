@@ -6,6 +6,7 @@
 #include "ArrowLabConfig.h"
 
 #include <driver/gpio.h>
+#include <driver/uart.h>
 
 namespace
 {
@@ -28,10 +29,26 @@ bool MeasurementNodeClient::begin()
         ArrowLabConfig::vieweMeasurementTxPin());
 
     if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        const gpio_num_t signalPin = static_cast<gpio_num_t>(
+            ArrowLabConfig::vieweMeasurementRxPin());
         gpio_set_direction(
-            static_cast<gpio_num_t>(
-                ArrowLabConfig::vieweMeasurementRxPin()),
+            signalPin,
             GPIO_MODE_INPUT_OUTPUT_OD);
+
+        // Arduino-ESP32 3.1.1's peripheral manager detaches RX when RX and TX
+        // are assigned to the same pad. Restore the UART1 RX matrix route
+        // directly after HardwareSerial::begin() has finished assigning TX.
+        if (
+            uart_set_pin(
+                UART_NUM_1,
+                UART_PIN_NO_CHANGE,
+                signalPin,
+                UART_PIN_NO_CHANGE,
+                UART_PIN_NO_CHANGE)
+            != ESP_OK
+        ) {
+            return false;
+        }
         while (nodeSerial_.available() > 0) nodeSerial_.read();
     }
 
