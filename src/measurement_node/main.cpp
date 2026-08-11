@@ -4,9 +4,9 @@
 #include <cstring>
 
 #include <driver/gpio.h>
-#include <driver/uart.h>
 
 #include "ArrowLabConfig.h"
+#include "OneWireUart.h"
 #include "Version.h"
 #include "calibration/CalibrationController.h"
 #include "measurement/LoadCellChannel.h"
@@ -312,22 +312,12 @@ void setup()
     if (ArrowLabConfig::measurementLinkIsOneWire()) {
         const gpio_num_t signalPin = static_cast<gpio_num_t>(
             ArrowLabConfig::wroomMeasurementRxPin());
-        gpio_set_direction(
-            signalPin,
-            GPIO_MODE_INPUT_OUTPUT_OD);
-
-        // Arduino-ESP32 3.1.1's peripheral manager detaches RX when RX and TX
-        // are assigned to the same pad. Restore the UART1 RX matrix route
-        // directly after HardwareSerial::begin() has finished assigning TX.
-        const esp_err_t rxAttachResult = uart_set_pin(
+        const bool matrixAttachOk = OneWireUart::attach(
             UART_NUM_1,
-            UART_PIN_NO_CHANGE,
-            signalPin,
-            UART_PIN_NO_CHANGE,
-            UART_PIN_NO_CHANGE);
+            signalPin);
         Serial.printf(
-            "AL_NODE,CONFIG,ONE_WIRE_RX_ATTACH=%s\n",
-            rxAttachResult == ESP_OK ? "OK" : "FAILED");
+            "AL_NODE,CONFIG,ONE_WIRE_MATRIX_ATTACH=%s\n",
+            matrixAttachOk ? "OK" : "FAILED");
         while (nodeSerial.available() > 0) nodeSerial.read();
     }
 
