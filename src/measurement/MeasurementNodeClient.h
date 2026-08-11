@@ -36,6 +36,7 @@ private:
     uint8_t receiveBuffer_[sizeof(ArrowLabProtocol::StatusPacket)] = {};
     size_t receiveLength_ = 0;
     uint32_t lastValidPacketTime_ = 0;
+    uint32_t lastPollTime_ = 0;
     uint16_t commandSequence_ = 0;
     bool hasPacket_ = false;
     bool freshPacket_ = false;
