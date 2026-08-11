@@ -3,14 +3,12 @@
 #include <cmath>
 #include <cstring>
 
+#include "ArrowLabConfig.h"
+
+#include <driver/gpio.h>
+
 namespace
 {
-    constexpr uint32_t NODE_UART_BAUD = 115200;
-    // Reuse the former right-HX711 pins for this UART trial. That channel
-    // proved stable before metrology moved to the WROOM, so GPIO11/12 are
-    // the best known pair to test without involving display or touch pins.
-    constexpr int8_t NODE_UART_RX_PIN = 11;
-    constexpr int8_t NODE_UART_TX_PIN = 12;
     constexpr uint8_t STATUS_MAGIC_LOW =
         ArrowLabProtocol::STATUS_MAGIC & 0xFF;
     constexpr uint8_t STATUS_MAGIC_HIGH =
@@ -24,10 +22,21 @@ bool MeasurementNodeClient::begin()
     lastValidPacketTime_ = 0;
     receiveLength_ = 0;
     nodeSerial_.begin(
-        NODE_UART_BAUD,
+        ArrowLabConfig::MEASUREMENT_LINK_BAUD,
         SERIAL_8N1,
-        NODE_UART_RX_PIN,
-        NODE_UART_TX_PIN);
+        ArrowLabConfig::vieweMeasurementRxPin(),
+        ArrowLabConfig::vieweMeasurementTxPin());
+
+    if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        gpio_set_direction(
+            static_cast<gpio_num_t>(
+                ArrowLabConfig::vieweMeasurementRxPin()),
+            GPIO_MODE_INPUT_OUTPUT_OD);
+        while (nodeSerial_.available() > 0) nodeSerial_.read();
+    }
+
+    lastPollTime_ = millis()
+        - ArrowLabConfig::MEASUREMENT_STATUS_INTERVAL_MS;
     return true;
 }
 
@@ -36,6 +45,17 @@ bool MeasurementNodeClient::poll(uint32_t currentTime)
     freshPacket_ = false;
     while (nodeSerial_.available() > 0) {
         acceptByte(static_cast<uint8_t>(nodeSerial_.read()), currentTime);
+    }
+
+    if (
+        ArrowLabConfig::measurementLinkIsOneWire()
+        && currentTime - lastPollTime_
+            >= ArrowLabConfig::MEASUREMENT_STATUS_INTERVAL_MS
+    ) {
+        send(
+            ArrowLabProtocol::CommandType::PollStatus,
+            ArrowLabProtocol::Side::Left,
+            0);
     }
     return freshPacket_;
 }
@@ -122,7 +142,12 @@ bool MeasurementNodeClient::send(
     packet.referenceMilliGrams = referenceMilliGrams;
     ArrowLabProtocol::seal(packet);
 
-    return nodeSerial_.write(
+    const bool sent = nodeSerial_.write(
         reinterpret_cast<const uint8_t *>(&packet),
         sizeof(packet)) == sizeof(packet);
+    if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        nodeSerial_.flush();
+        lastPollTime_ = millis();
+    }
+    return sent;
 }
