@@ -89,6 +89,14 @@ VIEWE becomes bus master and requests each status packet. Both UART pads are
 explicitly open-drain, and the WROOM never broadcasts without a request. This
 prevents electrical contention. The external pull-up is mandatory.
 
+ArrowLab currently pins Arduino-ESP32 3.1.1. That core predates its later
+same-pin UART support: assigning identical RX and TX pins through
+`HardwareSerial` does not retain both GPIO-matrix routes. ArrowLab therefore
+uses the shared `OneWireUart` helper after `HardwareSerial::begin()` to set the
+pad open-drain and explicitly route both UART1 TX and UART1 RX to it. Do not
+replace that helper with a second ordinary pin assignment; doing so can report
+a successful write while leaving the shared wire permanently high.
+
 `CONFIGURED_DEVELOPER_MODE_DEFAULT_ENABLED` in `ArrowLab.conf` controls whether
 Diagnostics is visible at boot. `false` preserves the production long-press
 reveal; `true` makes the developer menu immediately visible while firmware is
