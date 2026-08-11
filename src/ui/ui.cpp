@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "ArrowLabConfig.h"
+
 namespace
 {
     // Main colours
@@ -62,7 +64,8 @@ namespace
     lv_obj_t *massInputBox = nullptr;
     lv_obj_t *massInputTextArea = nullptr;
     lv_obj_t *diagnosticConfirmBox = nullptr;
-    bool developerMode = false;
+    bool developerMode =
+        ArrowLabConfig::DEVELOPER_MODE_DEFAULT_ENABLED;
     bool diagnosticSideSelected = false;
     bool diagnosticRunActive = false;
     bool diagnosticAwaitingSave = false;
@@ -1337,7 +1340,9 @@ namespace ArrowLabUI
             "DIAGNOSTICS  [DEV]",
             132,
             diagnosticsButtonEvent);
-        lv_obj_add_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
+        if (!developerMode) {
+            lv_obj_add_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
+        }
 
         diagnosticsMenuPage = lv_obj_create(screen);
         lv_obj_set_size(diagnosticsMenuPage, 480, 228);
