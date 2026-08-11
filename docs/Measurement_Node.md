@@ -13,9 +13,11 @@ factor or held mass is calculated independently on the display processor.
 Only the active supported-board definition is authoritative. The disabled
 generic `esp_panel_board_custom_conf.h` template does not describe this board
 and must not be used to identify pin conflicts. In the active VIEWE
-UEDX48270043E-WB-A definition, GPIO10-13 serve the optional SD-card interface;
-they are not RGB data pins. GPIO17 and GPIO18 are available for the dedicated
-measurement-node UART used below.
+UEDX48270043E-WB-A definition, GPIO8 is RGB DATA0. GPIO18 is not claimed by
+the software driver, but the board hardware routes it to the GT911 touch
+interrupt, so ArrowLab does not use it for this link. The current hardware
+trial deliberately reuses GPIO11 and GPIO12, formerly the stable right-HX711
+pair, for the dedicated measurement-node UART.
 
 The HX711s nevertheless remain on the WROOM. This keeps metrology, display and
 touch workloads isolated and gives the instrument one measurement authority.
@@ -40,8 +42,8 @@ GT911 touch-controller I2C bus.
 
 | Signal | VIEWE | WROOM |
 | --- | ---: | ---: |
-| VIEWE TX -> WROOM RX | GPIO17 | GPIO8 |
-| WROOM TX -> VIEWE RX | GPIO18 | GPIO9 |
+| VIEWE TX -> WROOM RX | GPIO12 | GPIO8 |
+| WROOM TX -> VIEWE RX | GPIO11 | GPIO9 |
 | Reference | GND | GND |
 
 Confirm the GPIO labels before soldering; do not infer a pad from physical
@@ -56,7 +58,7 @@ alone supplies the two HX711 modules.
 The current UART configuration is:
 
 - 115200 baud, 8 data bits, no parity, one stop bit;
-- VIEWE: RX GPIO18, TX GPIO17;
+- VIEWE: RX GPIO11, TX GPIO12;
 - WROOM: RX GPIO8, TX GPIO9;
 - status packets are sent by the WROOM every 50 ms;
 - checked binary protocol version 1;
@@ -93,7 +95,9 @@ Two firmware uploads are required.
 1. Select `ARROWLAB_MEASUREMENT_S3` and upload to the WROOM COM port.
 2. Select `BOARD_VIEWE_UEDX48270043E_WB_A` and upload to the VIEWE COM port.
 3. Remove power, connect the crossed UART signals and common GND, then power
-   both boards.
+   both boards. Their power-up order does not matter; the WROOM continuously
+   publishes status packets and the VIEWE synchronizes when valid packets
+   arrive.
 4. Confirm the Home screen reports both channels online.
 5. Open Settings -> Calibration, fit the platform, TARE and calibrate Left and
    Right using the normal guided procedure.

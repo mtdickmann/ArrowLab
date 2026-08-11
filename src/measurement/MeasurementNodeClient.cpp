@@ -6,8 +6,11 @@
 namespace
 {
     constexpr uint32_t NODE_UART_BAUD = 115200;
-    constexpr int8_t NODE_UART_RX_PIN = 18;
-    constexpr int8_t NODE_UART_TX_PIN = 17;
+    // Reuse the former right-HX711 pins for this UART trial. That channel
+    // proved stable before metrology moved to the WROOM, so GPIO11/12 are
+    // the best known pair to test without involving display or touch pins.
+    constexpr int8_t NODE_UART_RX_PIN = 11;
+    constexpr int8_t NODE_UART_TX_PIN = 12;
     constexpr uint8_t STATUS_MAGIC_LOW =
         ArrowLabProtocol::STATUS_MAGIC & 0xFF;
     constexpr uint8_t STATUS_MAGIC_HIGH =
