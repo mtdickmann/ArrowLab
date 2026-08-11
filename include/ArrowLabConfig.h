@@ -20,11 +20,16 @@ namespace ArrowLabConfig
         VieweGpio43And44 = 2
     };
 
-    // ArrowLab-wide compile-time choices. Change these lines deliberately,
-    // then rebuild and upload BOTH processors when the link mode changes.
+    // Human-editable installation/development choices live separately from
+    // the implementation below, in the printer.cfg-style ArrowLab.conf file.
+    #include "ArrowLab.conf"
+
+    // Stable names consumed by the firmware. Do not edit these aliases;
+    // change their CONFIGURED_* sources in ArrowLab.conf instead.
     constexpr MeasurementLinkMode MEASUREMENT_LINK_MODE =
-        MeasurementLinkMode::VieweGpio11And12;
-    constexpr bool DEVELOPER_MODE_DEFAULT_ENABLED = false;
+        CONFIGURED_MEASUREMENT_LINK_MODE;
+    constexpr bool DEVELOPER_MODE_DEFAULT_ENABLED =
+        CONFIGURED_DEVELOPER_MODE_DEFAULT_ENABLED;
 
     constexpr uint32_t MEASUREMENT_LINK_BAUD = 115200;
     constexpr uint32_t MEASUREMENT_STATUS_INTERVAL_MS = 50;
