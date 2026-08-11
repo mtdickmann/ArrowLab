@@ -21,7 +21,8 @@ namespace ArrowLabProtocol
         None = 0,
         Tare = 1,
         PrepareCalibration = 2,
-        StartCalibration = 3
+        StartCalibration = 3,
+        PollStatus = 4
     };
 
     enum class CalibrationStage : uint8_t
@@ -126,7 +127,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::StartCalibration)
+                <= static_cast<uint8_t>(CommandType::PollStatus)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }
