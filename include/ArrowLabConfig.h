@@ -24,10 +24,14 @@ namespace ArrowLabConfig
     // the implementation below, in the printer.cfg-style ArrowLab.conf file.
     #include "ArrowLab.conf"
 
-    // Stable names consumed by the firmware. Do not edit these aliases;
-    // change their CONFIGURED_* sources in ArrowLab.conf instead.
+    static_assert(
+        CONFIGURED_MEASUREMENT_LINK_MODE <= 2,
+        "ArrowLab.conf: measurement link mode must be 0, 1 or 2");
+
+    // Stable, strongly typed names consumed by the firmware. Do not edit these
+    // aliases; change their validated CONFIGURED_* sources in ArrowLab.conf.
     constexpr MeasurementLinkMode MEASUREMENT_LINK_MODE =
-        CONFIGURED_MEASUREMENT_LINK_MODE;
+        static_cast<MeasurementLinkMode>(CONFIGURED_MEASUREMENT_LINK_MODE);
     constexpr bool DEVELOPER_MODE_DEFAULT_ENABLED =
         CONFIGURED_DEVELOPER_MODE_DEFAULT_ENABLED;
 
