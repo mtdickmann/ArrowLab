@@ -6,15 +6,15 @@ namespace ArrowLabConfig
 {
     enum class MeasurementLinkMode : uint8_t
     {
-        // Proven configuration. It preserves display and touch, but occupies
-        // the VIEWE onboard SD-card MOSI/SCK pins.
+        // Proven fallback. It preserves display and touch, but occupies the
+        // VIEWE onboard SD-card MOSI/SCK pins.
         VieweGpio11And12 = 0,
 
-        // Experimental half-duplex link: VIEWE GPIO17 to WROOM GPIO8.
+        // Production half-duplex link: VIEWE GPIO17 to WROOM GPIO8.
         // Fit one external 4.7 kOhm pull-up from the shared signal to 3.3 V.
         VieweGpio17OneWire = 1,
 
-        // Experimental full-duplex link using the VIEWE UART0 pins. NEVER
+        // UNTESTED full-duplex option using the VIEWE UART0 pins. NEVER
         // connect WROOM TX while the VIEWE USB/CH340 interface is attached:
         // the CH340 TX and WROOM TX would drive VIEWE RX simultaneously.
         VieweGpio43And44 = 2
