@@ -256,6 +256,24 @@ UART1 TX output matrix and UART1 RX input matrix to that pad. This diagnostic
 sequence and the first-low/first-packet tracing remain available until the
 GPIO17 bench trial is conclusively accepted or rejected.
 
+### Production one-wire link freeze (v0.2.1)
+
+The GPIO-matrix repair was subsequently validated in hardware. The production
+inter-processor link is frozen as one half-duplex, open-drain UART data wire
+between VIEWE GPIO17 at J7 and WROOM GPIO8, plus common GND and the documented
+4.7 kOhm pull-up. There is no WROOM GPIO9-to-VIEWE GPIO11 production conductor.
+
+VIEWE RX11/TX12 to WROOM RX8/TX9 remains a proven two-wire fallback only.
+VIEWE RX44/TX43 is an untested engineering option and is explicitly not an
+approved connection. GPIO17 is reserved permanently for the WROOM measurement
+link. J7 5 V is reserved for later evaluation of a single-inlet power design;
+it is not presently connected between the processors.
+
+The corresponding v0.2.1 calibration/weighing trace is recorded in
+`docs/Calibration_Weighing_Path_Audit.md`. It identifies differing tare,
+calibration and ordinary acquisition definitions as a controlled follow-up
+question, without changing the probationary event-based maths.
+
 During dual-USB development the boards share UART TX/RX and GND only. Their 3.3 V
 and 5 V rails must not be tied together. Existing VIEWE calibration records are
 not portable to the WROOM NVS, so the architecture transition intentionally
