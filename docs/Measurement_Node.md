@@ -15,11 +15,11 @@ generic `esp_panel_board_custom_conf.h` template does not describe this board
 and must not be used to identify pin conflicts. In the active VIEWE
 UEDX48270043E-WB-A definition, GPIO8 is RGB DATA0. GPIO18 is not claimed by
 the software driver, but the board hardware routes it to the GT911 touch
-interrupt, so ArrowLab does not use it for this link. The proven hardware
-configuration deliberately reuses GPIO11 and GPIO12, formerly the stable
-right-HX711 pair, for the dedicated measurement-node UART. Alternative link
-pin-outs are compile-time engineering options rather than parallel
-connections.
+interrupt, so ArrowLab does not use it for this link. GPIO17 is exposed at
+VIEWE connector J7 and is not claimed by display or touch.
+It is the production measurement-link signal. The proven GPIO11/GPIO12 pair is
+retained only as a compile-time fallback; alternative pin-outs are engineering
+options rather than parallel connections.
 
 The HX711s nevertheless remain on the WROOM. This keeps metrology, display and
 touch workloads isolated and gives the instrument one measurement authority.
@@ -37,32 +37,38 @@ touch workloads isolated and gives the instrument one measurement authority.
 | Both HX711 VCC | WROOM 3.3 V |
 | Both HX711 GND | WROOM GND |
 
-### VIEWE to WROOM — proven default
+### VIEWE to WROOM — production link
 
-The measurement link uses a dedicated full-duplex UART. It does not share the
-GT911 touch-controller I2C bus.
+The measurement link is a dedicated half-duplex, single-wire UART. Both
+processors route UART1 RX and TX to the same open-drain pad. The VIEWE polls
+for every reply, so the processors do not drive the wire simultaneously.
 
 | Signal | VIEWE | WROOM |
 | --- | ---: | ---: |
-| VIEWE TX -> WROOM RX | GPIO12 | GPIO8 |
-| WROOM TX -> VIEWE RX | GPIO11 | GPIO9 |
+| Bidirectional UART data | GPIO17 (J7) | GPIO8 |
 | Reference | GND | GND |
 
 Confirm the GPIO labels before soldering; do not infer a pad from physical
-position alone. The two signal wires are crossed by function: TX always goes
-to the other processor's RX.
+position alone. There is one data conductor, not crossed TX/RX conductors. Fit
+a 4.7 kOhm pull-up between WROOM 3.3 V and the shared GPIO8/GPIO17 signal node.
 
 During initial development both boards are powered from their own USB cables.
-Connect only the two UART signals and common GND between them. Do **not** join
+Connect only the single UART signal and common GND between them. Do **not** join
 their 3.3 V or 5 V rails while both USB supplies are connected. The WROOM
 alone supplies the two HX711 modules.
+
+J7 also exposes 5 V, GPIO0 and GND. GPIO0 is a boot-strapping signal and is not
+assigned to ArrowLab. J7 5 V may support a future single-inlet power design,
+but it is not part of the present wiring and must not be joined to the WROOM
+until that architecture is deliberately designed and validated.
 
 The current UART configuration is:
 
 - 115200 baud, 8 data bits, no parity, one stop bit;
-- VIEWE: RX GPIO11, TX GPIO12;
-- WROOM: RX GPIO8, TX GPIO9;
-- status packets are sent by the WROOM every 50 ms;
+- VIEWE: shared RX/TX GPIO17;
+- WROOM: shared RX/TX GPIO8;
+- VIEWE polls at 50 ms intervals and the WROOM replies after a guarded
+  turnaround;
 - checked binary protocol version 1;
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
@@ -80,9 +86,9 @@ more than one of the following link options at a time.
 
 | Mode | VIEWE pins | WROOM pins | Consequence |
 | --- | --- | --- | --- |
-| `0` | RX 11, TX 12 | RX 8, TX 9 | Proven default; VIEWE onboard SD MOSI/SCK are occupied |
-| `1` | RX/TX 17 | RX/TX 8 | Experimental half-duplex; one signal wire plus GND and a 4.7 kOhm pull-up to 3.3 V |
-| `2` | RX 44, TX 43 | RX 8, TX 9 | Experimental; electrically shared with VIEWE UART0/CH340 |
+| `0` | RX 11, TX 12 | RX 8, TX 9 | Proven fallback; VIEWE onboard SD MOSI/SCK are occupied |
+| `1` | RX/TX 17 | RX/TX 8 | **Production**; one signal wire plus GND and a 4.7 kOhm pull-up to 3.3 V |
+| `2` | RX 44, TX 43 | RX 8, TX 9 | **Untested**; electrically shared with VIEWE UART0/CH340 |
 
 The one-wire mode is not the two-wire protocol with a conductor removed. The
 VIEWE becomes bus master and requests each status packet. Both UART pads are
@@ -102,20 +108,23 @@ Diagnostics is visible at boot. `false` preserves the production long-press
 reveal; `true` makes the developer menu immediately visible while firmware is
 under test.
 
-For GPIO17 one-wire development, place the 4.7 kOhm resistor between WROOM
+For the GPIO17 production link, place the 4.7 kOhm resistor between WROOM
 3.3 V and the shared GPIO8/GPIO17 signal node; it is a pull-up, not a series
 resistor. Provide a removable jumper or plug in the signal conductor. Disconnect
 that signal while uploading the processors separately, then power both off,
 reconnect it and power the system normally. The shared ground may remain fitted.
 
 GPIO11 and GPIO12 are respectively MOSI and SCK for the VIEWE onboard SD slot.
-The slot is therefore unavailable only while the proven default link is
-selected. If that remains the production link, an external SD module can be
-placed on spare WROOM GPIOs later. Two additional WROOM GPIOs are also to be
-reserved for the proposed third 100 g load-cell/HX711 channel; their final pin
-assignments will be made only when those peripherals are implemented.
+They were proven as the two-wire fallback, but are not connected in the
+production build. WROOM GPIO9 is likewise unused by production mode. Two
+additional WROOM GPIOs are to be reserved for the proposed third 100 g
+load-cell/HX711 channel; their final pin assignments will be made only when
+those peripherals are implemented.
 
-### GPIO43/GPIO44 test safety
+### GPIO43/GPIO44 untested option and test safety
+
+GPIO43/GPIO44 has not been bench validated for ArrowLab and is not an approved
+production or fallback connection.
 
 Closing a serial monitor releases its Windows COM-port handle but does **not**
 electrically disconnect the onboard CH340. GPIO44 is the VIEWE UART0 receive
