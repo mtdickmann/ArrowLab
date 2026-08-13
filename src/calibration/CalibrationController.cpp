@@ -236,7 +236,17 @@ bool CalibrationController::performCalibrationAction(
         return false;
     }
 
-    if (referenceGrams > 0.0f && state.stage == Stage::Ready) {
+    // A positive reference is also an edit/restart action. The operator must
+    // be able to correct a mistyped mass while ArrowLab is awaiting the load,
+    // or replace it after load detection without resetting either MCU.
+    if (
+        referenceGrams > 0.0f
+        && (
+            state.stage == Stage::Ready
+            || state.stage == Stage::AwaitingLoad
+            || state.stage == Stage::ReadyToCalibrate
+        )
+    ) {
         state.referenceGrams = referenceGrams;
         state.loadConfirmSamples = 0;
         state.stage = Stage::AwaitingLoad;

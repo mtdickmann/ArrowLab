@@ -27,7 +27,6 @@ using namespace esp_panel::board;
 namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
-    float calibrationReferenceGrams = 0.0f;
     // Raw-only mirrors retained for the hidden creep diagnostic. The Viewe
     // never initializes an HX711 or performs measurement calculations.
     LoadCellChannel leftSensor("Left remote", 0, 0);
@@ -65,8 +64,7 @@ namespace
         float referenceGrams)
     {
         if (referenceGrams > 0.0f) {
-            calibrationReferenceGrams = referenceGrams;
-            ArrowLabUI::setCalibrationReferenceGrams(referenceGrams);
+            ArrowLabUI::setCalibrationReferenceGrams(side, referenceGrams);
         }
 
         if (referenceGrams > 0.0f) {
@@ -354,6 +352,12 @@ namespace
             leftCalibrated,
             rightCalibrated
         );
+        ArrowLabUI::setCalibrationReferenceGrams(
+            ArrowLabUI::LoadSide::Left,
+            static_cast<float>(left.referenceMilliGrams) / 1000.0f);
+        ArrowLabUI::setCalibrationReferenceGrams(
+            ArrowLabUI::LoadSide::Right,
+            static_cast<float>(right.referenceMilliGrams) / 1000.0f);
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
@@ -588,7 +592,12 @@ void setup()
         requestDiagnosticFinish
     );
     ArrowLabUI::setCalibrationReferenceGrams(
-        calibrationReferenceGrams
+        ArrowLabUI::LoadSide::Left,
+        0.0f
+    );
+    ArrowLabUI::setCalibrationReferenceGrams(
+        ArrowLabUI::LoadSide::Right,
+        0.0f
     );
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");

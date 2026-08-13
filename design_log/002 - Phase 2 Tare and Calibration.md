@@ -77,7 +77,7 @@ Current calibration gating:
 1. The selected side must have a deliberate `TARE OK`.
 2. The first CAL action records the user's actual reference mass and arms load
    detection.
-3. A significant zero-adjusted load of at least 250,000 raw counts must be
+3. A significant zero-adjusted load of at least 10,000 raw counts must be
    detected for 5 consecutive fresh HX711 samples.
 4. CAL then becomes available for the explicit second action.
 5. The second CAL action starts one fixed 30-second settling timer. Leaving the
@@ -87,13 +87,27 @@ Current calibration gating:
 7. The shared calibration controller enforces the rule independently of the
    disabled/enabled state of either normal or diagnostic UI buttons.
 
-### Why 250,000 counts?
+### Why 10,000 counts?
 
-Initial hardware observation is approximately one million counts for a mass near 1 kg. A 500,000-count trigger would therefore be too close to the expected signal from a roughly 500 g minimum calibration mass and could fail on a less-sensitive channel.
-
-250,000 counts is still orders of magnitude above the observed near-zero raw noise while leaving useful margin for channel-to-channel sensitivity differences.
+Initial hardware observation is approximately one million counts for a mass
+near 1 kg, but that sensitivity is not a valid requirement for every replacement
+load cell and HX711. The gate is only intended to reject unloaded noise, not to
+measure or validate the entered reference mass. Ten thousand counts remains far
+above the observed few-hundred-count near-zero noise while avoiding a hidden
+minimum sensitivity requirement.
 
 This raw threshold is necessary before first calibration because a trustworthy counts-to-grams factor does not yet exist.
+
+While waiting for the load, pressing CAL again reopens the numeric keypad so a
+mistyped reference mass can be corrected. The replacement value restarts load
+confirmation. Pressing TARE abandons the pending setup, captures a new session
+zero and retains the last valid stored K. Calibration workflow stages are never
+stored persistently; only the completed K and reference mass are stored on the
+WROOM.
+
+Once the load has been detected, the confirmation dialog still provides an
+`EDIT MASS` action before `CALIBRATE`; the entered value is therefore never
+locked merely because the weight arrived first.
 
 ## Post-calibration verification
 

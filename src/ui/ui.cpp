@@ -71,8 +71,6 @@ namespace
     bool diagnosticAwaitingSave = false;
     bool diagnosticUseAutomaticInstruction = true;
     bool diagnosticHostConnected = false;
-    bool leftCalibrationSetupActive = false;
-    bool rightCalibrationSetupActive = false;
     bool leftCalibrationReady = false;
     bool rightCalibrationReady = false;
     uint32_t developerPressStart = 0;
@@ -93,7 +91,8 @@ namespace
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
-    float calibrationReferenceGrams = 0.0f;
+    float leftCalibrationReferenceGrams = 0.0f;
+    float rightCalibrationReferenceGrams = 0.0f;
     enum class MassInputPurpose
     {
         DiagnosticLoad,
@@ -321,6 +320,8 @@ namespace
         return refs;
     }
 
+    void showCalibrationMassInput(ArrowLabUI::LoadSide side);
+
     void confirmationEvent(lv_event_t *event)
     {
         lv_obj_t *messageBox =
@@ -329,22 +330,27 @@ namespace
         const uint16_t selectedButton =
             lv_msgbox_get_active_btn(messageBox);
 
-        if (selectedButton == 1)
-        {
-            if (
-                pendingAction == ConfirmationAction::Tare && tareCallback != nullptr)
-            {
-                tareCallback(pendingSide);
-            }
-            else if (
-                pendingAction == ConfirmationAction::Calibration && calibrationCallback != nullptr)
-            {
+        bool editCalibrationMass = false;
+        if (
+            pendingAction == ConfirmationAction::Tare
+            && selectedButton == 1
+            && tareCallback != nullptr
+        ) {
+            tareCallback(pendingSide);
+        } else if (pendingAction == ConfirmationAction::Calibration) {
+            if (selectedButton == 1) {
+                editCalibrationMass = true;
+            } else if (selectedButton == 2 && calibrationCallback != nullptr) {
                 calibrationCallback(pendingSide, 0.0f);
             }
         }
 
+        const ArrowLabUI::LoadSide completedSide = pendingSide;
         confirmationBox = nullptr;
         lv_msgbox_close(messageBox);
+        if (editCalibrationMass) {
+            showCalibrationMassInput(completedSide);
+        }
     }
 
     void showTareConfirmation(ArrowLabUI::LoadSide side)
@@ -364,6 +370,9 @@ namespace
 
         const bool isLeft =
             side == ArrowLabUI::LoadSide::Left;
+        const float referenceGrams = isLeft
+            ? leftCalibrationReferenceGrams
+            : rightCalibrationReferenceGrams;
 
         confirmationBox = lv_msgbox_create(
             nullptr,
@@ -398,6 +407,7 @@ namespace
 
         static const char *buttons[] = {
             "CANCEL",
+            "EDIT MASS",
             "CALIBRATE",
             ""};
 
@@ -411,7 +421,7 @@ namespace
             "Keep the %.1f g reference weight stable on %s.\n"
             "CALIBRATE starts the 30-second stabilization, then "
             "records and stores the new factor.",
-            calibrationReferenceGrams,
+            referenceGrams,
             isLeft ? "LEFT" : "RIGHT");
 
         confirmationBox = lv_msgbox_create(
@@ -448,20 +458,17 @@ namespace
         }
     }
 
-    void showCalibrationMassInput(ArrowLabUI::LoadSide side);
-
     void handleCalibrationButton(ArrowLabUI::LoadSide side)
     {
-        const bool setupActive = side == ArrowLabUI::LoadSide::Left
-            ? leftCalibrationSetupActive
-            : rightCalibrationSetupActive;
         const bool ready = side == ArrowLabUI::LoadSide::Left
             ? leftCalibrationReady
             : rightCalibrationReady;
 
         if (ready) {
             showCalibrationConfirmation(side);
-        } else if (!setupActive) {
+        } else {
+            // AwaitingLoad deliberately comes here too: pressing CAL again
+            // reopens the keypad so a pending reference can be corrected.
             showCalibrationMassInput(side);
         }
     }
@@ -821,7 +828,11 @@ namespace
         }
 
         if (massInputPurpose == MassInputPurpose::Calibration) {
-            calibrationReferenceGrams = value;
+            if (massInputSide == ArrowLabUI::LoadSide::Left) {
+                leftCalibrationReferenceGrams = value;
+            } else {
+                rightCalibrationReferenceGrams = value;
+            }
             if (calibrationCallback != nullptr) {
                 calibrationCallback(massInputSide, value);
             }
@@ -887,16 +898,20 @@ namespace
         lv_textarea_set_accepted_chars(massInputTextArea, "0123456789.");
         lv_textarea_set_max_length(massInputTextArea, 8);
 
+        const float currentReference =
+            side == ArrowLabUI::LoadSide::Left
+                ? leftCalibrationReferenceGrams
+                : rightCalibrationReferenceGrams;
         if (
             purpose == MassInputPurpose::Calibration
-            && calibrationReferenceGrams > 0.0f
+            && currentReference > 0.0f
         ) {
             char currentMass[16];
             snprintf(
                 currentMass,
                 sizeof(currentMass),
                 "%.3f",
-                calibrationReferenceGrams);
+                currentReference);
             lv_textarea_set_text(massInputTextArea, currentMass);
         }
 
@@ -1740,9 +1755,13 @@ namespace ArrowLabUI
         calibrationCallback = callback;
     }
 
-    void setCalibrationReferenceGrams(float grams)
+    void setCalibrationReferenceGrams(LoadSide side, float grams)
     {
-        calibrationReferenceGrams = grams;
+        if (side == LoadSide::Left) {
+            leftCalibrationReferenceGrams = grams;
+        } else {
+            rightCalibrationReferenceGrams = grams;
+        }
     }
 
     void setDiagnosticCallbacks(
@@ -2070,8 +2089,7 @@ namespace ArrowLabUI
             if (
                 !tareComplete
                 || !userTareConfirmed
-                || calibrationInProgress
-                || (calibrationSetupActive && !calibrationReady))
+                || calibrationInProgress)
             {
                 lv_obj_add_state(
                     panel.calibrationButton,
@@ -2086,10 +2104,8 @@ namespace ArrowLabUI
         }
 
         if (side == LoadSide::Left) {
-            leftCalibrationSetupActive = calibrationSetupActive;
             leftCalibrationReady = calibrationReady;
         } else {
-            rightCalibrationSetupActive = calibrationSetupActive;
             rightCalibrationReady = calibrationReady;
         }
     }
