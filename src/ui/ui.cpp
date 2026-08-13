@@ -370,9 +370,6 @@ namespace
 
         const bool isLeft =
             side == ArrowLabUI::LoadSide::Left;
-        const float referenceGrams = isLeft
-            ? leftCalibrationReferenceGrams
-            : rightCalibrationReferenceGrams;
 
         confirmationBox = lv_msgbox_create(
             nullptr,
@@ -413,6 +410,9 @@ namespace
 
         const bool isLeft =
             side == ArrowLabUI::LoadSide::Left;
+        const float referenceGrams = isLeft
+            ? leftCalibrationReferenceGrams
+            : rightCalibrationReferenceGrams;
 
         char message[160];
         snprintf(
