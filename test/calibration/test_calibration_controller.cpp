@@ -122,7 +122,7 @@ int main()
         replacementLeft,
         replacementController,
         CalibrationSide::Left,
-        120000,
+        103000,
         time,
         5);
     assert(

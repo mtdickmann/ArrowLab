@@ -104,9 +104,14 @@ void CalibrationController::onFreshReading(CalibrationSide side)
     ChannelWorkflow &state = workflow(side);
 
     if (state.stage == Stage::AwaitingLoad) {
+        // Load arming is a physical safety gate, not a displayed/filtered
+        // measurement. Compare the fresh HX711 conversion directly with the
+        // completed tare so the event tracker and its rolling filter cannot
+        // delay or conceal a deliberately placed reference mass.
+        const long appliedCounts =
+            channel.rawValue() - channel.tareReference();
         if (
-            magnitude(channel.filteredZeroedRaw())
-            >= LOAD_THRESHOLD_COUNTS
+            magnitude(appliedCounts) >= LOAD_THRESHOLD_COUNTS
         ) {
             if (state.loadConfirmSamples < LOAD_CONFIRM_SAMPLES) {
                 ++state.loadConfirmSamples;

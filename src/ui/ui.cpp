@@ -2089,6 +2089,7 @@ namespace ArrowLabUI
             if (
                 !tareComplete
                 || !userTareConfirmed
+                || (calibrationSetupActive && !calibrationReady)
                 || calibrationInProgress)
             {
                 lv_obj_add_state(

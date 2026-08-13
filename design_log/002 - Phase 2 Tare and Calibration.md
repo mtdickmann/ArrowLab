@@ -561,8 +561,9 @@ For each side the normal calibration interaction is:
    deliberately recalibrate.
 4. The first `CAL` action requests the user's actual reference mass. ArrowLab does
    not treat 999.8 g or any other development weight as a universal constant.
-5. ArrowLab instructs the user to place that reference weight. A confirmed
-   significant raw-count change arms the second CAL action.
+5. ArrowLab instructs the user to place that reference weight. CAL stays
+   disabled until five fresh raw conversions confirm a significant change from
+   the completed tare; only then is the second CAL action armed.
 6. The second `CAL` action starts one fixed 30-second stabilization period. The
    weight remaining in place cannot restart that timer. CAL is disabled and the
    progress indicator provides positive feedback while stabilizing.
