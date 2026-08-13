@@ -563,9 +563,9 @@ void setup()
 
     assert(displayBoard->begin());
 
-    // The measurement node uses the former right-HX711 GPIO11/12 pair.
-    // Keeping it off the GT911 I2C bus prevents either processor disturbing
-    // touch.
+    // Production measurement link: one-wire half-duplex on VIEWE GPIO17
+    // to WROOM GPIO8. GPIO11/GPIO12 remain free for the restored onboard SD
+    // interface and are reserved only as the documented UART fallback.
     measurementNode.begin();
 
     Serial.println("Initializing LVGL");
