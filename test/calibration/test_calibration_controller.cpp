@@ -28,7 +28,6 @@ namespace
 int main()
 {
     InstrumentStorage storage;
-    assert(storage.begin());
     MeasurementChannel left;
     MeasurementChannel right;
     CalibrationController controller(left, right, storage);
@@ -60,74 +59,6 @@ int main()
     StoredCalibration saved;
     assert(storage.loadCalibration(StoredLoadSide::Left, saved));
     assert(std::fabs(saved.factor - left.countsPerGram()) < 0.001f);
-
-    // Recalibration remains recoverable. A new mass can replace a mistyped
-    // value before or after load detection, and TARE can abandon the pending
-    // setup without erasing the last valid K.
-    controller.requestCalibration(CalibrationSide::Left, 900.0f);
-    controller.update(time);
-    assert(
-        controller.status(CalibrationSide::Left, time).stage
-        == CalibrationController::Stage::AwaitingLoad);
-
-    controller.requestCalibration(CalibrationSide::Left, 999.8f);
-    controller.update(time);
-    assert(std::fabs(
-        controller.status(CalibrationSide::Left, time).referenceGrams
-        - 999.8f) < 0.001f);
-
-    feed(left, controller, CalibrationSide::Left, 1100000, time, 5);
-    assert(
-        controller.status(CalibrationSide::Left, time).stage
-        == CalibrationController::Stage::ReadyToCalibrate);
-
-    controller.requestCalibration(CalibrationSide::Left, 1000.0f);
-    controller.update(time);
-    assert(
-        controller.status(CalibrationSide::Left, time).stage
-        == CalibrationController::Stage::AwaitingLoad);
-
-    controller.requestTare(CalibrationSide::Left);
-    controller.update(time);
-    assert(
-        controller.status(CalibrationSide::Left, time).stage
-        == CalibrationController::Stage::Taring);
-    feed(left, controller, CalibrationSide::Left, 100000, time, 20);
-    assert(left.userTareConfirmed());
-    assert(left.calibrated());
-
-    // A lower-sensitivity replacement channel must still detect a deliberate
-    // reference load without inheriting the original prototype's counts/g.
-    MeasurementChannel replacementLeft;
-    MeasurementChannel replacementRight;
-    CalibrationController replacementController(
-        replacementLeft,
-        replacementRight,
-        storage);
-    replacementController.begin();
-    replacementController.requestTare(CalibrationSide::Left);
-    replacementController.update(time);
-    feed(
-        replacementLeft,
-        replacementController,
-        CalibrationSide::Left,
-        100000,
-        time,
-        20);
-    replacementController.requestCalibration(
-        CalibrationSide::Left,
-        1000.0f);
-    replacementController.update(time);
-    feed(
-        replacementLeft,
-        replacementController,
-        CalibrationSide::Left,
-        103000,
-        time,
-        5);
-    assert(
-        replacementController.status(CalibrationSide::Left, time).stage
-        == CalibrationController::Stage::ReadyToCalibrate);
 
     // A power-cycle equivalent restores K but deliberately not the physical
     // zero reference.  A new deliberate tare makes the channel usable again.

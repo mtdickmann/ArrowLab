@@ -34,13 +34,8 @@ Tare is session state and is not stored across power cycles.
 
 1. The user supplies the reference mass and fits the loaded calibration
    platform after a deliberate tare.
-2. Five consecutive fresh HX711 conversions at least 2,000 counts from the
-   completed tare confirm that a deliberate load is present. The physical
-   arming gate deliberately uses the direct raw difference, rather than the
-   event/display filter, so that filtering cannot conceal a placed reference
-   weight. The threshold remains well above the observed few-hundred-count
-   unloaded noise without assuming every valid load-cell/HX711 pair has the
-   original prototype's sensitivity.
+2. Five consecutive filtered zero-referenced readings above 250,000 counts
+   confirm that a substantial load is present.
 3. The second CAL action starts the fixed 30-second settling interval.
 4. After settling, 20 fresh events are accumulated. Each event contributes the
    current 15-sample robust filtered, zero-referenced result.
@@ -52,16 +47,6 @@ Tare is session state and is not stored across power cycles.
    for Left and Right in WROOM NVS.
 7. At that instant the held display is anchored to the entered reference mass
    and the private tracker is anchored to the same current filtered raw state.
-
-While waiting for the reference load, CAL remains disabled. It is re-enabled
-only after the raw load gate has been satisfied. TARE deliberately abandons any
-pending calibration setup, establishes a new physical zero and retains the last
-valid K. Only K and its reference mass persist in WROOM NVS; `AwaitingLoad` and
-all other workflow stages are transient.
-
-After load detection, the final confirmation offers `EDIT MASS` as well as
-`CALIBRATE`, so the reference remains correctable until the 30-second operation
-actually begins.
 
 K is signed; either load-cell signal polarity is valid.
 

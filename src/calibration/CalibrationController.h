@@ -65,10 +65,7 @@ private:
     };
 
     static constexpr uint32_t SETTLE_TIME_MS = 30000;
-    // This gate only distinguishes a deliberately placed calibration mass
-    // from unloaded noise. It must not assume every valid load-cell/HX711
-    // pair has the sensitivity observed on the original prototype.
-    static constexpr long LOAD_THRESHOLD_COUNTS = 2000;
+    static constexpr long LOAD_THRESHOLD_COUNTS = 250000;
     static constexpr uint8_t LOAD_CONFIRM_SAMPLES = 5;
     static constexpr uint8_t CALIBRATION_SAMPLE_COUNT = 20;
 

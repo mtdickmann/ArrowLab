@@ -104,14 +104,9 @@ void CalibrationController::onFreshReading(CalibrationSide side)
     ChannelWorkflow &state = workflow(side);
 
     if (state.stage == Stage::AwaitingLoad) {
-        // Load arming is a physical safety gate, not a displayed/filtered
-        // measurement. Compare the fresh HX711 conversion directly with the
-        // completed tare so the event tracker and its rolling filter cannot
-        // delay or conceal a deliberately placed reference mass.
-        const long appliedCounts =
-            channel.rawValue() - channel.tareReference();
         if (
-            magnitude(appliedCounts) >= LOAD_THRESHOLD_COUNTS
+            magnitude(channel.filteredZeroedRaw())
+            >= LOAD_THRESHOLD_COUNTS
         ) {
             if (state.loadConfirmSamples < LOAD_CONFIRM_SAMPLES) {
                 ++state.loadConfirmSamples;
@@ -241,17 +236,7 @@ bool CalibrationController::performCalibrationAction(
         return false;
     }
 
-    // A positive reference is also an edit/restart action. The operator must
-    // be able to correct a mistyped mass while ArrowLab is awaiting the load,
-    // or replace it after load detection without resetting either MCU.
-    if (
-        referenceGrams > 0.0f
-        && (
-            state.stage == Stage::Ready
-            || state.stage == Stage::AwaitingLoad
-            || state.stage == Stage::ReadyToCalibrate
-        )
-    ) {
+    if (referenceGrams > 0.0f && state.stage == Stage::Ready) {
         state.referenceGrams = referenceGrams;
         state.loadConfirmSamples = 0;
         state.stage = Stage::AwaitingLoad;

@@ -32,7 +32,7 @@ namespace ArrowLabUI
      */
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
-    void setCalibrationReferenceGrams(LoadSide side, float grams);
+    void setCalibrationReferenceGrams(float grams);
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
