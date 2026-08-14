@@ -62,6 +62,10 @@ namespace ArrowLabConfig
                 < CONFIGURED_SPINE_MINIMUM_APPLIED_FORCE_GRAMS,
         "ArrowLab.conf: spine baseline band must be positive and below trigger");
     static_assert(
+        CONFIGURED_SPINE_HOLD_ABORT_DROP_GRAMS
+            > CONFIGURED_SPINE_STABILITY_BAND_GRAMS,
+        "ArrowLab.conf: hold abort drop must exceed the stability band");
+    static_assert(
         CONFIGURED_ARROW_STABILITY_BAND_GRAMS > 0.0f,
         "ArrowLab.conf: arrow stability band must be positive");
 
@@ -93,6 +97,8 @@ namespace ArrowLabConfig
         CONFIGURED_SPINE_RELEASE_FORCE_GRAMS;
     constexpr uint32_t SPINE_RELEASE_TIME_MS =
         CONFIGURED_SPINE_RELEASE_TIME_MS;
+    constexpr float SPINE_HOLD_ABORT_DROP_GRAMS =
+        CONFIGURED_SPINE_HOLD_ABORT_DROP_GRAMS;
     constexpr float ARROW_PRESENT_GRAMS =
         CONFIGURED_ARROW_PRESENT_GRAMS;
     constexpr uint32_t ARROW_STABILITY_TIME_MS =

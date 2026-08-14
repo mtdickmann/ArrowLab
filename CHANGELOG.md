@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.4 DEV
+
+- Added an explicit CLEAR / TARE NOW gate before every new Spine or SAS run so
+  an arrow left on the supports cannot be captured by automatic tare.
+- Made RESTART preserve the established arrow top-zero and prior SAS captures
+  while requiring a full release before retrying the current plunge.
+- Reject a hold after a significant falling-force event, preventing a sticky
+  plunger below the hard stop from becoming a false stable capture.
+- BACK now cancels and exits an active test instead of appearing actionable
+  while being ignored.
+- A marked spine entered after completion now recalculates the existing Spine
+  or SAS result without requiring another physical measurement.
+- Updated the VIEWE/WROOM measurement protocol to version 4.
+
 ## v0.2.3 DEV
 
 ### Fixed

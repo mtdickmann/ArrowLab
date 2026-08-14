@@ -29,12 +29,12 @@ int main()
     assert(ArrowLabProtocol::valid(command));
 
     command.command = static_cast<uint8_t>(
-        ArrowLabProtocol::CommandType::RestartSpineAttempt);
+        ArrowLabProtocol::CommandType::ConfirmSpineClear);
     ArrowLabProtocol::seal(command);
     assert(ArrowLabProtocol::valid(command));
 
     command.command = static_cast<uint8_t>(
-        ArrowLabProtocol::CommandType::RestartSpineAttempt) + 1;
+        ArrowLabProtocol::CommandType::ConfirmSpineClear) + 1;
     ArrowLabProtocol::seal(command);
     assert(!ArrowLabProtocol::valid(command));
 

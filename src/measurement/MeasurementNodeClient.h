@@ -19,6 +19,7 @@ public:
     bool startCalibration(ArrowLabProtocol::Side side);
     bool startSpineTest(uint8_t positionCount);
     bool cancelSpineTest();
+    bool confirmSpineClear();
     bool confirmSpineZero();
     bool restartSpineAttempt();
 

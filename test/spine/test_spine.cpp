@@ -31,6 +31,9 @@ int main()
     inputs.leftCalibrated = true;
     inputs.rightCalibrated = true;
     assert(controller.start(1, inputs, 0));
+    assert(controller.stage() == SpineTestController::Stage::AwaitingClear);
+    assert(controller.takeAction() == SpineTestController::Action::None);
+    assert(controller.confirmSupportsClear(1));
     assert(controller.takeAction() == SpineTestController::Action::TareLeft);
 
     inputs.leftTareConfirmed = true;
@@ -67,50 +70,78 @@ int main()
     controller.update(inputs, 1130);
     assert(controller.stage() == SpineTestController::Stage::Holding);
 
-    // Releasing an incomplete plunge resets to PUSH instead of allowing a
-    // three-second capture around the released force.
-    inputs.combinedInstantaneousGrams = 25.0f;
+    // Backing away from the stop cannot begin a fresh hold around a lower,
+    // sticky plunger force. A confirmed full release is required first.
+    inputs.combinedInstantaneousGrams = 500.0f;
     controller.update(inputs, 1500);
+    assert(
+        controller.stage()
+        == SpineTestController::Stage::AwaitingRetryRelease);
+    controller.update(inputs, 5000);
+    assert(
+        controller.stage()
+        == SpineTestController::Stage::AwaitingRetryRelease);
+
+    inputs.combinedInstantaneousGrams = 25.0f;
+    controller.update(inputs, 5010);
+    controller.update(inputs, 5520);
     assert(controller.stage() == SpineTestController::Stage::ReadyToPress);
     assert(controller.holdPercent(1500) == 0);
 
     inputs.combinedInstantaneousGrams = 905.0f;
-    controller.update(inputs, 1510);
+    controller.update(inputs, 5530);
     assert(controller.stage() == SpineTestController::Stage::Holding);
-    for (uint32_t time = 1520; time < 4530; time += 10) {
+
+    // RESTART during a plunge keeps the established arrow reference/top-zero,
+    // but will not arm another capture until the force has fully released.
+    controller.restartAttempt(5540);
+    assert(
+        controller.stage()
+        == SpineTestController::Stage::AwaitingRetryRelease);
+    assert(near(controller.arrowMassGrams(), 25.0f));
+    inputs.combinedInstantaneousGrams = 25.0f;
+    controller.update(inputs, 5550);
+    controller.update(inputs, 6060);
+    assert(controller.stage() == SpineTestController::Stage::ReadyToPress);
+
+    inputs.combinedInstantaneousGrams = 905.0f;
+    controller.update(inputs, 6070);
+    assert(controller.stage() == SpineTestController::Stage::Holding);
+    for (uint32_t time = 6080; time < 9090; time += 10) {
         inputs.combinedInstantaneousGrams = 905.5f;
         controller.update(inputs, time);
     }
     assert(controller.stage() == SpineTestController::Stage::AwaitingRelease);
 
     inputs.combinedInstantaneousGrams = 25.0f;
-    controller.update(inputs, 4540);
-    controller.update(inputs, 5050);
+    controller.update(inputs, 9100);
+    controller.update(inputs, 9610);
     assert(controller.stage() == SpineTestController::Stage::Complete);
     assert(near(controller.positionForceGrams(0), 880.5f, 0.1f));
 
     // A removed arrow is reported live as zero and the procedure returns to
     // arrow detection without requiring Cancel.
-    assert(controller.start(1, inputs, 6000));
+    assert(controller.start(1, inputs, 10000));
+    assert(controller.confirmSupportsClear(10001));
     controller.takeAction();
     inputs.leftTareConfirmed = false;
     inputs.rightTareConfirmed = false;
-    controller.update(inputs, 6010);
+    controller.update(inputs, 10010);
     inputs.leftTareConfirmed = true;
-    controller.update(inputs, 6020);
+    controller.update(inputs, 10020);
     controller.takeAction();
     inputs.rightTareConfirmed = true;
-    controller.update(inputs, 6030);
+    controller.update(inputs, 10030);
     inputs.combinedInstantaneousGrams = 13.0f;
-    controller.update(inputs, 6040);
-    for (uint32_t time = 6050; time <= 7100; time += 10) {
+    controller.update(inputs, 10040);
+    for (uint32_t time = 10050; time <= 11100; time += 10) {
         controller.update(inputs, time);
     }
     assert(
         controller.stage()
         == SpineTestController::Stage::AwaitingPlungerZero);
     inputs.combinedInstantaneousGrams = 0.0f;
-    controller.update(inputs, 7110);
+    controller.update(inputs, 11110);
     assert(controller.stage() == SpineTestController::Stage::AwaitingArrow);
     assert(near(controller.arrowMassGrams(), 0.0f));
 
@@ -125,6 +156,7 @@ int main()
     sasInputs.rightCalibrated = true;
     uint32_t sasTime = 8000;
     assert(sas.start(4, sasInputs, sasTime));
+    assert(sas.confirmSupportsClear(sasTime += 1));
     assert(sas.takeAction() == SpineTestController::Action::TareLeft);
 
     sasInputs.leftTareConfirmed = true;

@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 3;
+    constexpr uint8_t VERSION = 4;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -26,7 +26,8 @@ namespace ArrowLabProtocol
         StartSpineTest = 5,
         CancelSpineTest = 6,
         ConfirmSpineZero = 7,
-        RestartSpineAttempt = 8
+        RestartSpineAttempt = 8,
+        ConfirmSpineClear = 9
     };
 
     enum class CalibrationStage : uint8_t
@@ -51,16 +52,18 @@ namespace ArrowLabProtocol
     enum class SpineStage : uint8_t
     {
         Idle = 0,
-        TaringLeft = 1,
-        TaringRight = 2,
-        AwaitingArrow = 3,
-        StabilizingArrow = 4,
-        AwaitingPlungerZero = 5,
-        ReadyToPress = 6,
-        Holding = 7,
-        AwaitingRelease = 8,
-        Complete = 9,
-        Fault = 10
+        AwaitingClear = 1,
+        TaringLeft = 2,
+        TaringRight = 3,
+        AwaitingArrow = 4,
+        StabilizingArrow = 5,
+        AwaitingPlungerZero = 6,
+        ReadyToPress = 7,
+        Holding = 8,
+        AwaitingRetryRelease = 9,
+        AwaitingRelease = 10,
+        Complete = 11,
+        Fault = 12
     };
 
 #pragma pack(push, 1)
@@ -153,7 +156,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::RestartSpineAttempt)
+                <= static_cast<uint8_t>(CommandType::ConfirmSpineClear)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }

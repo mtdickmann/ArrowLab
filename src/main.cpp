@@ -102,6 +102,11 @@ namespace
         measurementNode.cancelSpineTest();
     }
 
+    void requestSpineClearConfirmation()
+    {
+        measurementNode.confirmSpineClear();
+    }
+
     void requestSpineZeroConfirmation()
     {
         measurementNode.confirmSpineZero();
@@ -110,6 +115,11 @@ namespace
     void requestSpineRestart()
     {
         measurementNode.restartSpineAttempt();
+    }
+
+    void requestMarkedSpine(float markedSpine)
+    {
+        requestedMarkedSpine = markedSpine;
     }
 
     void updateSpineDisplay(
@@ -127,10 +137,25 @@ namespace
         char results[160] = "";
         bool active = false;
         bool complete = false;
+        bool clearConfirmationRequired = false;
         bool zeroConfirmationRequired = false;
         const char *primaryAction = "START TEST";
 
         switch (stage) {
+        case SpineStage::AwaitingClear:
+            state = "CLEAR";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Raise plunger; remove arrow; empty both supports");
+            snprintf(
+                results,
+                sizeof(results),
+                "When clear, press TARE NOW");
+            active = true;
+            clearConfirmationRequired = true;
+            primaryAction = "TARE NOW";
+            break;
         case SpineStage::TaringLeft:
             state = "READ";
             snprintf(detail, sizeof(detail), "Automatic empty tare: LEFT");
@@ -199,6 +224,17 @@ namespace
                 position + 1,
                 positionCount,
                 appliedGrams);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingRetryRelease:
+            state = "RELEASE";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Incomplete plunge - release fully to retry position %u/%u",
+                position + 1,
+                positionCount);
             active = true;
             primaryAction = "RESTART";
             break;
@@ -279,6 +315,7 @@ namespace
             status.spineHoldPercent,
             active,
             complete,
+            clearConfirmationRequired,
             zeroConfirmationRequired);
         (void)currentTime;
     }
@@ -899,8 +936,10 @@ void setup()
     ArrowLabUI::setSpineCallbacks(
         requestSpineStart,
         requestSpineCancel,
+        requestSpineClearConfirmation,
         requestSpineZeroConfirmation,
-        requestSpineRestart);
+        requestSpineRestart,
+        requestMarkedSpine);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,

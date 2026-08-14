@@ -134,6 +134,14 @@ bool MeasurementNodeClient::cancelSpineTest()
         0);
 }
 
+bool MeasurementNodeClient::confirmSpineClear()
+{
+    return send(
+        ArrowLabProtocol::CommandType::ConfirmSpineClear,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
 bool MeasurementNodeClient::confirmSpineZero()
 {
     return send(

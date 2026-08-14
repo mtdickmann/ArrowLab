@@ -20,8 +20,8 @@ bool SpineTestController::start(
     arrowMassGrams_ = 0.0f;
     liveAppliedForceGrams_ = 0.0f;
     for (float &force : positionForces_) force = 0.0f;
-    pendingAction_ = Action::TareLeft;
-    enter(Stage::TaringLeft, now);
+    pendingAction_ = Action::None;
+    enter(Stage::AwaitingClear, now);
     return true;
 }
 
@@ -29,6 +29,14 @@ void SpineTestController::cancel()
 {
     stage_ = Stage::Idle;
     pendingAction_ = Action::None;
+}
+
+bool SpineTestController::confirmSupportsClear(uint32_t now)
+{
+    if (stage_ != Stage::AwaitingClear) return false;
+    pendingAction_ = Action::TareLeft;
+    enter(Stage::TaringLeft, now);
+    return true;
 }
 
 bool SpineTestController::confirmPlungerZero(uint32_t now)
@@ -41,10 +49,12 @@ bool SpineTestController::confirmPlungerZero(uint32_t now)
 void SpineTestController::restartAttempt(uint32_t now)
 {
     switch (stage_) {
+    case Stage::AwaitingClear:
+        break;
     case Stage::TaringLeft:
     case Stage::TaringRight:
-        pendingAction_ = Action::TareLeft;
-        enter(Stage::TaringLeft, now);
+        pendingAction_ = Action::None;
+        enter(Stage::AwaitingClear, now);
         break;
     case Stage::AwaitingArrow:
     case Stage::StabilizingArrow:
@@ -53,13 +63,20 @@ void SpineTestController::restartAttempt(uint32_t now)
         enter(Stage::AwaitingArrow, now);
         break;
     case Stage::AwaitingPlungerZero:
+        arrowMassGrams_ = 0.0f;
+        liveAppliedForceGrams_ = 0.0f;
+        enter(Stage::AwaitingArrow, now);
         break;
     case Stage::ReadyToPress:
-    case Stage::Holding:
-    case Stage::AwaitingRelease:
         positionForces_[currentPosition_] = 0.0f;
         liveAppliedForceGrams_ = 0.0f;
         enter(Stage::ReadyToPress, now);
+        break;
+    case Stage::Holding:
+    case Stage::AwaitingRelease:
+    case Stage::AwaitingRetryRelease:
+        positionForces_[currentPosition_] = 0.0f;
+        enter(Stage::AwaitingRetryRelease, now);
         break;
     case Stage::Complete:
     case Stage::Fault:
@@ -80,6 +97,8 @@ void SpineTestController::update(const Inputs &inputs, uint32_t now)
     liveAppliedForceGrams_ = std::max(0.0f, total - arrowMassGrams_);
 
     switch (stage_) {
+    case Stage::AwaitingClear:
+        break;
     case Stage::TaringLeft:
         if (inputs.leftTareConfirmed) {
             pendingAction_ = Action::TareRight;
@@ -160,8 +179,13 @@ void SpineTestController::update(const Inputs &inputs, uint32_t now)
         }
         if (liveAppliedForceGrams_
                 < ArrowLabConfig::SPINE_MINIMUM_APPLIED_FORCE_GRAMS) {
-            liveAppliedForceGrams_ = 0.0f;
-            enter(Stage::ReadyToPress, now);
+            enter(Stage::AwaitingRetryRelease, now);
+            break;
+        }
+        holdPeakGrams_ = std::max(holdPeakGrams_, liveAppliedForceGrams_);
+        if (holdPeakGrams_ - liveAppliedForceGrams_
+                >= ArrowLabConfig::SPINE_HOLD_ABORT_DROP_GRAMS) {
+            enter(Stage::AwaitingRetryRelease, now);
             break;
         }
         stableMinimumGrams_ = std::min(
@@ -179,6 +203,20 @@ void SpineTestController::update(const Inputs &inputs, uint32_t now)
             positionForces_[currentPosition_] = static_cast<float>(
                 stableTotalGrams_ / stableSampleCount_);
             enter(Stage::AwaitingRelease, now);
+        }
+        break;
+    case Stage::AwaitingRetryRelease:
+        if (total < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            arrowMassGrams_ = 0.0f;
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::AwaitingArrow, now);
+        } else if (liveAppliedForceGrams_
+                > ArrowLabConfig::SPINE_RELEASE_FORCE_GRAMS) {
+            stageStartedAt_ = now;
+        } else if (now - stageStartedAt_
+                >= ArrowLabConfig::SPINE_RELEASE_TIME_MS) {
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::ReadyToPress, now);
         }
         break;
     case Stage::AwaitingRelease:
@@ -255,6 +293,7 @@ void SpineTestController::beginForceHold(
     enter(Stage::Holding, now);
     stableMinimumGrams_ = appliedGrams;
     stableMaximumGrams_ = appliedGrams;
+    holdPeakGrams_ = appliedGrams;
     stableTotalGrams_ = appliedGrams;
     stableSampleCount_ = 1;
 }

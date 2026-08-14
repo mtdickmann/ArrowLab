@@ -278,6 +278,11 @@ namespace
             spineTestController.cancel();
             break;
 
+        case ArrowLabProtocol::CommandType::ConfirmSpineClear:
+            spineTestController.confirmSupportsClear(millis());
+            serviceSpineAction();
+            break;
+
         case ArrowLabProtocol::CommandType::ConfirmSpineZero:
             spineTestController.confirmPlungerZero(millis());
             break;

@@ -52,9 +52,12 @@ WROOM owns capture timing. VIEWE only presents its state.
 
 1. The operator opens Spine Test or SAS Test with both channels live and
    calibrated.
-2. Both supports must be empty. Press **START TEST**.
-3. WROOM automatically tares Left and then Right. This is deliberately started
-   by the operator so an arrow left on the supports cannot be silently zeroed.
+2. Press **START TEST**. ArrowLab enters **CLEAR** and waits; it does not tare
+   yet. Raise the plunger, remove the arrow and empty both supports, then press
+   **TARE NOW**.
+3. WROOM tares Left and then Right only after that conscious confirmation. This
+   prevents a completed test from immediately taring the arrow as part of the
+   next run.
 4. At **READ**, place the arrow on both supports and keep it still. ArrowLab
    displays the live combined mass and accepts it only after the simultaneous
    Left + Right sum remains inside the arrow stability band.
@@ -74,13 +77,22 @@ The live resting-arrow value is deliberately reversible. Removing the arrow
 before force capture returns the displayed load to zero and sends the procedure
 back to READ; replacing it starts a fresh stability check. A press below the
 configured significant-force threshold does not start the hold timer. If a
-started press is released before three stable seconds, progress resets and the
-procedure returns to PUSH automatically.
+started press is released before three stable seconds, progress resets.
+ArrowLab requires a confirmed full release before returning to PUSH. A force
+drop of 20 g or more from the peak also rejects the attempt, preventing a
+sticky plunger resting below the hard stop from becoming a false capture.
 
 **RESTART** abandons only the current press attempt and keeps the valid tare,
-resting-arrow reference and earlier SAS positions. **CANCEL** stops the entire
-test and returns it to its initial state. Both controls remain available while
+resting-arrow reference, top-zero and earlier SAS positions. It then requires
+a full release before another hold. **RUN AGAIN** starts a completely new test
+through CLEAR/TARE NOW. **CANCEL** stops the entire test. **BACK** also cancels
+an active test before leaving the page. These controls remain available while
 the procedure is active.
+
+After a valid result exists, **SET MARKED** applies the printed shaft value to
+that existing result immediately. It does not discard the measurement or force
+another plunge. Clearing or changing the marked value likewise recalculates
+only the comparison for both Spine and SAS results.
 
 The arrow's resting mass is not treated as bending force:
 
@@ -109,12 +121,17 @@ development controls, not ordinary user settings:
 
 - hold time and force stability band;
 - minimum force that starts a spine hold;
+- falling-force abort threshold for rejecting a backed-off or sticky plunger;
 - release threshold and confirmation time;
 - arrow-present threshold, arrow-mass stability time and stability band;
 - small baseline-tracking band used before a significant press begins.
 
 Changing these values requires rebuilding and uploading WROOM. The HMI receives
-the resulting state and progress over protocol version 3.
+the resulting state and progress over protocol version 4.
+
+The falling-force rejection is a guard, not a substitute for sound mechanics.
+The plunger still needs a reliable spring return so it cannot remain loaded
+after the operator releases it.
 
 ## Icons and visual assets
 

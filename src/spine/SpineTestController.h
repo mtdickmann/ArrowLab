@@ -8,6 +8,7 @@ public:
     enum class Stage : uint8_t
     {
         Idle,
+        AwaitingClear,
         TaringLeft,
         TaringRight,
         AwaitingArrow,
@@ -15,6 +16,7 @@ public:
         AwaitingPlungerZero,
         ReadyToPress,
         Holding,
+        AwaitingRetryRelease,
         AwaitingRelease,
         Complete,
         Fault
@@ -40,6 +42,7 @@ public:
 
     bool start(uint8_t positionCount, const Inputs &inputs, uint32_t now);
     void cancel();
+    bool confirmSupportsClear(uint32_t now);
     bool confirmPlungerZero(uint32_t now);
     void restartAttempt(uint32_t now);
     void update(const Inputs &inputs, uint32_t now);
@@ -68,6 +71,7 @@ private:
     float liveAppliedForceGrams_ = 0.0f;
     float stableMinimumGrams_ = 0.0f;
     float stableMaximumGrams_ = 0.0f;
+    float holdPeakGrams_ = 0.0f;
     double stableTotalGrams_ = 0.0;
     uint32_t stableSampleCount_ = 0;
     float arrowStableMinimumGrams_ = 0.0f;
