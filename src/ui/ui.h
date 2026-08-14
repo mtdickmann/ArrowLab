@@ -61,6 +61,7 @@ namespace ArrowLabUI
      */
     void setRightReading(const char *text);
     void setLoadUnit(LoadSide side, const char *text);
+    void setLoadConversions(LoadSide side, const char *text);
 
     /**
      * Update the tare/calibration status shown for one load channel.

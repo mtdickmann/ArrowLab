@@ -60,15 +60,26 @@ int main()
     feed(channel, EMPTY_RAW + 100, time, 140);
     expectNear(channel.heldGrams(), 0.0f, 0.001f);
 
-    // A new, different object must not lock before the fixed 10 s endpoint.
-    feed(channel, EMPTY_RAW + 20000, time, 50);
+    // A new object is held only after the configured operational endpoint.
+    const int halfAcquisitionSamples = static_cast<int>(
+        MeasurementChannel::MAX_ACQUISITION_MS / 200);
+    feed(channel, EMPTY_RAW + 20000, time, halfAcquisitionSamples);
     assert(channel.changeInProgress());
     expectNear(channel.heldGrams(), 0.0f, 0.001f);
-    feed(channel, EMPTY_RAW + 20000, time, 90);
+    feed(
+        channel,
+        EMPTY_RAW + 20000,
+        time,
+        halfAcquisitionSamples + 10);
     expectNear(channel.heldGrams(), 20.0f, 0.5f);
 
     // Replacing it with a 50 g object adds only the before/after difference.
-    feed(channel, EMPTY_RAW + 50000, time, 140);
+    feed(
+        channel,
+        EMPTY_RAW + 50000,
+        time,
+        static_cast<int>(MeasurementChannel::MAX_ACQUISITION_MS / 100)
+            + 10);
     expectNear(channel.heldGrams(), 50.0f, 0.6f);
 
     // Observed sub-threshold HX711 jitter must not create a new load event.
@@ -79,8 +90,10 @@ int main()
     }
     expectNear(channel.heldGrams(), 50.0f, 0.6f);
 
-    // An unsettled change is still bounded by the ten-second maximum.
-    for (int index = 0; index < 105; ++index) {
+    // An unsettled change is still bounded by the configured maximum.
+    const int unsettledSamples = static_cast<int>(
+        MeasurementChannel::MAX_ACQUISITION_MS / 100) + 5;
+    for (int index = 0; index < unsettledSamples; ++index) {
         const long unsettled = index % 2 == 0 ? 60000 : 61000;
         channel.onRawSample(EMPTY_RAW + unsettled, time);
         time += 100;
@@ -102,9 +115,19 @@ int main()
     feed(inverted, EMPTY_RAW - 1000000, time, 40);
     inverted.applyCalibration(-COUNTS_PER_GRAM, 1000.0f);
     expectNear(inverted.heldGrams(), 1000.0f, 0.001f);
-    feed(inverted, EMPTY_RAW, time, 140);
+    feed(
+        inverted,
+        EMPTY_RAW,
+        time,
+        static_cast<int>(MeasurementChannel::MAX_ACQUISITION_MS / 100)
+            + 10);
     expectNear(inverted.heldGrams(), 0.0f, 0.001f);
-    feed(inverted, EMPTY_RAW - 20000, time, 140);
+    feed(
+        inverted,
+        EMPTY_RAW - 20000,
+        time,
+        static_cast<int>(MeasurementChannel::MAX_ACQUISITION_MS / 100)
+            + 10);
     expectNear(inverted.heldGrams(), 20.0f, 0.5f);
 
     std::cout << "MeasurementChannel tests passed\n";

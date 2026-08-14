@@ -56,11 +56,12 @@ While the physical state is unchanged, a slow private raw tracker follows
 drift and creep without altering the displayed mass. Four consecutive fresh
 conversions at least 300 counts from that tracker begin a change acquisition.
 
-The new state is accepted at a fixed ten-second endpoint. A robust average of
-the final 20 raw samples is compared with the frozen pre-change tracker. Only
-this raw difference is converted through K and added to the held result. Using
-one fixed endpoint prevents otherwise identical placements from being captured
-at arbitrary times between two and ten seconds as the load cell settles.
+The new state is accepted at the fixed operational endpoint configured in
+`ArrowLab.conf`. A robust average of up to the final 20 raw samples is compared
+with the frozen pre-change tracker. Only this raw difference is converted
+through K and added to the held result. The current one-second development
+default restores a practical response while retaining one deterministic
+endpoint for every placement.
 
 ## Audit finding: capture definitions differ
 
@@ -69,23 +70,23 @@ it also uses three different capture definitions:
 
 - TARE: mean of 20 direct raw conversions;
 - CAL: mean of 20 rolling 15-sample robust-filter outputs after 30 seconds;
-- ordinary load event: robust average of the final raw acquisition window at a
-  fixed 10-second endpoint.
+- ordinary load event: robust average of the final raw acquisition window at
+  the configured fixed endpoint (currently 1000 ms).
 
 The former 2–10 second early-exit window was a credible contributor to the
 observed behaviour in which the calibration weight was exactly right at
 calibration completion but differed after removal/replacement. Ordinary load
-events now use a fixed 10-second endpoint so repeatability can be assessed
-without that variable capture time. The calibration display is still
-explicitly anchored to the entered mass, whereas a replacement result is an
-independent measurement through K.
+events therefore retain a fixed endpoint, now exposed as a controlled
+development setting. The calibration display is still explicitly anchored to
+the entered mass, whereas a replacement result is an independent measurement
+through K.
 
 That explanation is not yet proof of the complete error source. Load-cell
 mechanics, recovery, creep and sample-rate differences can contribute. The
-fixed ten-second operational endpoint is therefore a controlled one-variable
-change; calibration capture, K, tare, persistence and drift tracking are
-unchanged. Repeated removal/replacement tests on the same channel must verify
-whether it improves repeatability before any further metrology change.
+operational acquisition time remains a controlled one-variable change;
+calibration capture, K, tare, persistence and drift tracking are unchanged.
+Repeated removal/replacement tests on the same channel must establish the
+shortest acceptable endpoint before the development setting is frozen.
 
 ## Revision compatibility
 

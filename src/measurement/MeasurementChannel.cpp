@@ -323,11 +323,9 @@ void MeasurementChannel::updateChange(uint32_t currentTime)
 
     const uint32_t elapsed = currentTime - acquisitionStartedAt_;
     // Use one repeatable operational endpoint. Calibration captures K after
-    // its deliberate 30 s settle, while every ordinary load change now gets
-    // the full 10 s acquisition requested by the instrument workflow. The
-    // previous early-stability exit could lock the same reapplied mass at any
-    // point from 2 to 10 seconds and made repeatability depend on short-term
-    // load-cell creep.
+    // its separate, deliberate 30 s settle. ArrowLab.conf controls only this
+    // ordinary load-change acquisition so development timing can be tuned
+    // without changing the calibration procedure or its stored K.
     if (elapsed < MAX_ACQUISITION_MS) {
         return;
     }

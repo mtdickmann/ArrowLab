@@ -4,6 +4,13 @@
 
 namespace ArrowLabConfig
 {
+    enum class MassUnit : uint8_t
+    {
+        Grams = 0,
+        Grains = 1,
+        Ounces = 2
+    };
+
     enum class MeasurementLinkMode : uint8_t
     {
         // Proven fallback. It preserves display and touch, but occupies the
@@ -27,6 +34,16 @@ namespace ArrowLabConfig
     static_assert(
         CONFIGURED_MEASUREMENT_LINK_MODE <= 2,
         "ArrowLab.conf: measurement link mode must be 0, 1 or 2");
+    static_assert(
+        CONFIGURED_OPERATIONAL_WEIGHING_TIME_MS >= 500
+            && CONFIGURED_OPERATIONAL_WEIGHING_TIME_MS <= 10000,
+        "ArrowLab.conf: operational weighing time must be 500..10000 ms");
+    static_assert(
+        CONFIGURED_PRIMARY_MASS_UNIT <= 2,
+        "ArrowLab.conf: primary mass unit must be 0, 1 or 2");
+    static_assert(
+        CONFIGURED_MASS_DECIMAL_PLACES <= 3,
+        "ArrowLab.conf: mass decimal places must be 0..3");
 
     // Stable, strongly typed names consumed by the firmware. Do not edit these
     // aliases; change their validated CONFIGURED_* sources in ArrowLab.conf.
@@ -34,6 +51,15 @@ namespace ArrowLabConfig
         static_cast<MeasurementLinkMode>(CONFIGURED_MEASUREMENT_LINK_MODE);
     constexpr bool DEVELOPER_MODE_DEFAULT_ENABLED =
         CONFIGURED_DEVELOPER_MODE_DEFAULT_ENABLED;
+    constexpr uint32_t OPERATIONAL_WEIGHING_TIME_MS =
+        CONFIGURED_OPERATIONAL_WEIGHING_TIME_MS;
+    constexpr MassUnit PRIMARY_MASS_UNIT =
+        static_cast<MassUnit>(CONFIGURED_PRIMARY_MASS_UNIT);
+    constexpr uint8_t MASS_DECIMAL_PLACES =
+        CONFIGURED_MASS_DECIMAL_PLACES;
+
+    constexpr float GRAINS_PER_GRAM = 15.4323583529f;
+    constexpr float OUNCES_PER_GRAM = 0.03527396195f;
 
     constexpr uint32_t MEASUREMENT_LINK_BAUD = 115200;
     constexpr uint32_t MEASUREMENT_STATUS_INTERVAL_MS = 50;

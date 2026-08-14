@@ -23,6 +23,7 @@ namespace
         lv_obj_t *panel = nullptr;
         lv_obj_t *valueLabel = nullptr;
         lv_obj_t *unitLabel = nullptr;
+        lv_obj_t *conversionLabel = nullptr;
         lv_obj_t *statusLabel = nullptr;
         lv_obj_t *settleBar = nullptr;
         lv_obj_t *tareButton = nullptr;
@@ -216,8 +217,8 @@ namespace
          * number width cannot overwrite the unit label.
          */
         lv_obj_t *readingRow = lv_obj_create(panel);
-        lv_obj_set_size(readingRow, 190, 42);
-        lv_obj_align(readingRow, LV_ALIGN_CENTER, 0, 8);
+        lv_obj_set_size(readingRow, 190, 34);
+        lv_obj_align(readingRow, LV_ALIGN_TOP_MID, 0, 58);
         lv_obj_set_style_bg_opa(
             readingRow,
             LV_OPA_TRANSP,
@@ -253,6 +254,22 @@ namespace
             "RAW",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_MUTED));
+
+        refs.conversionLabel = createTextLabel(
+            panel,
+            "",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_width(refs.conversionLabel, 190);
+        lv_obj_set_style_text_align(
+            refs.conversionLabel,
+            LV_TEXT_ALIGN_CENTER,
+            LV_PART_MAIN);
+        lv_obj_align(
+            refs.conversionLabel,
+            LV_ALIGN_TOP_MID,
+            0,
+            93);
 
         refs.tareButton = lv_btn_create(panel);
         lv_obj_set_size(refs.tareButton, 68, 28);
@@ -1932,6 +1949,21 @@ namespace ArrowLabUI
             side == LoadSide::Left
                 ? leftPanel.unitLabel
                 : rightPanel.unitLabel;
+
+        if (label != nullptr)
+        {
+            lv_label_set_text(label, text);
+        }
+    }
+
+    void setLoadConversions(
+        LoadSide side,
+        const char *text)
+    {
+        lv_obj_t *label =
+            side == LoadSide::Left
+                ? leftPanel.conversionLabel
+                : rightPanel.conversionLabel;
 
         if (label != nullptr)
         {

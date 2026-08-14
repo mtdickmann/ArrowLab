@@ -108,6 +108,23 @@ Diagnostics is visible at boot. `false` preserves the production long-press
 reveal; `true` makes the developer menu immediately visible while firmware is
 under test.
 
+Three additional development controls avoid firmware edits while operational
+weighing behaviour and presentation are being evaluated:
+
+- `CONFIGURED_OPERATIONAL_WEIGHING_TIME_MS` controls only the acquisition time
+  after an ordinary mass change. It does not alter the fixed 30-second
+  calibration interval.
+- `CONFIGURED_PRIMARY_MASS_UNIT` selects `g`, `gr` or avoirdupois `oz` as the
+  large reading. The other two units remain visible underneath as reference
+  conversions.
+- `CONFIGURED_MASS_DECIMAL_PLACES` controls the displayed precision from zero
+  to three decimal places. It does not change raw acquisition, K or the
+  internal mass calculation.
+
+Because the acquisition setting is consumed by the WROOM and the display
+settings by the VIEWE, rebuild and upload both processors after changing this
+shared file.
+
 For the GPIO17 production link, place the 4.7 kOhm resistor between WROOM
 3.3 V and the shared GPIO8/GPIO17 signal node; it is a pull-up, not a series
 resistor. Provide a removable jumper or plug in the signal conductor. Disconnect

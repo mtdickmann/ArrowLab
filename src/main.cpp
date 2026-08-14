@@ -14,6 +14,7 @@
 #include <lvgl.h>
 
 #include "lvgl_v8_port.h"
+#include "ArrowLabConfig.h"
 #include "measurement/LoadCellChannel.h"
 #include "measurement/MeasurementNodeClient.h"
 #include "diagnostics/CreepDiagnostic.h"
@@ -188,11 +189,28 @@ namespace
         }
 
         if (channel.flags & ArrowLabProtocol::Calibrated) {
+            const float grams =
+                static_cast<float>(channel.heldMilliGrams) / 1000.0f;
+            float primaryValue = grams;
+
+            switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
+            case ArrowLabConfig::MassUnit::Grains:
+                primaryValue = grams * ArrowLabConfig::GRAINS_PER_GRAM;
+                break;
+            case ArrowLabConfig::MassUnit::Ounces:
+                primaryValue = grams * ArrowLabConfig::OUNCES_PER_GRAM;
+                break;
+            case ArrowLabConfig::MassUnit::Grams:
+            default:
+                break;
+            }
+
             snprintf(
                 buffer,
                 bufferSize,
-                "%.1f",
-                static_cast<float>(channel.heldMilliGrams) / 1000.0f
+                "%.*f",
+                static_cast<int>(ArrowLabConfig::MASS_DECIMAL_PLACES),
+                primaryValue
             );
             return;
         }
@@ -203,6 +221,76 @@ namespace
             "%ld",
             static_cast<long>(channel.heldRawCounts)
         );
+    }
+
+    const char *primaryMassUnitText()
+    {
+        switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
+        case ArrowLabConfig::MassUnit::Grains:
+            return "gr";
+        case ArrowLabConfig::MassUnit::Ounces:
+            return "oz";
+        case ArrowLabConfig::MassUnit::Grams:
+        default:
+            return "g";
+        }
+    }
+
+    void formatConversions(
+        char *buffer,
+        size_t bufferSize,
+        const ArrowLabProtocol::ChannelStatus &channel,
+        bool live)
+    {
+        if (
+            !live
+            || !(channel.flags & ArrowLabProtocol::TareComplete)
+            || !(channel.flags & ArrowLabProtocol::Calibrated)
+        ) {
+            buffer[0] = '\0';
+            return;
+        }
+
+        const float grams =
+            static_cast<float>(channel.heldMilliGrams) / 1000.0f;
+        const float grains = grams * ArrowLabConfig::GRAINS_PER_GRAM;
+        const float ounces = grams * ArrowLabConfig::OUNCES_PER_GRAM;
+        const int decimals =
+            static_cast<int>(ArrowLabConfig::MASS_DECIMAL_PLACES);
+
+        switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
+        case ArrowLabConfig::MassUnit::Grains:
+            snprintf(
+                buffer,
+                bufferSize,
+                "%.*f g   %.*f oz",
+                decimals,
+                grams,
+                decimals,
+                ounces);
+            break;
+        case ArrowLabConfig::MassUnit::Ounces:
+            snprintf(
+                buffer,
+                bufferSize,
+                "%.*f g   %.*f gr",
+                decimals,
+                grams,
+                decimals,
+                grains);
+            break;
+        case ArrowLabConfig::MassUnit::Grams:
+        default:
+            snprintf(
+                buffer,
+                bufferSize,
+                "%.*f gr   %.*f oz",
+                decimals,
+                grains,
+                decimals,
+                ounces);
+            break;
+        }
     }
 
     void updateDisplay(uint32_t currentTime)
@@ -230,6 +318,8 @@ namespace
 
         char leftText[24];
         char rightText[24];
+        char leftConversions[48];
+        char rightConversions[48];
 
         formatReading(
             leftText,
@@ -241,6 +331,19 @@ namespace
         formatReading(
             rightText,
             sizeof(rightText),
+            right,
+            rightLive
+        );
+
+        formatConversions(
+            leftConversions,
+            sizeof(leftConversions),
+            left,
+            leftLive
+        );
+        formatConversions(
+            rightConversions,
+            sizeof(rightConversions),
             right,
             rightLive
         );
@@ -346,6 +449,12 @@ namespace
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
+        ArrowLabUI::setLoadConversions(
+            ArrowLabUI::LoadSide::Left,
+            leftConversions);
+        ArrowLabUI::setLoadConversions(
+            ArrowLabUI::LoadSide::Right,
+            rightConversions);
         ArrowLabUI::setSensorHealth(
             nodeConnected,
             leftLive,
@@ -357,11 +466,11 @@ namespace
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
-            leftCalibrated ? "g" : "RAW"
+            leftCalibrated ? primaryMassUnitText() : "RAW"
         );
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Right,
-            rightCalibrated ? "g" : "RAW"
+            rightCalibrated ? primaryMassUnitText() : "RAW"
         );
 
         ArrowLabUI::setLoadStatus(

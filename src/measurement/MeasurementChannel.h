@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "ArrowLabConfig.h"
+
 /*
  * Operational weighing state for one raw load-cell channel.
  *
@@ -10,7 +12,7 @@
  *   - a deliberate tare establishes zero;
  *   - a slow raw tracker follows creep/drift while the display is held;
  *   - a genuine step freezes the pre-change raw position;
- *   - the new state is averaged at a fixed ten-second endpoint;
+ *   - the new state is averaged at the configured operational endpoint;
  *   - only the before/after difference changes the held result.
  *
  * Calibration and diagnostics do not get alternative weighing maths.
@@ -34,7 +36,8 @@ public:
     static constexpr long CHANGE_THRESHOLD_COUNTS = 300;
     static constexpr float RETURN_TO_ZERO_ABSOLUTE_GRAMS = 0.5f;
     static constexpr float RETURN_TO_ZERO_RELATIVE = 0.002f;
-    static constexpr uint32_t MAX_ACQUISITION_MS = 10000;
+    static constexpr uint32_t MAX_ACQUISITION_MS =
+        ArrowLabConfig::OPERATIONAL_WEIGHING_TIME_MS;
 
     void onRawSample(long rawCount, uint32_t currentTime);
     void startTare(bool confirmAsUserTare = true);

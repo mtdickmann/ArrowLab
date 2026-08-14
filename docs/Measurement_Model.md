@@ -50,11 +50,11 @@ zero.
 4. **Acquiring Change** — after four consecutive raw samples exceed the
    provisional 300-count change threshold, freeze the pre-change tracker and
    acquire the new state.
-5. **Accept** — the current controlled experiment uses a robust average of the
-   final samples at one fixed ten-second endpoint. Apply only the before/after
-   difference to the held result, then resume tracking. This removes variable
-   capture time from repeatability testing; ten seconds is not the intended
-   production response time.
+5. **Accept** — use a robust average of the final samples at the fixed
+   operational endpoint selected in `ArrowLab.conf`. Apply only the
+   before/after difference to the held result, then resume tracking. The
+   current development default is 1000 ms; the setting deliberately remains
+   separate from calibration.
 
 Removal is an ordinary negative load event. A small residual while moving back
 toward zero is clamped to exactly zero within the provisional larger of 0.5 g
@@ -70,10 +70,17 @@ step; it never edits an already accepted displayed mass. A genuine addition or
 removal freezes tracking before its difference is measured, so a small static
 mass is not gradually erased.
 
-The 30-second calibration interval and experimental fixed 10-second operational
-interval have different jobs. Thirty seconds produces K from the known
-reference. The fixed ten-second endpoint currently isolates acquisition timing
-as a test variable; the production target remains approximately two seconds.
+The 30-second calibration interval and configurable operational interval have
+different jobs. Thirty seconds produces K from the known reference and is not
+user-configurable. The operational endpoint controls how quickly an ordinary
+addition, removal or replacement becomes the next held reading. Its development
+default is one second so real hardware can determine the final compromise
+between response time and repeatability.
+
+The measurement node keeps grams as its internal engineering unit. The HMI may
+present grams, grains or avoirdupois ounces as the primary value and derives the
+other two as secondary conversions. Display precision and unit selection do not
+alter K or the accepted raw-count difference.
 
 ## Diagnostics boundary
 

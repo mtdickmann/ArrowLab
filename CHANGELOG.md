@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.1 DEV
+
+### Added
+- Shared development settings for operational weighing time, primary mass unit
+  and displayed decimal places
+- Compact secondary conversions between grams, grains and avoirdupois ounces
+  beneath each calibrated mass reading
+
+### Changed
+- Restored practical operational response with a configurable one-second
+  default while retaining the separate fixed 30-second calibration interval
+- Kept WROOM grams as the metrology value and confined unit conversion to the
+  VIEWE presentation layer
+
 ## v0.2.0 DEV
 
 ### Added
