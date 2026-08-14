@@ -56,6 +56,14 @@ namespace ArrowLabConfig
     static_assert(
         CONFIGURED_SPINE_STABILITY_BAND_GRAMS > 0.0f,
         "ArrowLab.conf: spine stability band must be positive");
+    static_assert(
+        CONFIGURED_SPINE_BASELINE_TRACKING_BAND_GRAMS > 0.0f
+            && CONFIGURED_SPINE_BASELINE_TRACKING_BAND_GRAMS
+                < CONFIGURED_SPINE_MINIMUM_APPLIED_FORCE_GRAMS,
+        "ArrowLab.conf: spine baseline band must be positive and below trigger");
+    static_assert(
+        CONFIGURED_ARROW_STABILITY_BAND_GRAMS > 0.0f,
+        "ArrowLab.conf: arrow stability band must be positive");
 
     // Stable, strongly typed names consumed by the firmware. Do not edit these
     // aliases; change their validated CONFIGURED_* sources in ArrowLab.conf.
@@ -79,6 +87,8 @@ namespace ArrowLabConfig
         CONFIGURED_SPINE_STABILITY_BAND_GRAMS;
     constexpr float SPINE_MINIMUM_APPLIED_FORCE_GRAMS =
         CONFIGURED_SPINE_MINIMUM_APPLIED_FORCE_GRAMS;
+    constexpr float SPINE_BASELINE_TRACKING_BAND_GRAMS =
+        CONFIGURED_SPINE_BASELINE_TRACKING_BAND_GRAMS;
     constexpr float SPINE_RELEASE_FORCE_GRAMS =
         CONFIGURED_SPINE_RELEASE_FORCE_GRAMS;
     constexpr uint32_t SPINE_RELEASE_TIME_MS =
@@ -87,6 +97,8 @@ namespace ArrowLabConfig
         CONFIGURED_ARROW_PRESENT_GRAMS;
     constexpr uint32_t ARROW_STABILITY_TIME_MS =
         CONFIGURED_ARROW_STABILITY_TIME_MS;
+    constexpr float ARROW_STABILITY_BAND_GRAMS =
+        CONFIGURED_ARROW_STABILITY_BAND_GRAMS;
 
     constexpr float GRAINS_PER_GRAM = 15.4323583529f;
     constexpr float OUNCES_PER_GRAM = 0.03527396195f;

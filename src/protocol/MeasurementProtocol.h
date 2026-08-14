@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 2;
+    constexpr uint8_t VERSION = 3;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -24,7 +24,9 @@ namespace ArrowLabProtocol
         StartCalibration = 3,
         PollStatus = 4,
         StartSpineTest = 5,
-        CancelSpineTest = 6
+        CancelSpineTest = 6,
+        ConfirmSpineZero = 7,
+        RestartSpineAttempt = 8
     };
 
     enum class CalibrationStage : uint8_t
@@ -53,11 +55,12 @@ namespace ArrowLabProtocol
         TaringRight = 2,
         AwaitingArrow = 3,
         StabilizingArrow = 4,
-        ReadyToPress = 5,
-        Holding = 6,
-        AwaitingRelease = 7,
-        Complete = 8,
-        Fault = 9
+        AwaitingPlungerZero = 5,
+        ReadyToPress = 6,
+        Holding = 7,
+        AwaitingRelease = 8,
+        Complete = 9,
+        Fault = 10
     };
 
 #pragma pack(push, 1)
@@ -150,7 +153,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::CancelSpineTest)
+                <= static_cast<uint8_t>(CommandType::RestartSpineAttempt)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }

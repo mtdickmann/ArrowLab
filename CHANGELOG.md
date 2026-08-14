@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.3 DEV
+
+### Fixed
+- Spine/SAS arrow mass now uses a simultaneous live Left + Right reading and a
+  genuine stability window instead of independently published held snapshots
+- An interrupted or partial plunge now resets the three-second hold and
+  returns automatically to PUSH
+- Removing the arrow before capture returns the live resting load to zero and
+  restarts arrow detection without cancelling the test
+
+### Added
+- Explicit plunger-zero confirmation at the top of the arrow before the
+  operator begins the fixed 12.7 mm plunge
+- Active RESTART and CANCEL controls throughout the automatic test
+- Separate configurable arrow-mass stability and resting-baseline tracking
+  bands
+- Protocol version 3 commands for plunger-zero confirmation and attempt restart
+
 ## v0.2.2 DEV
 
 ### Added

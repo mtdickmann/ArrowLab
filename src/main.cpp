@@ -102,6 +102,16 @@ namespace
         measurementNode.cancelSpineTest();
     }
 
+    void requestSpineZeroConfirmation()
+    {
+        measurementNode.confirmSpineZero();
+    }
+
+    void requestSpineRestart()
+    {
+        measurementNode.restartSpineAttempt();
+    }
+
     void updateSpineDisplay(
         const ArrowLabProtocol::StatusPacket &status,
         uint32_t currentTime)
@@ -117,27 +127,56 @@ namespace
         char results[160] = "";
         bool active = false;
         bool complete = false;
+        bool zeroConfirmationRequired = false;
+        const char *primaryAction = "START TEST";
 
         switch (stage) {
         case SpineStage::TaringLeft:
             state = "READ";
             snprintf(detail, sizeof(detail), "Automatic empty tare: LEFT");
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::TaringRight:
             state = "READ";
             snprintf(detail, sizeof(detail), "Automatic empty tare: RIGHT");
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::AwaitingArrow:
             state = "READ";
-            snprintf(detail, sizeof(detail), "Place arrow on both supports");
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Place arrow on both supports | live mass %.2f g",
+                arrowGrams);
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::StabilizingArrow:
             state = "READ";
-            snprintf(detail, sizeof(detail), "Keep arrow still - capturing mass");
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Keep arrow still | live mass %.2f g",
+                arrowGrams);
             active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingPlungerZero:
+            state = "SET ZERO";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Bring plunger to arrow top | arrow %.2f g",
+                arrowGrams);
+            snprintf(
+                results,
+                sizeof(results),
+                "Establish exactly 12.7 mm travel, then press ZERO SET");
+            active = true;
+            zeroConfirmationRequired = true;
+            primaryAction = "ZERO SET";
             break;
         case SpineStage::ReadyToPress:
             state = position > 0 ? "ROTATE + PUSH" : "PUSH";
@@ -149,6 +188,7 @@ namespace
                 positionCount,
                 arrowGrams);
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::Holding:
             state = "HOLD";
@@ -160,6 +200,7 @@ namespace
                 positionCount,
                 appliedGrams);
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::AwaitingRelease:
             state = "CAPTURED";
@@ -169,10 +210,12 @@ namespace
                 "Position %u captured - RELEASE fully",
                 position + 1);
             active = true;
+            primaryAction = "RESTART";
             break;
         case SpineStage::Complete: {
             state = "COMPLETE";
             complete = true;
+            primaryAction = "RUN AGAIN";
             float values[4] = {};
             float minimum = 100000.0f;
             float maximum = 0.0f;
@@ -232,9 +275,11 @@ namespace
             state,
             detail,
             results,
+            primaryAction,
             status.spineHoldPercent,
             active,
-            complete);
+            complete,
+            zeroConfirmationRequired);
         (void)currentTime;
     }
 
@@ -851,7 +896,11 @@ void setup()
         requestCalibration
     );
     ArrowLabUI::setUnitCycleCallback(requestMassUnitCycle);
-    ArrowLabUI::setSpineCallbacks(requestSpineStart, requestSpineCancel);
+    ArrowLabUI::setSpineCallbacks(
+        requestSpineStart,
+        requestSpineCancel,
+        requestSpineZeroConfirmation,
+        requestSpineRestart);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,

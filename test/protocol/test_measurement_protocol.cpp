@@ -28,6 +28,18 @@ int main()
     ArrowLabProtocol::seal(command);
     assert(ArrowLabProtocol::valid(command));
 
+    command.command = static_cast<uint8_t>(
+        ArrowLabProtocol::CommandType::RestartSpineAttempt);
+    ArrowLabProtocol::seal(command);
+    assert(ArrowLabProtocol::valid(command));
+
+    command.command = static_cast<uint8_t>(
+        ArrowLabProtocol::CommandType::RestartSpineAttempt) + 1;
+    ArrowLabProtocol::seal(command);
+    assert(!ArrowLabProtocol::valid(command));
+
+    command.command = static_cast<uint8_t>(
+        ArrowLabProtocol::CommandType::PrepareCalibration);
     command.side = 3;
     ArrowLabProtocol::seal(command);
     assert(!ArrowLabProtocol::valid(command));

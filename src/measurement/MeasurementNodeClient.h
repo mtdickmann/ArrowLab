@@ -19,6 +19,8 @@ public:
     bool startCalibration(ArrowLabProtocol::Side side);
     bool startSpineTest(uint8_t positionCount);
     bool cancelSpineTest();
+    bool confirmSpineZero();
+    bool restartSpineAttempt();
 
     bool connected(uint32_t currentTime) const;
     bool freshPacket() const;

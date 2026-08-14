@@ -69,7 +69,7 @@ The current UART configuration is:
 - WROOM: shared RX/TX GPIO8;
 - VIEWE polls at 50 ms intervals and the WROOM replies after a guarded
   turnaround;
-- checked binary protocol version 2;
+- checked binary protocol version 3;
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
   fault on the HMI.

@@ -1,6 +1,7 @@
 #include "SpineTestController.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "ArrowLabConfig.h"
 
@@ -30,6 +31,43 @@ void SpineTestController::cancel()
     pendingAction_ = Action::None;
 }
 
+bool SpineTestController::confirmPlungerZero(uint32_t now)
+{
+    if (stage_ != Stage::AwaitingPlungerZero) return false;
+    enter(Stage::ReadyToPress, now);
+    return true;
+}
+
+void SpineTestController::restartAttempt(uint32_t now)
+{
+    switch (stage_) {
+    case Stage::TaringLeft:
+    case Stage::TaringRight:
+        pendingAction_ = Action::TareLeft;
+        enter(Stage::TaringLeft, now);
+        break;
+    case Stage::AwaitingArrow:
+    case Stage::StabilizingArrow:
+        arrowMassGrams_ = 0.0f;
+        liveAppliedForceGrams_ = 0.0f;
+        enter(Stage::AwaitingArrow, now);
+        break;
+    case Stage::AwaitingPlungerZero:
+        break;
+    case Stage::ReadyToPress:
+    case Stage::Holding:
+    case Stage::AwaitingRelease:
+        positionForces_[currentPosition_] = 0.0f;
+        liveAppliedForceGrams_ = 0.0f;
+        enter(Stage::ReadyToPress, now);
+        break;
+    case Stage::Complete:
+    case Stage::Fault:
+    case Stage::Idle:
+        break;
+    }
+}
+
 void SpineTestController::update(const Inputs &inputs, uint32_t now)
 {
     if (stage_ == Stage::Idle || stage_ == Stage::Complete) return;
@@ -38,7 +76,7 @@ void SpineTestController::update(const Inputs &inputs, uint32_t now)
         return;
     }
 
-    const float total = inputs.combinedInstantaneousGrams;
+    const float total = std::max(0.0f, inputs.combinedInstantaneousGrams);
     liveAppliedForceGrams_ = std::max(0.0f, total - arrowMassGrams_);
 
     switch (stage_) {
@@ -52,41 +90,87 @@ void SpineTestController::update(const Inputs &inputs, uint32_t now)
         if (inputs.rightTareConfirmed) enter(Stage::AwaitingArrow, now);
         break;
     case Stage::AwaitingArrow:
-        if (inputs.combinedHeldGrams >= ArrowLabConfig::ARROW_PRESENT_GRAMS) {
-            enter(Stage::StabilizingArrow, now);
+        arrowMassGrams_ = total;
+        liveAppliedForceGrams_ = 0.0f;
+        if (total >= ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            beginArrowStability(total, now);
         }
         break;
     case Stage::StabilizingArrow:
-        if (inputs.combinedHeldGrams < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+        arrowMassGrams_ = total;
+        liveAppliedForceGrams_ = 0.0f;
+        if (total < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            arrowMassGrams_ = 0.0f;
             enter(Stage::AwaitingArrow, now);
-        } else if (now - stageStartedAt_
+            break;
+        }
+
+        arrowStableMinimumGrams_ = std::min(
+            arrowStableMinimumGrams_, total);
+        arrowStableMaximumGrams_ = std::max(
+            arrowStableMaximumGrams_, total);
+        if (arrowStableMaximumGrams_ - arrowStableMinimumGrams_
+                > ArrowLabConfig::ARROW_STABILITY_BAND_GRAMS) {
+            beginArrowStability(total, now);
+            break;
+        }
+
+        arrowStableTotalGrams_ += total;
+        ++arrowStableSampleCount_;
+        if (now - stageStartedAt_
                 >= ArrowLabConfig::ARROW_STABILITY_TIME_MS) {
-            arrowMassGrams_ = inputs.combinedHeldGrams;
-            enter(Stage::ReadyToPress, now);
+            arrowMassGrams_ = static_cast<float>(
+                arrowStableTotalGrams_ / arrowStableSampleCount_);
+            enter(Stage::AwaitingPlungerZero, now);
+        }
+        break;
+    case Stage::AwaitingPlungerZero:
+        if (total < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            arrowMassGrams_ = 0.0f;
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::AwaitingArrow, now);
+        } else if (std::abs(total - arrowMassGrams_)
+                > ArrowLabConfig::ARROW_STABILITY_BAND_GRAMS) {
+            beginArrowStability(total, now);
         }
         break;
     case Stage::ReadyToPress:
+        if (total < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            arrowMassGrams_ = 0.0f;
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::AwaitingArrow, now);
+            break;
+        }
+        if (liveAppliedForceGrams_
+                <= ArrowLabConfig::SPINE_BASELINE_TRACKING_BAND_GRAMS) {
+            arrowMassGrams_ += (total - arrowMassGrams_) / 8.0f;
+            liveAppliedForceGrams_ = 0.0f;
+        }
         if (liveAppliedForceGrams_
                 >= ArrowLabConfig::SPINE_MINIMUM_APPLIED_FORCE_GRAMS) {
-            enter(Stage::Holding, now);
-            stableMinimumGrams_ = liveAppliedForceGrams_;
-            stableMaximumGrams_ = liveAppliedForceGrams_;
-            stableTotalGrams_ = liveAppliedForceGrams_;
-            stableSampleCount_ = 1;
+            beginForceHold(liveAppliedForceGrams_, now);
         }
         break;
     case Stage::Holding:
+        if (total < ArrowLabConfig::ARROW_PRESENT_GRAMS) {
+            arrowMassGrams_ = 0.0f;
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::AwaitingArrow, now);
+            break;
+        }
+        if (liveAppliedForceGrams_
+                < ArrowLabConfig::SPINE_MINIMUM_APPLIED_FORCE_GRAMS) {
+            liveAppliedForceGrams_ = 0.0f;
+            enter(Stage::ReadyToPress, now);
+            break;
+        }
         stableMinimumGrams_ = std::min(
             stableMinimumGrams_, liveAppliedForceGrams_);
         stableMaximumGrams_ = std::max(
             stableMaximumGrams_, liveAppliedForceGrams_);
         if (stableMaximumGrams_ - stableMinimumGrams_
                 > ArrowLabConfig::SPINE_STABILITY_BAND_GRAMS) {
-            enter(Stage::Holding, now);
-            stableMinimumGrams_ = liveAppliedForceGrams_;
-            stableMaximumGrams_ = liveAppliedForceGrams_;
-            stableTotalGrams_ = liveAppliedForceGrams_;
-            stableSampleCount_ = 1;
+            beginForceHold(liveAppliedForceGrams_, now);
             break;
         }
         stableTotalGrams_ += liveAppliedForceGrams_;
@@ -151,6 +235,28 @@ void SpineTestController::enter(Stage stage, uint32_t now)
 {
     stage_ = stage;
     stageStartedAt_ = now;
+}
+
+void SpineTestController::beginArrowStability(
+    float totalGrams,
+    uint32_t now)
+{
+    enter(Stage::StabilizingArrow, now);
+    arrowStableMinimumGrams_ = totalGrams;
+    arrowStableMaximumGrams_ = totalGrams;
+    arrowStableTotalGrams_ = totalGrams;
+    arrowStableSampleCount_ = 1;
+}
+
+void SpineTestController::beginForceHold(
+    float appliedGrams,
+    uint32_t now)
+{
+    enter(Stage::Holding, now);
+    stableMinimumGrams_ = appliedGrams;
+    stableMaximumGrams_ = appliedGrams;
+    stableTotalGrams_ = appliedGrams;
+    stableSampleCount_ = 1;
 }
 
 bool SpineTestController::healthy(const Inputs &inputs) const

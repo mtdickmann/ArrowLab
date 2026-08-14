@@ -12,6 +12,7 @@ public:
         TaringRight,
         AwaitingArrow,
         StabilizingArrow,
+        AwaitingPlungerZero,
         ReadyToPress,
         Holding,
         AwaitingRelease,
@@ -35,11 +36,12 @@ public:
         bool leftTareConfirmed = false;
         bool rightTareConfirmed = false;
         float combinedInstantaneousGrams = 0.0f;
-        float combinedHeldGrams = 0.0f;
     };
 
     bool start(uint8_t positionCount, const Inputs &inputs, uint32_t now);
     void cancel();
+    bool confirmPlungerZero(uint32_t now);
+    void restartAttempt(uint32_t now);
     void update(const Inputs &inputs, uint32_t now);
     Action takeAction();
 
@@ -53,6 +55,8 @@ public:
 
 private:
     void enter(Stage stage, uint32_t now);
+    void beginArrowStability(float totalGrams, uint32_t now);
+    void beginForceHold(float appliedGrams, uint32_t now);
     bool healthy(const Inputs &inputs) const;
 
     Stage stage_ = Stage::Idle;
@@ -66,5 +70,9 @@ private:
     float stableMaximumGrams_ = 0.0f;
     double stableTotalGrams_ = 0.0;
     uint32_t stableSampleCount_ = 0;
+    float arrowStableMinimumGrams_ = 0.0f;
+    float arrowStableMaximumGrams_ = 0.0f;
+    double arrowStableTotalGrams_ = 0.0;
+    uint32_t arrowStableSampleCount_ = 0;
     float positionForces_[4] = {};
 };

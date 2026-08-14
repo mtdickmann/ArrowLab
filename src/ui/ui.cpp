@@ -112,10 +112,13 @@ namespace
     ArrowLabUI::DiagnosticFinishCallback diagnosticFinishCallback = nullptr;
     ArrowLabUI::UnitCycleCallback unitCycleCallback = nullptr;
     ArrowLabUI::SpineStartCallback spineStartCallback = nullptr;
-    ArrowLabUI::SpineCancelCallback spineCancelCallback = nullptr;
+    ArrowLabUI::SpineControlCallback spineCancelCallback = nullptr;
+    ArrowLabUI::SpineControlCallback spineConfirmZeroCallback = nullptr;
+    ArrowLabUI::SpineControlCallback spineRestartCallback = nullptr;
     uint8_t selectedSpinePositionCount = 1;
     float markedSpine = 0.0f;
     bool spineRunActive = false;
+    bool spineZeroConfirmationRequired = false;
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
@@ -633,15 +636,16 @@ namespace
                 ? "SAS TEST HELP"
                 : "SPINE TEST HELP";
             message = selectedSpinePositionCount == 4
-                ? "ATA-derived four-position test at 90 degree indexes. "
-                  "ArrowLab measures the force required at the fixed 12.7 mm "
-                  "stop. Lower spine is stiffer; higher spine is weaker. "
-                  "One spine point equals 0.001 inch equivalent deflection."
-                : "ATA-derived single-position test. Start with empty "
-                  "supports, place the arrow when prompted, then push firmly "
-                  "to the fixed 12.7 mm stop. WROOM captures a stable hold "
-                  "automatically; release only when told. SET MARKED adds "
-                  "an optional comparison; tap it again to clear.";
+                ? "Start empty and place the arrow when prompted. At SET "
+                  "ZERO, bring the plunger to the arrow top, establish the "
+                  "12.7 mm travel datum and confirm ZERO SET. Then press to "
+                  "the hard stop at four 90 degree positions. Partial presses "
+                  "reset automatically; RESTART retries the current position."
+                : "Start empty and place the arrow when prompted. At SET "
+                  "ZERO, bring the plunger to the arrow top, establish the "
+                  "12.7 mm travel datum and confirm ZERO SET. Then press to "
+                  "the hard stop. Partial presses reset automatically; "
+                  "RESTART retries and CANCEL stops the test.";
         } else if (currentPage == diagnosticSidePage) {
             title = "CREEP TEST HELP";
             message =
@@ -704,7 +708,9 @@ namespace
         }
         if (spineStateLabel != nullptr) lv_label_set_text(spineStateLabel, "READY");
         if (spineDetailLabel != nullptr) {
-            lv_label_set_text(spineDetailLabel, "Empty both supports, then press START");
+            lv_label_set_text(
+                spineDetailLabel,
+                "Raise plunger clear; empty both supports; press START");
         }
         if (spineResultsLabel != nullptr) lv_label_set_text(spineResultsLabel, "");
         if (spineProgressBar != nullptr) lv_bar_set_value(spineProgressBar, 0, LV_ANIM_OFF);
@@ -723,9 +729,17 @@ namespace
 
     void spineStartEvent(lv_event_t *event)
     {
-        if (lv_event_get_code(event) != LV_EVENT_CLICKED || spineRunActive) return;
-        if (spineStartCallback != nullptr) {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+        if (!spineRunActive && spineStartCallback != nullptr) {
             spineStartCallback(selectedSpinePositionCount, markedSpine);
+        } else if (
+            spineRunActive
+            && spineZeroConfirmationRequired
+            && spineConfirmZeroCallback != nullptr
+        ) {
+            spineConfirmZeroCallback();
+        } else if (spineRunActive && spineRestartCallback != nullptr) {
+            spineRestartCallback();
         }
     }
 
@@ -2165,10 +2179,14 @@ namespace ArrowLabUI
 
     void setSpineCallbacks(
         SpineStartCallback startCallback,
-        SpineCancelCallback cancelCallback)
+        SpineControlCallback cancelCallback,
+        SpineControlCallback confirmZeroCallback,
+        SpineControlCallback restartCallback)
     {
         spineStartCallback = startCallback;
         spineCancelCallback = cancelCallback;
+        spineConfirmZeroCallback = confirmZeroCallback;
+        spineRestartCallback = restartCallback;
     }
 
     void setCalibrationReferenceGrams(float grams)
@@ -2413,11 +2431,14 @@ namespace ArrowLabUI
         const char *state,
         const char *detail,
         const char *results,
+        const char *primaryAction,
         uint8_t progressPercent,
         bool active,
-        bool complete)
+        bool complete,
+        bool zeroConfirmationRequired)
     {
         spineRunActive = active;
+        spineZeroConfirmationRequired = zeroConfirmationRequired;
         if (spineStateLabel != nullptr) lv_label_set_text(spineStateLabel, state);
         if (spineDetailLabel != nullptr) lv_label_set_text(spineDetailLabel, detail);
         if (spineResultsLabel != nullptr) lv_label_set_text(spineResultsLabel, results);
@@ -2425,8 +2446,7 @@ namespace ArrowLabUI
             lv_bar_set_value(spineProgressBar, progressPercent, LV_ANIM_OFF);
         }
         if (spineStartButton != nullptr) {
-            if (active) lv_obj_add_state(spineStartButton, LV_STATE_DISABLED);
-            else lv_obj_clear_state(spineStartButton, LV_STATE_DISABLED);
+            lv_obj_clear_state(spineStartButton, LV_STATE_DISABLED);
         }
         if (spineMarkedButton != nullptr) {
             if (active) lv_obj_add_state(spineMarkedButton, LV_STATE_DISABLED);
@@ -2437,8 +2457,9 @@ namespace ArrowLabUI
             else lv_obj_add_state(spineCancelButton, LV_STATE_DISABLED);
         }
         if (spineStartButtonLabel != nullptr) {
-            lv_label_set_text(spineStartButtonLabel, complete ? "RUN AGAIN" : "START TEST");
+            lv_label_set_text(spineStartButtonLabel, primaryAction);
         }
+        (void)complete;
     }
 
     void setLoadStatus(

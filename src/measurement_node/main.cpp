@@ -78,8 +78,6 @@ namespace
         inputs.combinedInstantaneousGrams =
             leftMeasurement.instantaneousGrams()
             + rightMeasurement.instantaneousGrams();
-        inputs.combinedHeldGrams =
-            leftMeasurement.heldGrams() + rightMeasurement.heldGrams();
         return inputs;
     }
 
@@ -278,6 +276,15 @@ namespace
 
         case ArrowLabProtocol::CommandType::CancelSpineTest:
             spineTestController.cancel();
+            break;
+
+        case ArrowLabProtocol::CommandType::ConfirmSpineZero:
+            spineTestController.confirmPlungerZero(millis());
+            break;
+
+        case ArrowLabProtocol::CommandType::RestartSpineAttempt:
+            spineTestController.restartAttempt(millis());
+            serviceSpineAction();
             break;
 
         case ArrowLabProtocol::CommandType::None:

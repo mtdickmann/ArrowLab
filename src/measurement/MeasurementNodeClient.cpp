@@ -134,6 +134,22 @@ bool MeasurementNodeClient::cancelSpineTest()
         0);
 }
 
+bool MeasurementNodeClient::confirmSpineZero()
+{
+    return send(
+        ArrowLabProtocol::CommandType::ConfirmSpineZero,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
+bool MeasurementNodeClient::restartSpineAttempt()
+{
+    return send(
+        ArrowLabProtocol::CommandType::RestartSpineAttempt,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
 bool MeasurementNodeClient::connected(uint32_t currentTime) const
 {
     return hasPacket_

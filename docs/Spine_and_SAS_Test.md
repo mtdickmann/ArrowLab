@@ -56,14 +56,31 @@ WROOM owns capture timing. VIEWE only presents its state.
 3. WROOM automatically tares Left and then Right. This is deliberately started
    by the operator so an arrow left on the supports cannot be silently zeroed.
 4. At **READ**, place the arrow on both supports and keep it still. ArrowLab
-   captures and displays its combined resting mass.
-5. At **PUSH**, press the plunger firmly to the physical 12.7 mm stop.
-6. At **HOLD**, maintain the stop. WROOM accepts the result only after the force
+   displays the live combined mass and accepts it only after the simultaneous
+   Left + Right sum remains inside the arrow stability band.
+5. At **SET ZERO**, bring the plunger down until it just touches the top of the
+   arrow. Establish the mechanism's zero/starting position so the following
+   movement is exactly 12.7 mm, then press **ZERO SET**. This is a mechanical
+   deflection datum; it is not another load-cell tare.
+6. At **PUSH**, press the plunger firmly to the physical 12.7 mm stop.
+7. At **HOLD**, maintain the stop. WROOM accepts the result only after the force
    remains inside the configured stability band for three seconds.
-7. At **CAPTURED / RELEASE**, release fully. WROOM requires a confirmed release
+8. At **CAPTURED / RELEASE**, release fully. WROOM requires a confirmed release
    before another capture can begin.
-8. A Spine Test ends after one capture. An SAS Test requests a 90 degree rotation
+9. A Spine Test ends after one capture. An SAS Test requests a 90 degree rotation
    and repeats the PUSH/HOLD/RELEASE sequence until all four positions exist.
+
+The live resting-arrow value is deliberately reversible. Removing the arrow
+before force capture returns the displayed load to zero and sends the procedure
+back to READ; replacing it starts a fresh stability check. A press below the
+configured significant-force threshold does not start the hold timer. If a
+started press is released before three stable seconds, progress resets and the
+procedure returns to PUSH automatically.
+
+**RESTART** abandons only the current press attempt and keeps the valid tare,
+resting-arrow reference and earlier SAS positions. **CANCEL** stops the entire
+test and returns it to its initial state. Both controls remain available while
+the procedure is active.
 
 The arrow's resting mass is not treated as bending force:
 
@@ -93,10 +110,11 @@ development controls, not ordinary user settings:
 - hold time and force stability band;
 - minimum force that starts a spine hold;
 - release threshold and confirmation time;
-- arrow-present threshold and arrow-mass stability time.
+- arrow-present threshold, arrow-mass stability time and stability band;
+- small baseline-tracking band used before a significant press begins.
 
 Changing these values requires rebuilding and uploading WROOM. The HMI receives
-the resulting state and progress over protocol version 2.
+the resulting state and progress over protocol version 3.
 
 ## Icons and visual assets
 
