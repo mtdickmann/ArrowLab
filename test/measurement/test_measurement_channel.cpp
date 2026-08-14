@@ -60,8 +60,11 @@ int main()
     feed(channel, EMPTY_RAW + 100, time, 140);
     expectNear(channel.heldGrams(), 0.0f, 0.001f);
 
-    // A new, different object produces a fresh event-held result.
-    feed(channel, EMPTY_RAW + 20000, time, 140);
+    // A new, different object must not lock before the fixed 10 s endpoint.
+    feed(channel, EMPTY_RAW + 20000, time, 50);
+    assert(channel.changeInProgress());
+    expectNear(channel.heldGrams(), 0.0f, 0.001f);
+    feed(channel, EMPTY_RAW + 20000, time, 90);
     expectNear(channel.heldGrams(), 20.0f, 0.5f);
 
     // Replacing it with a 50 g object adds only the before/after difference.

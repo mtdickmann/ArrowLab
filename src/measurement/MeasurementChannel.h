@@ -10,7 +10,7 @@
  *   - a deliberate tare establishes zero;
  *   - a slow raw tracker follows creep/drift while the display is held;
  *   - a genuine step freezes the pre-change raw position;
- *   - the new state is averaged for at most ten seconds;
+ *   - the new state is averaged at a fixed ten-second endpoint;
  *   - only the before/after difference changes the held result.
  *
  * Calibration and diagnostics do not get alternative weighing maths.
@@ -32,10 +32,8 @@ public:
     static constexpr uint8_t STABLE_SAMPLE_COUNT = 20;
     static constexpr uint8_t ACQUISITION_SAMPLE_CAPACITY = 100;
     static constexpr long CHANGE_THRESHOLD_COUNTS = 300;
-    static constexpr long STABLE_RANGE_COUNTS = 300;
     static constexpr float RETURN_TO_ZERO_ABSOLUTE_GRAMS = 0.5f;
     static constexpr float RETURN_TO_ZERO_RELATIVE = 0.002f;
-    static constexpr uint32_t MIN_ACQUISITION_MS = 2000;
     static constexpr uint32_t MAX_ACQUISITION_MS = 10000;
 
     void onRawSample(long rawCount, uint32_t currentTime);
@@ -66,8 +64,6 @@ public:
 private:
     static long magnitude(long value);
     static long robustAverage(const long *values, uint8_t count);
-    static long sampleRange(const long *values, uint8_t count);
-
     void resetFilter();
     void updateFilter(long rawCount);
     void updateTare(long rawCount);

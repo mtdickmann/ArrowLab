@@ -56,10 +56,11 @@ While the physical state is unchanged, a slow private raw tracker follows
 drift and creep without altering the displayed mass. Four consecutive fresh
 conversions at least 300 counts from that tracker begin a change acquisition.
 
-The new state is accepted after at least two seconds when its final 20 raw
-samples span no more than 300 counts, or at the ten-second maximum. A robust
-average of that final window is compared with the frozen pre-change tracker.
-Only this raw difference is converted through K and added to the held result.
+The new state is accepted at a fixed ten-second endpoint. A robust average of
+the final 20 raw samples is compared with the frozen pre-change tracker. Only
+this raw difference is converted through K and added to the held result. Using
+one fixed endpoint prevents otherwise identical placements from being captured
+at arbitrary times between two and ten seconds as the load cell settles.
 
 ## Audit finding: capture definitions differ
 
@@ -68,22 +69,23 @@ it also uses three different capture definitions:
 
 - TARE: mean of 20 direct raw conversions;
 - CAL: mean of 20 rolling 15-sample robust-filter outputs after 30 seconds;
-- ordinary load event: robust average of the final raw acquisition window after
-  2–10 seconds.
+- ordinary load event: robust average of the final raw acquisition window at a
+  fixed 10-second endpoint.
 
-This is a credible explanation for the observed behaviour in which the
-calibration weight is exactly right at calibration completion, differs after
-removal/replacement, and may later return toward the calibrated value. The
-calibration display is explicitly anchored to the entered mass, whereas the
-replacement result is independently measured through K using the shorter event
-window.
+The former 2–10 second early-exit window was a credible contributor to the
+observed behaviour in which the calibration weight was exactly right at
+calibration completion but differed after removal/replacement. Ordinary load
+events now use a fixed 10-second endpoint so repeatability can be assessed
+without that variable capture time. The calibration display is still
+explicitly anchored to the entered mass, whereas a replacement result is an
+independent measurement through K.
 
 That explanation is not yet proof of the complete error source. Load-cell
-mechanics, recovery, creep and sample-rate differences can contribute. No
-calibration or weighing algorithm is changed by this audit. The next controlled
-test should log timestamps and the exact raw values used for tare mean,
-calibration span/K and the subsequent removal/replacement acquisitions on the
-same channel.
+mechanics, recovery, creep and sample-rate differences can contribute. The
+fixed ten-second operational endpoint is therefore a controlled one-variable
+change; calibration capture, K, tare, persistence and drift tracking are
+unchanged. Repeated removal/replacement tests on the same channel must verify
+whether it improves repeatability before any further metrology change.
 
 ## Revision compatibility
 

@@ -222,24 +222,6 @@ long MeasurementChannel::robustAverage(
     return static_cast<long>(total / (count - 2 * trim));
 }
 
-long MeasurementChannel::sampleRange(
-    const long *values,
-    uint8_t count
-)
-{
-    if (count == 0) {
-        return 0;
-    }
-
-    long minimum = values[0];
-    long maximum = values[0];
-    for (uint8_t index = 1; index < count; ++index) {
-        if (values[index] < minimum) minimum = values[index];
-        if (values[index] > maximum) maximum = values[index];
-    }
-    return maximum - minimum;
-}
-
 void MeasurementChannel::resetFilter()
 {
     filterSampleCount_ = 0;
@@ -340,19 +322,13 @@ void MeasurementChannel::updateChange(uint32_t currentTime)
     }
 
     const uint32_t elapsed = currentTime - acquisitionStartedAt_;
-    bool stable = false;
-
-    if (
-        elapsed >= MIN_ACQUISITION_MS
-        && acquisitionSampleCount_ >= STABLE_SAMPLE_COUNT
-    ) {
-        stable = sampleRange(
-            acquisitionSamples_
-                + acquisitionSampleCount_ - STABLE_SAMPLE_COUNT,
-            STABLE_SAMPLE_COUNT) <= STABLE_RANGE_COUNTS;
-    }
-
-    if (!stable && elapsed < MAX_ACQUISITION_MS) {
+    // Use one repeatable operational endpoint. Calibration captures K after
+    // its deliberate 30 s settle, while every ordinary load change now gets
+    // the full 10 s acquisition requested by the instrument workflow. The
+    // previous early-stability exit could lock the same reapplied mass at any
+    // point from 2 to 10 seconds and made repeatability depend on short-term
+    // load-cell creep.
+    if (elapsed < MAX_ACQUISITION_MS) {
         return;
     }
 
