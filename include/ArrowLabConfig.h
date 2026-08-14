@@ -42,8 +42,14 @@ namespace ArrowLabConfig
         CONFIGURED_PRIMARY_MASS_UNIT <= 2,
         "ArrowLab.conf: primary mass unit must be 0, 1 or 2");
     static_assert(
-        CONFIGURED_MASS_DECIMAL_PLACES <= 3,
-        "ArrowLab.conf: mass decimal places must be 0..3");
+        CONFIGURED_GRAMS_DECIMAL_PLACES <= 3,
+        "ArrowLab.conf: gram decimal places must be 0..3");
+    static_assert(
+        CONFIGURED_GRAINS_DECIMAL_PLACES <= 3,
+        "ArrowLab.conf: grain decimal places must be 0..3");
+    static_assert(
+        CONFIGURED_OUNCES_DECIMAL_PLACES <= 4,
+        "ArrowLab.conf: ounce decimal places must be 0..4");
 
     // Stable, strongly typed names consumed by the firmware. Do not edit these
     // aliases; change their validated CONFIGURED_* sources in ArrowLab.conf.
@@ -55,8 +61,12 @@ namespace ArrowLabConfig
         CONFIGURED_OPERATIONAL_WEIGHING_TIME_MS;
     constexpr MassUnit PRIMARY_MASS_UNIT =
         static_cast<MassUnit>(CONFIGURED_PRIMARY_MASS_UNIT);
-    constexpr uint8_t MASS_DECIMAL_PLACES =
-        CONFIGURED_MASS_DECIMAL_PLACES;
+    constexpr uint8_t GRAMS_DECIMAL_PLACES =
+        CONFIGURED_GRAMS_DECIMAL_PLACES;
+    constexpr uint8_t GRAINS_DECIMAL_PLACES =
+        CONFIGURED_GRAINS_DECIMAL_PLACES;
+    constexpr uint8_t OUNCES_DECIMAL_PLACES =
+        CONFIGURED_OUNCES_DECIMAL_PLACES;
 
     constexpr float GRAINS_PER_GRAM = 15.4323583529f;
     constexpr float OUNCES_PER_GRAM = 0.03527396195f;

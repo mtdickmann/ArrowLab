@@ -16,9 +16,11 @@
 #include "lvgl_v8_port.h"
 #include "ArrowLabConfig.h"
 #include "measurement/LoadCellChannel.h"
+#include "measurement/LoadAggregation.h"
 #include "measurement/MeasurementNodeClient.h"
 #include "diagnostics/CreepDiagnostic.h"
 #include "protocol/MeasurementProtocol.h"
+#include "ui/MassDisplay.h"
 #include "ui/ui.h"
 #include "Version.h"
 
@@ -29,6 +31,9 @@ namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
     float calibrationReferenceGrams = 0.0f;
+    ArrowLabConfig::MassUnit selectedMassUnit =
+        ArrowLabConfig::PRIMARY_MASS_UNIT;
+    volatile bool unitCycleRequested = false;
     // Raw-only mirrors retained for the hidden creep diagnostic. The Viewe
     // never initializes an HX711 or performs measurement calculations.
     LoadCellChannel leftSensor("Left remote", 0, 0);
@@ -77,6 +82,11 @@ namespace
         } else {
             measurementNode.startCalibration(protocolSide(side));
         }
+    }
+
+    void requestMassUnitCycle()
+    {
+        unitCycleRequested = true;
     }
 
     void requestDiagnosticStart(
@@ -191,27 +201,11 @@ namespace
         if (channel.flags & ArrowLabProtocol::Calibrated) {
             const float grams =
                 static_cast<float>(channel.heldMilliGrams) / 1000.0f;
-            float primaryValue = grams;
-
-            switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
-            case ArrowLabConfig::MassUnit::Grains:
-                primaryValue = grams * ArrowLabConfig::GRAINS_PER_GRAM;
-                break;
-            case ArrowLabConfig::MassUnit::Ounces:
-                primaryValue = grams * ArrowLabConfig::OUNCES_PER_GRAM;
-                break;
-            case ArrowLabConfig::MassUnit::Grams:
-            default:
-                break;
-            }
-
-            snprintf(
+            MassDisplay::formatPrimary(
                 buffer,
                 bufferSize,
-                "%.*f",
-                static_cast<int>(ArrowLabConfig::MASS_DECIMAL_PLACES),
-                primaryValue
-            );
+                grams,
+                selectedMassUnit);
             return;
         }
 
@@ -221,19 +215,6 @@ namespace
             "%ld",
             static_cast<long>(channel.heldRawCounts)
         );
-    }
-
-    const char *primaryMassUnitText()
-    {
-        switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
-        case ArrowLabConfig::MassUnit::Grains:
-            return "gr";
-        case ArrowLabConfig::MassUnit::Ounces:
-            return "oz";
-        case ArrowLabConfig::MassUnit::Grams:
-        default:
-            return "g";
-        }
     }
 
     void formatConversions(
@@ -253,49 +234,21 @@ namespace
 
         const float grams =
             static_cast<float>(channel.heldMilliGrams) / 1000.0f;
-        const float grains = grams * ArrowLabConfig::GRAINS_PER_GRAM;
-        const float ounces = grams * ArrowLabConfig::OUNCES_PER_GRAM;
-        const int decimals =
-            static_cast<int>(ArrowLabConfig::MASS_DECIMAL_PLACES);
-
-        switch (ArrowLabConfig::PRIMARY_MASS_UNIT) {
-        case ArrowLabConfig::MassUnit::Grains:
-            snprintf(
-                buffer,
-                bufferSize,
-                "%.*f g   %.*f oz",
-                decimals,
-                grams,
-                decimals,
-                ounces);
-            break;
-        case ArrowLabConfig::MassUnit::Ounces:
-            snprintf(
-                buffer,
-                bufferSize,
-                "%.*f g   %.*f gr",
-                decimals,
-                grams,
-                decimals,
-                grains);
-            break;
-        case ArrowLabConfig::MassUnit::Grams:
-        default:
-            snprintf(
-                buffer,
-                bufferSize,
-                "%.*f gr   %.*f oz",
-                decimals,
-                grains,
-                decimals,
-                ounces);
-            break;
-        }
+        MassDisplay::formatSecondary(
+            buffer,
+            bufferSize,
+            grams,
+            selectedMassUnit);
     }
 
     void updateDisplay(uint32_t currentTime)
     {
         using Stage = ArrowLabProtocol::CalibrationStage;
+        if (unitCycleRequested) {
+            unitCycleRequested = false;
+            selectedMassUnit = MassDisplay::nextUnit(selectedMassUnit);
+        }
+
         const bool nodeConnected = measurementNode.connected(currentTime);
         const ArrowLabProtocol::ChannelStatus &left =
             measurementNode.channel(ArrowLabProtocol::Side::Left);
@@ -466,12 +419,67 @@ namespace
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
-            leftCalibrated ? primaryMassUnitText() : "RAW"
+            leftCalibrated
+                ? MassDisplay::unitText(selectedMassUnit)
+                : "RAW"
         );
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Right,
-            rightCalibrated ? primaryMassUnitText() : "RAW"
+            rightCalibrated
+                ? MassDisplay::unitText(selectedMassUnit)
+                : "RAW"
         );
+
+        const bool leftReady =
+            leftLive && leftCalibrated && leftUserTare;
+        const bool rightReady =
+            rightLive && rightCalibrated && rightUserTare;
+        const LoadAggregation::Result weighResult =
+            LoadAggregation::combine(
+                {
+                    leftReady,
+                    left.heldRawCounts,
+                    left.heldMilliGrams
+                },
+                {
+                    rightReady,
+                    right.heldRawCounts,
+                    right.heldMilliGrams
+                });
+
+        const float weighGrams =
+            static_cast<float>(weighResult.totalMilliGrams) / 1000.0f;
+        const char *weighInstruction =
+            "Place load on LEFT, RIGHT, or both cassettes";
+
+        if (weighResult.source == LoadAggregation::Source::NotReady) {
+            weighInstruction = "Tare and calibrate a live cassette first";
+        }
+
+        char weighPrimary[24];
+        char weighSecondary[48];
+        if (weighResult.source == LoadAggregation::Source::NotReady) {
+            snprintf(weighPrimary, sizeof(weighPrimary), "---");
+            weighSecondary[0] = '\0';
+        } else {
+            MassDisplay::formatPrimary(
+                weighPrimary,
+                sizeof(weighPrimary),
+                weighGrams,
+                selectedMassUnit);
+            MassDisplay::formatSecondary(
+                weighSecondary,
+                sizeof(weighSecondary),
+                weighGrams,
+                selectedMassUnit);
+        }
+
+        ArrowLabUI::setWeighDisplay(
+            LoadAggregation::sourceText(weighResult.source),
+            weighPrimary,
+            MassDisplay::unitText(selectedMassUnit),
+            weighSecondary,
+            weighInstruction);
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
@@ -691,6 +699,7 @@ void setup()
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
+    ArrowLabUI::setUnitCycleCallback(requestMassUnitCycle);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,

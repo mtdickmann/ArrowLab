@@ -19,6 +19,7 @@ namespace ArrowLabUI
     );
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
+    using UnitCycleCallback = void (*)();
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -32,6 +33,7 @@ namespace ArrowLabUI
      */
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
+    void setUnitCycleCallback(UnitCycleCallback callback);
     void setCalibrationReferenceGrams(float grams);
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
@@ -62,6 +64,12 @@ namespace ArrowLabUI
     void setRightReading(const char *text);
     void setLoadUnit(LoadSide side, const char *text);
     void setLoadConversions(LoadSide side, const char *text);
+    void setWeighDisplay(
+        const char *source,
+        const char *primary,
+        const char *unit,
+        const char *secondary,
+        const char *instruction);
 
     /**
      * Update the tare/calibration status shown for one load channel.

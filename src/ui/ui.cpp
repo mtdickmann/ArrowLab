@@ -40,6 +40,7 @@ namespace
     lv_obj_t *helpBox = nullptr;
     lv_obj_t *currentPage = nullptr;
     lv_obj_t *homePage = nullptr;
+    lv_obj_t *weighPage = nullptr;
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *diagnosticsMenuPage = nullptr;
@@ -51,6 +52,13 @@ namespace
     lv_obj_t *faultLabel = nullptr;
     lv_obj_t *settingsCalibrationLabel = nullptr;
     lv_obj_t *settingsCalibrationButton = nullptr;
+    lv_obj_t *weighSourceLabel = nullptr;
+    lv_obj_t *weighValueLabel = nullptr;
+    lv_obj_t *weighUnitLabel = nullptr;
+    lv_obj_t *weighConversionLabel = nullptr;
+    lv_obj_t *weighInstructionLabel = nullptr;
+    lv_obj_t *weighTareLeftButton = nullptr;
+    lv_obj_t *weighTareRightButton = nullptr;
     lv_obj_t *diagnosticsButton = nullptr;
     lv_obj_t *diagnosticSideLabel = nullptr;
     lv_obj_t *diagnosticMassLabel = nullptr;
@@ -91,6 +99,7 @@ namespace
     ArrowLabUI::DiagnosticStartCallback diagnosticStartCallback = nullptr;
     ArrowLabUI::DiagnosticCancelCallback diagnosticCancelCallback = nullptr;
     ArrowLabUI::DiagnosticFinishCallback diagnosticFinishCallback = nullptr;
+    ArrowLabUI::UnitCycleCallback unitCycleCallback = nullptr;
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
@@ -146,6 +155,16 @@ namespace
         lv_obj_set_style_text_color(label, colour, LV_PART_MAIN);
 
         return label;
+    }
+
+    void unitCycleEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) == LV_EVENT_CLICKED
+            && unitCycleCallback != nullptr
+        ) {
+            unitCycleCallback();
+        }
     }
 
     ReadingPanelRefs createReadingPanel(
@@ -234,6 +253,12 @@ namespace
         lv_obj_clear_flag(
             readingRow,
             LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(readingRow, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(
+            readingRow,
+            unitCycleEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
         lv_obj_set_flex_flow(
             readingRow,
             LV_FLEX_FLOW_ROW);
@@ -382,12 +407,21 @@ namespace
         const bool isLeft =
             side == ArrowLabUI::LoadSide::Left;
 
+        const char *message = nullptr;
+        if (currentPage == weighPage) {
+            message = isLeft
+                ? "Remove all added load from LEFT.\nEnsure the cassette is stable before confirming."
+                : "Remove all added load from RIGHT.\nEnsure the cassette is stable before confirming.";
+        } else {
+            message = isLeft
+                ? "Place calibration platform only on LEFT load.\nEnsure the setup is stable before confirming."
+                : "Place calibration platform only on RIGHT load.\nEnsure the setup is stable before confirming.";
+        }
+
         confirmationBox = lv_msgbox_create(
             nullptr,
             isLeft ? "TARE LEFT" : "TARE RIGHT",
-            isLeft
-                ? "Place calibration platform only on LEFT load.\nEnsure the setup is stable before confirming."
-                : "Place calibration platform only on RIGHT load.\nEnsure the setup is stable before confirming.",
+            message,
             buttons,
             false);
 
@@ -503,6 +537,7 @@ namespace
     void showPage(lv_obj_t *page)
     {
         lv_obj_add_flag(homePage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(weighPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticsMenuPage, LV_OBJ_FLAG_HIDDEN);
@@ -515,6 +550,8 @@ namespace
             const char *title = "";
             if (page == homePage) {
                 title = "HOME";
+            } else if (page == weighPage) {
+                title = "WEIGH";
             } else if (page == settingsPage) {
                 title = "SETTINGS";
             } else if (page == calibrationPage) {
@@ -561,6 +598,13 @@ namespace
                 "Press CAL, enter the actual reference mass, then place "
                 "that weight. When prompted, press CAL again to start "
                 "the 30-second stabilization and calibration.";
+        } else if (currentPage == weighPage) {
+            title = "WEIGH HELP";
+            message =
+                "Tare empty cassettes deliberately. Place a load on LEFT, "
+                "RIGHT, or both; ArrowLab selects the active cassette and "
+                "adds both when required. Tap the large reading to cycle "
+                "g, gr and oz.";
         } else if (currentPage == diagnosticSidePage) {
             title = "CREEP TEST HELP";
             message =
@@ -602,6 +646,13 @@ namespace
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
+        }
+    }
+
+    void weighButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(weighPage);
         }
     }
 
@@ -1302,29 +1353,167 @@ namespace ArrowLabUI
         lv_obj_t *spineButton = createMenuButton(
             homePage,
             "SPINE TEST",
-            36,
+            8,
             nullptr);
+        lv_obj_set_height(spineButton, 48);
         lv_obj_add_state(spineButton, LV_STATE_DISABLED);
 
-        createMenuButton(
+        lv_obj_t *weighButton = createMenuButton(
+            homePage,
+            "WEIGH",
+            62,
+            weighButtonEvent);
+        lv_obj_set_height(weighButton, 48);
+
+        lv_obj_t *homeSettingsButton = createMenuButton(
             homePage,
             "SETTINGS",
-            98,
+            116,
             settingsButtonEvent);
+        lv_obj_set_height(homeSettingsButton, 48);
 
         homeCalibrationLabel = createTextLabel(
             homePage,
             "CALIBRATION REQUIRED",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_REQUIRED));
-        lv_obj_set_pos(homeCalibrationLabel, 30, 166);
+        lv_obj_set_pos(homeCalibrationLabel, 30, 174);
 
         homeHealthLabel = createTextLabel(
             homePage,
             "CHECKING LOAD CELLS",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_REQUIRED));
-        lv_obj_set_pos(homeHealthLabel, 30, 190);
+        lv_obj_set_pos(homeHealthLabel, 30, 198);
+
+        weighPage = lv_obj_create(screen);
+        lv_obj_set_size(weighPage, 480, 228);
+        lv_obj_set_pos(weighPage, 0, 44);
+        lv_obj_set_style_bg_opa(weighPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(weighPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(weighPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(weighPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *weighPanel = lv_obj_create(weighPage);
+        lv_obj_set_size(weighPanel, 420, 140);
+        lv_obj_set_pos(weighPanel, 30, 8);
+        stylePanel(weighPanel);
+
+        weighSourceLabel = createTextLabel(
+            weighPanel,
+            "NOT READY",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_align(weighSourceLabel, LV_ALIGN_TOP_MID, 0, 10);
+
+        lv_obj_t *weighReadingRow = lv_obj_create(weighPanel);
+        lv_obj_set_size(weighReadingRow, 370, 50);
+        lv_obj_align(weighReadingRow, LV_ALIGN_TOP_MID, 0, 35);
+        lv_obj_set_style_bg_opa(
+            weighReadingRow,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            weighReadingRow,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(weighReadingRow, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(weighReadingRow, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(weighReadingRow, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_flex_flow(weighReadingRow, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(
+            weighReadingRow,
+            LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER,
+            LV_FLEX_ALIGN_CENTER);
+        lv_obj_add_event_cb(
+            weighReadingRow,
+            unitCycleEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+
+        weighValueLabel = createTextLabel(
+            weighReadingRow,
+            "---",
+            &lv_font_montserrat_30,
+            lv_color_hex(COLOUR_TEXT));
+        weighUnitLabel = createTextLabel(
+            weighReadingRow,
+            "g",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_MUTED));
+
+        weighConversionLabel = createTextLabel(
+            weighPanel,
+            "",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_width(weighConversionLabel, 390);
+        lv_obj_set_style_text_align(
+            weighConversionLabel,
+            LV_TEXT_ALIGN_CENTER,
+            LV_PART_MAIN);
+        lv_obj_align(weighConversionLabel, LV_ALIGN_TOP_MID, 0, 92);
+
+        lv_obj_t *weighBackButton = lv_btn_create(weighPage);
+        lv_obj_set_size(weighBackButton, 108, 34);
+        lv_obj_set_pos(weighBackButton, 30, 154);
+        lv_obj_add_event_cb(
+            weighBackButton,
+            homeButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *weighBackLabel = createTextLabel(
+            weighBackButton,
+            "< BACK",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(weighBackLabel);
+
+        weighTareLeftButton = lv_btn_create(weighPage);
+        lv_obj_set_size(weighTareLeftButton, 128, 34);
+        lv_obj_set_pos(weighTareLeftButton, 146, 154);
+        lv_obj_add_event_cb(
+            weighTareLeftButton,
+            tareLeftButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *weighTareLeftLabel = createTextLabel(
+            weighTareLeftButton,
+            "TARE L",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(weighTareLeftLabel);
+
+        weighTareRightButton = lv_btn_create(weighPage);
+        lv_obj_set_size(weighTareRightButton, 128, 34);
+        lv_obj_set_pos(weighTareRightButton, 282, 154);
+        lv_obj_add_event_cb(
+            weighTareRightButton,
+            tareRightButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *weighTareRightLabel = createTextLabel(
+            weighTareRightButton,
+            "TARE R",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(weighTareRightLabel);
+
+        weighInstructionLabel = createTextLabel(
+            weighPage,
+            "Tare and calibrate a live cassette first",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(weighInstructionLabel, 420, 28);
+        lv_obj_set_pos(weighInstructionLabel, 30, 195);
+        lv_obj_set_style_text_align(
+            weighInstructionLabel,
+            LV_TEXT_ALIGN_CENTER,
+            LV_PART_MAIN);
+        lv_label_set_long_mode(
+            weighInstructionLabel,
+            LV_LABEL_LONG_DOT);
 
         settingsPage = lv_obj_create(screen);
         lv_obj_set_size(settingsPage, 480, 228);
@@ -1757,6 +1946,11 @@ namespace ArrowLabUI
         calibrationCallback = callback;
     }
 
+    void setUnitCycleCallback(UnitCycleCallback callback)
+    {
+        unitCycleCallback = callback;
+    }
+
     void setCalibrationReferenceGrams(float grams)
     {
         calibrationReferenceGrams = grams;
@@ -1971,6 +2165,30 @@ namespace ArrowLabUI
         }
     }
 
+    void setWeighDisplay(
+        const char *source,
+        const char *primary,
+        const char *unit,
+        const char *secondary,
+        const char *instruction)
+    {
+        if (weighSourceLabel != nullptr) {
+            lv_label_set_text(weighSourceLabel, source);
+        }
+        if (weighValueLabel != nullptr) {
+            lv_label_set_text(weighValueLabel, primary);
+        }
+        if (weighUnitLabel != nullptr) {
+            lv_label_set_text(weighUnitLabel, unit);
+        }
+        if (weighConversionLabel != nullptr) {
+            lv_label_set_text(weighConversionLabel, secondary);
+        }
+        if (weighInstructionLabel != nullptr) {
+            lv_label_set_text(weighInstructionLabel, instruction);
+        }
+    }
+
     void setLoadStatus(
         LoadSide side,
         bool tareComplete,
@@ -2061,13 +2279,24 @@ namespace ArrowLabUI
 
         if (panel.tareButton != nullptr)
         {
+            const lv_color_t tareColour = lv_color_hex(
+                tareComplete && userTareConfirmed
+                    ? COLOUR_OK
+                    : COLOUR_REQUIRED);
             lv_obj_set_style_bg_color(
                 panel.tareButton,
-                lv_color_hex(
-                    tareComplete && userTareConfirmed
-                        ? COLOUR_OK
-                        : COLOUR_REQUIRED),
+                tareColour,
                 LV_PART_MAIN);
+
+            lv_obj_t *weighTareButton = side == LoadSide::Left
+                ? weighTareLeftButton
+                : weighTareRightButton;
+            if (weighTareButton != nullptr) {
+                lv_obj_set_style_bg_color(
+                    weighTareButton,
+                    tareColour,
+                    LV_PART_MAIN);
+            }
         }
 
         if (panel.calibrationButton != nullptr)

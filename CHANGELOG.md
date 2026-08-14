@@ -7,12 +7,18 @@
   and displayed decimal places
 - Compact secondary conversions between grams, grains and avoirdupois ounces
   beneath each calibrated mass reading
+- Independent display precision for grams, grains and ounces
+- Session-wide tap-to-cycle primary mass unit
+- Dedicated Weigh screen with automatic Left, Right or combined cassette
+  selection and deliberate per-cassette tare controls
 
 ### Changed
 - Restored practical operational response with a configurable one-second
   default while retaining the separate fixed 30-second calibration interval
 - Kept WROOM grams as the metrology value and confined unit conversion to the
   VIEWE presentation layer
+- Kept combined weighing in a small tested aggregation module so later Spine
+  and whole-arrow features can reuse accepted held results
 
 ## v0.2.0 DEV
 

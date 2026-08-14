@@ -82,6 +82,18 @@ present grams, grains or avoirdupois ounces as the primary value and derives the
 other two as secondary conversions. Display precision and unit selection do not
 alter K or the accepted raw-count difference.
 
+The configured primary unit is the power-up default. Tapping any large
+calibrated mass reading cycles `g -> gr -> oz -> g` for the current powered
+session. The unit is global across Calibration and Weigh so two screens cannot
+simultaneously imply different operator preferences. Persistent user
+preferences can later replace the configured default without changing the
+measurement-node protocol.
+
+The Weigh screen combines only accepted held results. It identifies Left,
+Right, or Left + Right from the active held states and sums the two
+milligram-domain results when both cassettes carry load. It never combines live
+HX711 samples or introduces a second tare/calibration calculation on the HMI.
+
 ## Diagnostics boundary
 
 Creep diagnostics intentionally do not use operational tare, K, tracking,

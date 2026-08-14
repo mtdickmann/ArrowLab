@@ -115,15 +115,17 @@ weighing behaviour and presentation are being evaluated:
   after an ordinary mass change. It does not alter the fixed 30-second
   calibration interval.
 - `CONFIGURED_PRIMARY_MASS_UNIT` selects `g`, `gr` or avoirdupois `oz` as the
-  large reading. The other two units remain visible underneath as reference
-  conversions.
-- `CONFIGURED_MASS_DECIMAL_PLACES` controls the displayed precision from zero
-  to three decimal places. It does not change raw acquisition, K or the
-  internal mass calculation.
+  power-up default. Tapping a large calibrated reading cycles the active
+  session through all three units. The other two remain visible underneath.
+- `CONFIGURED_GRAMS_DECIMAL_PLACES`,
+  `CONFIGURED_GRAINS_DECIMAL_PLACES` and
+  `CONFIGURED_OUNCES_DECIMAL_PLACES` independently control presentation
+  precision. They do not change raw acquisition, K or internal mass maths.
 
-Because the acquisition setting is consumed by the WROOM and the display
-settings by the VIEWE, rebuild and upload both processors after changing this
-shared file.
+Upload the WROOM after changing the acquisition-time setting. Upload the VIEWE
+after changing unit or decimal presentation settings. Upload both only when a
+change affects both processors; sharing the configuration file does not by
+itself require flashing an unchanged processor.
 
 For the GPIO17 production link, place the 4.7 kOhm resistor between WROOM
 3.3 V and the shared GPIO8/GPIO17 signal node; it is a pull-up, not a series
