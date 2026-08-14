@@ -20,6 +20,7 @@
 #include "measurement/MeasurementNodeClient.h"
 #include "diagnostics/CreepDiagnostic.h"
 #include "protocol/MeasurementProtocol.h"
+#include "spine/SpineCalculation.h"
 #include "ui/MassDisplay.h"
 #include "ui/ui.h"
 #include "Version.h"
@@ -34,6 +35,7 @@ namespace
     ArrowLabConfig::MassUnit selectedMassUnit =
         ArrowLabConfig::PRIMARY_MASS_UNIT;
     volatile bool unitCycleRequested = false;
+    float requestedMarkedSpine = 0.0f;
     // Raw-only mirrors retained for the hidden creep diagnostic. The Viewe
     // never initializes an HX711 or performs measurement calculations.
     LoadCellChannel leftSensor("Left remote", 0, 0);
@@ -87,6 +89,153 @@ namespace
     void requestMassUnitCycle()
     {
         unitCycleRequested = true;
+    }
+
+    void requestSpineStart(uint8_t positionCount, float markedSpine)
+    {
+        requestedMarkedSpine = markedSpine;
+        measurementNode.startSpineTest(positionCount);
+    }
+
+    void requestSpineCancel()
+    {
+        measurementNode.cancelSpineTest();
+    }
+
+    void updateSpineDisplay(
+        const ArrowLabProtocol::StatusPacket &status,
+        uint32_t currentTime)
+    {
+        using SpineStage = ArrowLabProtocol::SpineStage;
+        const SpineStage stage = static_cast<SpineStage>(status.spineStage);
+        const uint8_t position = status.spineCurrentPosition;
+        const uint8_t positionCount = status.spinePositionCount == 4 ? 4 : 1;
+        const float arrowGrams = status.arrowMilliGrams / 1000.0f;
+        const float appliedGrams = status.appliedMilliGrams / 1000.0f;
+        const char *state = "READY";
+        char detail[96] = "Empty both supports, then press START";
+        char results[160] = "";
+        bool active = false;
+        bool complete = false;
+
+        switch (stage) {
+        case SpineStage::TaringLeft:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Automatic empty tare: LEFT");
+            active = true;
+            break;
+        case SpineStage::TaringRight:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Automatic empty tare: RIGHT");
+            active = true;
+            break;
+        case SpineStage::AwaitingArrow:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Place arrow on both supports");
+            active = true;
+            break;
+        case SpineStage::StabilizingArrow:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Keep arrow still - capturing mass");
+            active = true;
+            break;
+        case SpineStage::ReadyToPress:
+            state = position > 0 ? "ROTATE + PUSH" : "PUSH";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u/%u | arrow %.2f g | press to hard stop",
+                position + 1,
+                positionCount,
+                arrowGrams);
+            active = true;
+            break;
+        case SpineStage::Holding:
+            state = "HOLD";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u/%u | applied %.1f g | keep steady",
+                position + 1,
+                positionCount,
+                appliedGrams);
+            active = true;
+            break;
+        case SpineStage::AwaitingRelease:
+            state = "CAPTURED";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u captured - RELEASE fully",
+                position + 1);
+            active = true;
+            break;
+        case SpineStage::Complete: {
+            state = "COMPLETE";
+            complete = true;
+            float values[4] = {};
+            float minimum = 100000.0f;
+            float maximum = 0.0f;
+            for (uint8_t index = 0; index < positionCount; ++index) {
+                values[index] = SpineCalculation::equivalentSpine(
+                    status.positionMilliGrams[index] / 1000.0f);
+                if (values[index] < minimum) minimum = values[index];
+                if (values[index] > maximum) maximum = values[index];
+            }
+            if (positionCount == 1) {
+                snprintf(results, sizeof(results), "MEASURED SPINE: %.0f", values[0]);
+                if (requestedMarkedSpine > 0.0f) {
+                    snprintf(
+                        detail,
+                        sizeof(detail),
+                        "Marked %.0f | delta %+.0f (%+.1f%%) | arrow %.2f g",
+                        requestedMarkedSpine,
+                        SpineCalculation::markedDifference(values[0], requestedMarkedSpine),
+                        SpineCalculation::markedDifferencePercent(values[0], requestedMarkedSpine),
+                        arrowGrams);
+                } else {
+                    snprintf(detail, sizeof(detail), "Arrow %.2f g | single orientation", arrowGrams);
+                }
+            } else {
+                const float range = maximum - minimum;
+                snprintf(
+                    results,
+                    sizeof(results),
+                    "P1 %.0f  P2 %.0f  P3 %.0f  P4 %.0f\nSTIFF %.0f  WEAK %.0f  RANGE %.0f / SAS %.3f in",
+                    values[0], values[1], values[2], values[3],
+                    minimum, maximum, range, range / 1000.0f);
+                if (requestedMarkedSpine > 0.0f) {
+                    snprintf(
+                        detail,
+                        sizeof(detail),
+                        "Worst vs marked %.0f: %+.0f (%+.1f%%) | arrow %.2f g",
+                        requestedMarkedSpine,
+                        SpineCalculation::markedDifference(maximum, requestedMarkedSpine),
+                        SpineCalculation::markedDifferencePercent(maximum, requestedMarkedSpine),
+                        arrowGrams);
+                } else {
+                    snprintf(detail, sizeof(detail), "Best = stiffest; worst = weakest | arrow %.2f g", arrowGrams);
+                }
+            }
+            break;
+        }
+        case SpineStage::Fault:
+            state = "FAULT";
+            snprintf(detail, sizeof(detail), "Restore both calibrated load channels");
+            break;
+        case SpineStage::Idle:
+        default:
+            break;
+        }
+
+        ArrowLabUI::setSpineDisplay(
+            state,
+            detail,
+            results,
+            status.spineHoldPercent,
+            active,
+            complete);
+        (void)currentTime;
     }
 
     void requestDiagnosticStart(
@@ -481,6 +630,8 @@ namespace
             weighSecondary,
             weighInstruction);
 
+        updateSpineDisplay(measurementNode.status(), currentTime);
+
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
             left.flags & ArrowLabProtocol::TareComplete,
@@ -700,6 +851,7 @@ void setup()
         requestCalibration
     );
     ArrowLabUI::setUnitCycleCallback(requestMassUnitCycle);
+    ArrowLabUI::setSpineCallbacks(requestSpineStart, requestSpineCancel);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.2 DEV
+
+### Added
+- Separate single-position Spine Test and four-position SAS Test
+- WROOM-owned automatic READ / PUSH / HOLD / CAPTURE / RELEASE state machine
+- Sequential empty Left/Right tare and automatic resting-arrow mass capture
+- Stable-force capture with mandatory release between indexed measurements
+- ATA-derived equivalent spine calculation and four-position stiff/weak/range
+  reporting
+- Optional marked-spine difference and percentage comparison without an
+  unagreed PASS/FAIL judgement
+- Temporary LVGL-symbol home cards ready for later compiled PNG assets
+- Deterministic host test for the automatic spine state machine and formula
+
+### Changed
+- Advanced the VIEWE/WROOM checked binary protocol to version 2 for spine
+  status and commands
+- Moved Weigh's Left and Right tare controls into the result card
+- Replaced the temporary list-style Home menu with a compact icon-card grid
+
 ## v0.2.1 DEV
 
 ### Added

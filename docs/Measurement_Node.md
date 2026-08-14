@@ -69,7 +69,7 @@ The current UART configuration is:
 - WROOM: shared RX/TX GPIO8;
 - VIEWE polls at 50 ms intervals and the WROOM replies after a guarded
   turnaround;
-- checked binary protocol version 1;
+- checked binary protocol version 2;
 - invalid, truncated or checksum-failed packets are ignored;
 - loss of valid packets for 1.5 seconds raises the persistent `NODE OFFLINE`
   fault on the HMI.
@@ -174,12 +174,20 @@ The WROOM runs the same production classes previously validated on the VIEWE:
 - `CalibrationController` owns load detection, the 30-second stabilization,
   calibration sampling and K calculation;
 - `InstrumentStorage` stores independent Left and Right K values in WROOM NVS.
+- `SpineTestController` owns automatic empty tare, arrow-mass capture,
+  PUSH/HOLD/CAPTURE/RELEASE gating and the one- or four-position force record.
 
 The VIEWE sends only deliberate commands: TARE, prepare calibration with the
 entered reference mass, and start calibration. It receives raw evidence,
 held readings, units, calibration stages, progress and health flags. The
 existing calibration screen therefore behaves the same while execution moves
 to the metrology processor.
+
+Spine and SAS commands contain only the requested position count. WROOM returns
+the captured arrow mass, live applied force, hold progress and four possible
+applied-force records. VIEWE converts those accepted records to the documented
+ATA-derived equivalent spine presentation; it cannot initiate a manual force
+capture.
 
 Calibration factors previously stored on the VIEWE are not copied to the
 WROOM. Perform one fresh calibration on each side after installing this

@@ -20,6 +20,8 @@ namespace ArrowLabUI
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
     using UnitCycleCallback = void (*)();
+    using SpineStartCallback = void (*)(uint8_t positionCount, float markedSpine);
+    using SpineCancelCallback = void (*)();
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -34,6 +36,9 @@ namespace ArrowLabUI
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
     void setUnitCycleCallback(UnitCycleCallback callback);
+    void setSpineCallbacks(
+        SpineStartCallback startCallback,
+        SpineCancelCallback cancelCallback);
     void setCalibrationReferenceGrams(float grams);
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
@@ -70,6 +75,13 @@ namespace ArrowLabUI
         const char *unit,
         const char *secondary,
         const char *instruction);
+    void setSpineDisplay(
+        const char *state,
+        const char *detail,
+        const char *results,
+        uint8_t progressPercent,
+        bool active,
+        bool complete);
 
     /**
      * Update the tare/calibration status shown for one load channel.

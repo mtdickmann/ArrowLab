@@ -117,6 +117,23 @@ bool MeasurementNodeClient::startCalibration(ArrowLabProtocol::Side side)
     return send(ArrowLabProtocol::CommandType::StartCalibration, side, 0);
 }
 
+bool MeasurementNodeClient::startSpineTest(uint8_t positionCount)
+{
+    if (positionCount != 1 && positionCount != 4) return false;
+    return send(
+        ArrowLabProtocol::CommandType::StartSpineTest,
+        ArrowLabProtocol::Side::Left,
+        positionCount);
+}
+
+bool MeasurementNodeClient::cancelSpineTest()
+{
+    return send(
+        ArrowLabProtocol::CommandType::CancelSpineTest,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
 bool MeasurementNodeClient::connected(uint32_t currentTime) const
 {
     return hasPacket_

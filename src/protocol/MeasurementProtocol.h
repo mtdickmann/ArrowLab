@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 1;
+    constexpr uint8_t VERSION = 2;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -22,7 +22,9 @@ namespace ArrowLabProtocol
         Tare = 1,
         PrepareCalibration = 2,
         StartCalibration = 3,
-        PollStatus = 4
+        PollStatus = 4,
+        StartSpineTest = 5,
+        CancelSpineTest = 6
     };
 
     enum class CalibrationStage : uint8_t
@@ -42,6 +44,20 @@ namespace ArrowLabProtocol
         TareComplete = 1U << 1,
         UserTareConfirmed = 1U << 2,
         Calibrated = 1U << 3
+    };
+
+    enum class SpineStage : uint8_t
+    {
+        Idle = 0,
+        TaringLeft = 1,
+        TaringRight = 2,
+        AwaitingArrow = 3,
+        StabilizingArrow = 4,
+        ReadyToPress = 5,
+        Holding = 6,
+        AwaitingRelease = 7,
+        Complete = 8,
+        Fault = 9
     };
 
 #pragma pack(push, 1)
@@ -66,6 +82,13 @@ namespace ArrowLabProtocol
         uint16_t lastCommandSequence = 0;
         ChannelStatus left;
         ChannelStatus right;
+        int32_t arrowMilliGrams = 0;
+        int32_t appliedMilliGrams = 0;
+        int32_t positionMilliGrams[4] = {};
+        uint8_t spineStage = 0;
+        uint8_t spinePositionCount = 0;
+        uint8_t spineCurrentPosition = 0;
+        uint8_t spineHoldPercent = 0;
         uint8_t checksum = 0;
     };
 
@@ -83,7 +106,7 @@ namespace ArrowLabProtocol
 #pragma pack(pop)
 
     static_assert(sizeof(ChannelStatus) == 21, "Unexpected channel packet padding");
-    static_assert(sizeof(StatusPacket) == 51, "Unexpected status packet size");
+    static_assert(sizeof(StatusPacket) == 79, "Unexpected status packet size");
     static_assert(sizeof(CommandPacket) == 13, "Unexpected command packet size");
 
     inline uint8_t checksum(const void *data, size_t length)
@@ -127,7 +150,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::PollStatus)
+                <= static_cast<uint8_t>(CommandType::CancelSpineTest)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }

@@ -41,6 +41,7 @@ namespace
     lv_obj_t *currentPage = nullptr;
     lv_obj_t *homePage = nullptr;
     lv_obj_t *weighPage = nullptr;
+    lv_obj_t *spinePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *diagnosticsMenuPage = nullptr;
@@ -59,6 +60,16 @@ namespace
     lv_obj_t *weighInstructionLabel = nullptr;
     lv_obj_t *weighTareLeftButton = nullptr;
     lv_obj_t *weighTareRightButton = nullptr;
+    lv_obj_t *spineModeLabel = nullptr;
+    lv_obj_t *spineStateLabel = nullptr;
+    lv_obj_t *spineDetailLabel = nullptr;
+    lv_obj_t *spineResultsLabel = nullptr;
+    lv_obj_t *spineProgressBar = nullptr;
+    lv_obj_t *spineStartButton = nullptr;
+    lv_obj_t *spineStartButtonLabel = nullptr;
+    lv_obj_t *spineMarkedButton = nullptr;
+    lv_obj_t *spineMarkedButtonLabel = nullptr;
+    lv_obj_t *spineCancelButton = nullptr;
     lv_obj_t *diagnosticsButton = nullptr;
     lv_obj_t *diagnosticSideLabel = nullptr;
     lv_obj_t *diagnosticMassLabel = nullptr;
@@ -100,6 +111,11 @@ namespace
     ArrowLabUI::DiagnosticCancelCallback diagnosticCancelCallback = nullptr;
     ArrowLabUI::DiagnosticFinishCallback diagnosticFinishCallback = nullptr;
     ArrowLabUI::UnitCycleCallback unitCycleCallback = nullptr;
+    ArrowLabUI::SpineStartCallback spineStartCallback = nullptr;
+    ArrowLabUI::SpineCancelCallback spineCancelCallback = nullptr;
+    uint8_t selectedSpinePositionCount = 1;
+    float markedSpine = 0.0f;
+    bool spineRunActive = false;
     ArrowLabUI::LoadSide diagnosticSide = ArrowLabUI::LoadSide::Left;
     float diagnosticMassGrams = 0.0f;
     bool diagnosticPendingZeroRun = false;
@@ -107,7 +123,8 @@ namespace
     enum class MassInputPurpose
     {
         DiagnosticLoad,
-        Calibration
+        Calibration,
+        MarkedSpine
     };
     MassInputPurpose massInputPurpose = MassInputPurpose::DiagnosticLoad;
     ArrowLabUI::LoadSide massInputSide = ArrowLabUI::LoadSide::Left;
@@ -500,6 +517,7 @@ namespace
     }
 
     void showCalibrationMassInput(ArrowLabUI::LoadSide side);
+    void createMassInput(MassInputPurpose purpose, ArrowLabUI::LoadSide side);
 
     void handleCalibrationButton(ArrowLabUI::LoadSide side)
     {
@@ -538,6 +556,7 @@ namespace
     {
         lv_obj_add_flag(homePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(weighPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(spinePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticsMenuPage, LV_OBJ_FLAG_HIDDEN);
@@ -552,6 +571,10 @@ namespace
                 title = "HOME";
             } else if (page == weighPage) {
                 title = "WEIGH";
+            } else if (page == spinePage) {
+                title = selectedSpinePositionCount == 4
+                    ? "SAS TEST"
+                    : "SPINE TEST";
             } else if (page == settingsPage) {
                 title = "SETTINGS";
             } else if (page == calibrationPage) {
@@ -605,6 +628,20 @@ namespace
                 "RIGHT, or both; ArrowLab selects the active cassette and "
                 "adds both when required. Tap the large reading to cycle "
                 "g, gr and oz.";
+        } else if (currentPage == spinePage) {
+            title = selectedSpinePositionCount == 4
+                ? "SAS TEST HELP"
+                : "SPINE TEST HELP";
+            message = selectedSpinePositionCount == 4
+                ? "ATA-derived four-position test at 90 degree indexes. "
+                  "ArrowLab measures the force required at the fixed 12.7 mm "
+                  "stop. Lower spine is stiffer; higher spine is weaker. "
+                  "One spine point equals 0.001 inch equivalent deflection."
+                : "ATA-derived single-position test. Start with empty "
+                  "supports, place the arrow when prompted, then push firmly "
+                  "to the fixed 12.7 mm stop. WROOM captures a stable hold "
+                  "automatically; release only when told. SET MARKED adds "
+                  "an optional comparison; tap it again to clear.";
         } else if (currentPage == diagnosticSidePage) {
             title = "CREEP TEST HELP";
             message =
@@ -654,6 +691,66 @@ namespace
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(weighPage);
         }
+    }
+
+    void openSpinePage(uint8_t positions)
+    {
+        selectedSpinePositionCount = positions;
+        spineRunActive = false;
+        if (spineModeLabel != nullptr) {
+            lv_label_set_text(
+                spineModeLabel,
+                positions == 4 ? "4 POSITIONS / 90 DEG" : "SINGLE POSITION");
+        }
+        if (spineStateLabel != nullptr) lv_label_set_text(spineStateLabel, "READY");
+        if (spineDetailLabel != nullptr) {
+            lv_label_set_text(spineDetailLabel, "Empty both supports, then press START");
+        }
+        if (spineResultsLabel != nullptr) lv_label_set_text(spineResultsLabel, "");
+        if (spineProgressBar != nullptr) lv_bar_set_value(spineProgressBar, 0, LV_ANIM_OFF);
+        showPage(spinePage);
+    }
+
+    void spineButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) openSpinePage(1);
+    }
+
+    void sasButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) openSpinePage(4);
+    }
+
+    void spineStartEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED || spineRunActive) return;
+        if (spineStartCallback != nullptr) {
+            spineStartCallback(selectedSpinePositionCount, markedSpine);
+        }
+    }
+
+    void spineCancelEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+        if (spineCancelCallback != nullptr) spineCancelCallback();
+    }
+
+    void spineBackEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED && !spineRunActive) {
+            showPage(homePage);
+        }
+    }
+
+    void spineMarkedEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED || spineRunActive) return;
+        if (markedSpine > 0.0f) {
+            markedSpine = 0.0f;
+            lv_label_set_text(spineMarkedButtonLabel, "SET MARKED");
+            return;
+        }
+        createMassInput(MassInputPurpose::MarkedSpine, ArrowLabUI::LoadSide::Left);
     }
 
     void calibrationPageButtonEvent(lv_event_t *event)
@@ -884,7 +981,9 @@ namespace
             lv_textarea_get_text(massInputTextArea);
         const float value = std::strtof(text, nullptr);
 
-        if (value <= 0.0f || value > 1850.0f) {
+        const float maximum = massInputPurpose == MassInputPurpose::MarkedSpine
+            ? 3000.0f : 1850.0f;
+        if (value <= 0.0f || value > maximum) {
             return;
         }
 
@@ -893,7 +992,7 @@ namespace
             if (calibrationCallback != nullptr) {
                 calibrationCallback(massInputSide, value);
             }
-        } else {
+        } else if (massInputPurpose == MassInputPurpose::DiagnosticLoad) {
             diagnosticMassGrams = value;
 
             char label[40];
@@ -906,6 +1005,13 @@ namespace
             refreshDiagnosticControls();
             diagnosticUseAutomaticInstruction = true;
             refreshDiagnosticInstruction();
+        } else {
+            markedSpine = value;
+            if (spineMarkedButtonLabel != nullptr) {
+                char label[32];
+                snprintf(label, sizeof(label), "MARKED %.0f", markedSpine);
+                lv_label_set_text(spineMarkedButtonLabel, label);
+            }
         }
 
         closeMassInput();
@@ -943,7 +1049,9 @@ namespace
             massInputBox,
             purpose == MassInputPurpose::Calibration
                 ? "ENTER CALIBRATION MASS (g)"
-                : "ENTER ACTUAL TEST MASS (g)",
+                : (purpose == MassInputPurpose::MarkedSpine
+                    ? "ENTER MARKED SPINE"
+                    : "ENTER ACTUAL TEST MASS (g)"),
             &lv_font_montserrat_16,
             lv_color_hex(COLOUR_TEXT));
         lv_obj_align(heading, LV_ALIGN_TOP_MID, 0, 0);
@@ -956,15 +1064,19 @@ namespace
         lv_textarea_set_max_length(massInputTextArea, 8);
 
         if (
-            purpose == MassInputPurpose::Calibration
-            && calibrationReferenceGrams > 0.0f
+            (purpose == MassInputPurpose::Calibration
+                && calibrationReferenceGrams > 0.0f)
+            || (purpose == MassInputPurpose::MarkedSpine
+                && markedSpine > 0.0f)
         ) {
             char currentMass[16];
             snprintf(
                 currentMass,
                 sizeof(currentMass),
                 "%.3f",
-                calibrationReferenceGrams);
+                purpose == MassInputPurpose::MarkedSpine
+                    ? markedSpine
+                    : calibrationReferenceGrams);
             lv_textarea_set_text(massInputTextArea, currentMass);
         }
 
@@ -1241,6 +1353,32 @@ namespace
         return button;
     }
 
+    lv_obj_t *createIconMenuButton(
+        lv_obj_t *parent,
+        const char *symbol,
+        const char *caption,
+        int x,
+        int y,
+        lv_event_cb_t callback)
+    {
+        lv_obj_t *button = lv_btn_create(parent);
+        lv_obj_set_size(button, 205, 76);
+        lv_obj_set_pos(button, x, y);
+        lv_obj_set_style_radius(button, 9, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(button, lv_color_hex(COLOUR_PANEL), LV_PART_MAIN);
+        lv_obj_set_style_border_color(button, lv_color_hex(COLOUR_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(button, 1, LV_PART_MAIN);
+        lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, nullptr);
+
+        lv_obj_t *icon = createTextLabel(
+            button, symbol, &lv_font_montserrat_20, lv_color_hex(COLOUR_ACCENT));
+        lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 7);
+        lv_obj_t *label = createTextLabel(
+            button, caption, &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -8);
+        return button;
+    }
+
 }
 
 namespace ArrowLabUI
@@ -1350,41 +1488,115 @@ namespace ArrowLabUI
         lv_obj_set_style_pad_all(homePage, 0, LV_PART_MAIN);
         lv_obj_clear_flag(homePage, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *spineButton = createMenuButton(
-            homePage,
-            "SPINE TEST",
-            8,
-            nullptr);
-        lv_obj_set_height(spineButton, 48);
-        lv_obj_add_state(spineButton, LV_STATE_DISABLED);
-
-        lv_obj_t *weighButton = createMenuButton(
-            homePage,
-            "WEIGH",
-            62,
-            weighButtonEvent);
-        lv_obj_set_height(weighButton, 48);
-
-        lv_obj_t *homeSettingsButton = createMenuButton(
-            homePage,
-            "SETTINGS",
-            116,
-            settingsButtonEvent);
-        lv_obj_set_height(homeSettingsButton, 48);
+        createIconMenuButton(
+            homePage, LV_SYMBOL_PLAY, "SPINE TEST", 25, 5, spineButtonEvent);
+        createIconMenuButton(
+            homePage, LV_SYMBOL_REFRESH, "SAS TEST", 250, 5, sasButtonEvent);
+        createIconMenuButton(
+            homePage, LV_SYMBOL_LIST, "WEIGH", 25, 87, weighButtonEvent);
+        createIconMenuButton(
+            homePage, LV_SYMBOL_SETTINGS, "SETTINGS", 250, 87, settingsButtonEvent);
 
         homeCalibrationLabel = createTextLabel(
             homePage,
             "CALIBRATION REQUIRED",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_REQUIRED));
-        lv_obj_set_pos(homeCalibrationLabel, 30, 174);
+        lv_obj_set_pos(homeCalibrationLabel, 30, 172);
 
         homeHealthLabel = createTextLabel(
             homePage,
             "CHECKING LOAD CELLS",
             &lv_font_montserrat_14,
             lv_color_hex(COLOUR_REQUIRED));
-        lv_obj_set_pos(homeHealthLabel, 30, 198);
+        lv_obj_set_pos(homeHealthLabel, 250, 172);
+
+        spinePage = lv_obj_create(screen);
+        lv_obj_set_size(spinePage, 480, 228);
+        lv_obj_set_pos(spinePage, 0, 44);
+        lv_obj_set_style_bg_opa(spinePage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(spinePage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(spinePage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(spinePage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *spinePanel = lv_obj_create(spinePage);
+        lv_obj_set_size(spinePanel, 440, 147);
+        lv_obj_set_pos(spinePanel, 20, 5);
+        stylePanel(spinePanel);
+        spineModeLabel = createTextLabel(
+            spinePanel, "SINGLE POSITION", &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_align(spineModeLabel, LV_ALIGN_TOP_LEFT, 14, 8);
+        spineStateLabel = createTextLabel(
+            spinePanel, "READY", &lv_font_montserrat_20,
+            lv_color_hex(COLOUR_ACCENT));
+        lv_obj_set_width(spineStateLabel, 190);
+        lv_obj_set_style_text_align(spineStateLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align(spineStateLabel, LV_ALIGN_TOP_MID, 0, 30);
+        spineDetailLabel = createTextLabel(
+            spinePanel, "Empty both supports, then press START",
+            &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(spineDetailLabel, 410, 24);
+        lv_obj_set_style_text_align(spineDetailLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align(spineDetailLabel, LV_ALIGN_TOP_MID, 0, 58);
+        lv_label_set_long_mode(spineDetailLabel, LV_LABEL_LONG_DOT);
+        spineResultsLabel = createTextLabel(
+            spinePanel, "", &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(spineResultsLabel, 410, 42);
+        lv_obj_set_style_text_align(spineResultsLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align(spineResultsLabel, LV_ALIGN_TOP_MID, 0, 82);
+        lv_label_set_long_mode(spineResultsLabel, LV_LABEL_LONG_WRAP);
+        spineProgressBar = lv_bar_create(spinePanel);
+        lv_obj_set_size(spineProgressBar, 400, 8);
+        lv_obj_align(spineProgressBar, LV_ALIGN_BOTTOM_MID, 0, -8);
+        lv_bar_set_range(spineProgressBar, 0, 100);
+        lv_bar_set_value(spineProgressBar, 0, LV_ANIM_OFF);
+
+        lv_obj_t *spineBackButton = lv_btn_create(spinePage);
+        lv_obj_set_size(spineBackButton, 90, 34);
+        lv_obj_set_pos(spineBackButton, 20, 158);
+        lv_obj_add_event_cb(spineBackButton, spineBackEvent, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t *spineBackLabel = createTextLabel(
+            spineBackButton, "< BACK", &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(spineBackLabel);
+
+        spineMarkedButton = lv_btn_create(spinePage);
+        lv_obj_set_size(spineMarkedButton, 125, 34);
+        lv_obj_set_pos(spineMarkedButton, 116, 158);
+        lv_obj_add_event_cb(spineMarkedButton, spineMarkedEvent, LV_EVENT_CLICKED, nullptr);
+        spineMarkedButtonLabel = createTextLabel(
+            spineMarkedButton, "SET MARKED", &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(spineMarkedButtonLabel);
+
+        spineStartButton = lv_btn_create(spinePage);
+        lv_obj_set_size(spineStartButton, 125, 34);
+        lv_obj_set_pos(spineStartButton, 247, 158);
+        lv_obj_add_event_cb(spineStartButton, spineStartEvent, LV_EVENT_CLICKED, nullptr);
+        spineStartButtonLabel = createTextLabel(
+            spineStartButton, "START TEST", &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(spineStartButtonLabel);
+
+        spineCancelButton = lv_btn_create(spinePage);
+        lv_obj_set_size(spineCancelButton, 82, 34);
+        lv_obj_set_pos(spineCancelButton, 378, 158);
+        lv_obj_add_event_cb(spineCancelButton, spineCancelEvent, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t *spineCancelLabel = createTextLabel(
+            spineCancelButton, "CANCEL", &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(spineCancelLabel);
+        lv_obj_add_state(spineCancelButton, LV_STATE_DISABLED);
+
+        lv_obj_t *spineMethodLabel = createTextLabel(
+            spinePage,
+            "Fixed 12.7 mm / automatic stable-force capture",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(spineMethodLabel, 440, 24);
+        lv_obj_set_pos(spineMethodLabel, 20, 198);
+        lv_obj_set_style_text_align(spineMethodLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
         weighPage = lv_obj_create(screen);
         lv_obj_set_size(weighPage, 480, 228);
@@ -1453,7 +1665,7 @@ namespace ArrowLabUI
             weighConversionLabel,
             LV_TEXT_ALIGN_CENTER,
             LV_PART_MAIN);
-        lv_obj_align(weighConversionLabel, LV_ALIGN_TOP_MID, 0, 92);
+        lv_obj_align(weighConversionLabel, LV_ALIGN_TOP_MID, 0, 84);
 
         lv_obj_t *weighBackButton = lv_btn_create(weighPage);
         lv_obj_set_size(weighBackButton, 108, 34);
@@ -1470,9 +1682,9 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(weighBackLabel);
 
-        weighTareLeftButton = lv_btn_create(weighPage);
-        lv_obj_set_size(weighTareLeftButton, 128, 34);
-        lv_obj_set_pos(weighTareLeftButton, 146, 154);
+        weighTareLeftButton = lv_btn_create(weighPanel);
+        lv_obj_set_size(weighTareLeftButton, 96, 28);
+        lv_obj_set_pos(weighTareLeftButton, 8, 104);
         lv_obj_add_event_cb(
             weighTareLeftButton,
             tareLeftButtonEvent,
@@ -1485,9 +1697,9 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(weighTareLeftLabel);
 
-        weighTareRightButton = lv_btn_create(weighPage);
-        lv_obj_set_size(weighTareRightButton, 128, 34);
-        lv_obj_set_pos(weighTareRightButton, 282, 154);
+        weighTareRightButton = lv_btn_create(weighPanel);
+        lv_obj_set_size(weighTareRightButton, 96, 28);
+        lv_obj_set_pos(weighTareRightButton, 312, 104);
         lv_obj_add_event_cb(
             weighTareRightButton,
             tareRightButtonEvent,
@@ -1951,6 +2163,14 @@ namespace ArrowLabUI
         unitCycleCallback = callback;
     }
 
+    void setSpineCallbacks(
+        SpineStartCallback startCallback,
+        SpineCancelCallback cancelCallback)
+    {
+        spineStartCallback = startCallback;
+        spineCancelCallback = cancelCallback;
+    }
+
     void setCalibrationReferenceGrams(float grams)
     {
         calibrationReferenceGrams = grams;
@@ -2186,6 +2406,38 @@ namespace ArrowLabUI
         }
         if (weighInstructionLabel != nullptr) {
             lv_label_set_text(weighInstructionLabel, instruction);
+        }
+    }
+
+    void setSpineDisplay(
+        const char *state,
+        const char *detail,
+        const char *results,
+        uint8_t progressPercent,
+        bool active,
+        bool complete)
+    {
+        spineRunActive = active;
+        if (spineStateLabel != nullptr) lv_label_set_text(spineStateLabel, state);
+        if (spineDetailLabel != nullptr) lv_label_set_text(spineDetailLabel, detail);
+        if (spineResultsLabel != nullptr) lv_label_set_text(spineResultsLabel, results);
+        if (spineProgressBar != nullptr) {
+            lv_bar_set_value(spineProgressBar, progressPercent, LV_ANIM_OFF);
+        }
+        if (spineStartButton != nullptr) {
+            if (active) lv_obj_add_state(spineStartButton, LV_STATE_DISABLED);
+            else lv_obj_clear_state(spineStartButton, LV_STATE_DISABLED);
+        }
+        if (spineMarkedButton != nullptr) {
+            if (active) lv_obj_add_state(spineMarkedButton, LV_STATE_DISABLED);
+            else lv_obj_clear_state(spineMarkedButton, LV_STATE_DISABLED);
+        }
+        if (spineCancelButton != nullptr) {
+            if (active) lv_obj_clear_state(spineCancelButton, LV_STATE_DISABLED);
+            else lv_obj_add_state(spineCancelButton, LV_STATE_DISABLED);
+        }
+        if (spineStartButtonLabel != nullptr) {
+            lv_label_set_text(spineStartButtonLabel, complete ? "RUN AGAIN" : "START TEST");
         }
     }
 

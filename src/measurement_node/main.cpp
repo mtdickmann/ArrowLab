@@ -12,6 +12,7 @@
 #include "measurement/LoadCellChannel.h"
 #include "measurement/MeasurementChannel.h"
 #include "protocol/MeasurementProtocol.h"
+#include "spine/SpineTestController.h"
 #include "storage/InstrumentStorage.h"
 
 namespace
@@ -37,6 +38,7 @@ namespace
         leftMeasurement,
         rightMeasurement,
         instrumentStorage);
+    SpineTestController spineTestController;
     HardwareSerial nodeSerial(1);
 
     ArrowLabProtocol::StatusPacket statusPacket;
@@ -62,6 +64,37 @@ namespace
         return side == ArrowLabProtocol::Side::Left
             ? CalibrationSide::Left
             : CalibrationSide::Right;
+    }
+
+    SpineTestController::Inputs spineInputs(uint32_t now)
+    {
+        SpineTestController::Inputs inputs;
+        inputs.leftLive = leftSensor.isLive(now, SENSOR_TIMEOUT_MS);
+        inputs.rightLive = rightSensor.isLive(now, SENSOR_TIMEOUT_MS);
+        inputs.leftCalibrated = leftMeasurement.calibrated();
+        inputs.rightCalibrated = rightMeasurement.calibrated();
+        inputs.leftTareConfirmed = leftMeasurement.userTareConfirmed();
+        inputs.rightTareConfirmed = rightMeasurement.userTareConfirmed();
+        inputs.combinedInstantaneousGrams =
+            leftMeasurement.instantaneousGrams()
+            + rightMeasurement.instantaneousGrams();
+        inputs.combinedHeldGrams =
+            leftMeasurement.heldGrams() + rightMeasurement.heldGrams();
+        return inputs;
+    }
+
+    void serviceSpineAction()
+    {
+        switch (spineTestController.takeAction()) {
+        case SpineTestController::Action::TareLeft:
+            calibrationController.requestTare(CalibrationSide::Left);
+            break;
+        case SpineTestController::Action::TareRight:
+            calibrationController.requestTare(CalibrationSide::Right);
+            break;
+        case SpineTestController::Action::None:
+            break;
+        }
     }
 
     uint8_t protocolStage(CalibrationController::Stage stage)
@@ -138,6 +171,24 @@ namespace
             rightSensor,
             rightMeasurement,
             now);
+        statusPacket.arrowMilliGrams = static_cast<int32_t>(std::lround(
+            spineTestController.arrowMassGrams() * 1000.0f));
+        statusPacket.appliedMilliGrams = static_cast<int32_t>(std::lround(
+            spineTestController.liveAppliedForceGrams() * 1000.0f));
+        for (uint8_t index = 0; index < 4; ++index) {
+            statusPacket.positionMilliGrams[index] =
+                static_cast<int32_t>(std::lround(
+                    spineTestController.positionForceGrams(index)
+                    * 1000.0f));
+        }
+        statusPacket.spineStage = static_cast<uint8_t>(
+            spineTestController.stage());
+        statusPacket.spinePositionCount =
+            spineTestController.positionCount();
+        statusPacket.spineCurrentPosition =
+            spineTestController.currentPosition();
+        statusPacket.spineHoldPercent =
+            spineTestController.holdPercent(now);
         ArrowLabProtocol::seal(statusPacket);
     }
 
@@ -215,6 +266,18 @@ namespace
                     command.sequence);
                 firstPollLogged = true;
             }
+            break;
+
+        case ArrowLabProtocol::CommandType::StartSpineTest:
+            spineTestController.start(
+                static_cast<uint8_t>(command.referenceMilliGrams),
+                spineInputs(millis()),
+                millis());
+            serviceSpineAction();
+            break;
+
+        case ArrowLabProtocol::CommandType::CancelSpineTest:
+            spineTestController.cancel();
             break;
 
         case ArrowLabProtocol::CommandType::None:
@@ -369,6 +432,8 @@ void loop()
             "RIGHT",
             now);
         calibrationController.update(now);
+        spineTestController.update(spineInputs(now), now);
+        serviceSpineAction();
         refreshStatus(now);
     }
 

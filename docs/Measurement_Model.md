@@ -94,6 +94,13 @@ Right, or Left + Right from the active held states and sums the two
 milligram-domain results when both cassettes carry load. It never combines live
 HX711 samples or introduces a second tare/calibration calculation on the HMI.
 
+Spine/SAS capture deliberately uses a different view of the same calibrated
+channels. The calm held result supplies the resting arrow mass, while WROOM's
+instantaneous calibrated force supplies the mechanical-stop stability detector.
+This is not a second calibration or tare calculation. Subtracting the captured
+resting arrow mass isolates the applied bending force. See
+`docs/Spine_and_SAS_Test.md` for the state sequence and result calculation.
+
 ## Diagnostics boundary
 
 Creep diagnostics intentionally do not use operational tare, K, tracking,

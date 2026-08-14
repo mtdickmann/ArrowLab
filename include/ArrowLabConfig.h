@@ -50,6 +50,12 @@ namespace ArrowLabConfig
     static_assert(
         CONFIGURED_OUNCES_DECIMAL_PLACES <= 4,
         "ArrowLab.conf: ounce decimal places must be 0..4");
+    static_assert(
+        CONFIGURED_SPINE_HOLD_TIME_MS >= 1000,
+        "ArrowLab.conf: spine hold time must be at least 1000 ms");
+    static_assert(
+        CONFIGURED_SPINE_STABILITY_BAND_GRAMS > 0.0f,
+        "ArrowLab.conf: spine stability band must be positive");
 
     // Stable, strongly typed names consumed by the firmware. Do not edit these
     // aliases; change their validated CONFIGURED_* sources in ArrowLab.conf.
@@ -67,6 +73,20 @@ namespace ArrowLabConfig
         CONFIGURED_GRAINS_DECIMAL_PLACES;
     constexpr uint8_t OUNCES_DECIMAL_PLACES =
         CONFIGURED_OUNCES_DECIMAL_PLACES;
+    constexpr uint32_t SPINE_HOLD_TIME_MS =
+        CONFIGURED_SPINE_HOLD_TIME_MS;
+    constexpr float SPINE_STABILITY_BAND_GRAMS =
+        CONFIGURED_SPINE_STABILITY_BAND_GRAMS;
+    constexpr float SPINE_MINIMUM_APPLIED_FORCE_GRAMS =
+        CONFIGURED_SPINE_MINIMUM_APPLIED_FORCE_GRAMS;
+    constexpr float SPINE_RELEASE_FORCE_GRAMS =
+        CONFIGURED_SPINE_RELEASE_FORCE_GRAMS;
+    constexpr uint32_t SPINE_RELEASE_TIME_MS =
+        CONFIGURED_SPINE_RELEASE_TIME_MS;
+    constexpr float ARROW_PRESENT_GRAMS =
+        CONFIGURED_ARROW_PRESENT_GRAMS;
+    constexpr uint32_t ARROW_STABILITY_TIME_MS =
+        CONFIGURED_ARROW_STABILITY_TIME_MS;
 
     constexpr float GRAINS_PER_GRAM = 15.4323583529f;
     constexpr float OUNCES_PER_GRAM = 0.03527396195f;
