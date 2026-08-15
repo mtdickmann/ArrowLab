@@ -200,10 +200,10 @@ Two firmware uploads are required.
 
 1. Select `ARROWLAB_MEASUREMENT_S3` and upload to the WROOM COM port.
 2. Select `BOARD_VIEWE_UEDX48270043E_WB_A` and upload to the VIEWE COM port.
-3. Remove power, connect the crossed UART signals and common GND, then power
-   both boards. Their power-up order does not matter; the WROOM continuously
-   publishes status packets and the VIEWE synchronizes when valid packets
-   arrive.
+3. Remove power, connect the single shared UART signal between VIEWE GPIO17
+   and WROOM GPIO8, connect common GND, and confirm the 4.7 kOhm pull-up from
+   the shared signal to WROOM 3.3 V. Then power both boards. Their power-up
+   order does not matter; the VIEWE polls and the WROOM replies when ready.
 4. Confirm the Home screen reports both channels online.
 5. Open Settings -> Calibration, fit the platform, TARE and calibrate Left and
    Right using the normal guided procedure.
