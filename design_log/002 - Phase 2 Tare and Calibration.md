@@ -228,13 +228,13 @@ The permanent division is now implemented:
 
 - WROOM GPIO4/5 owns Left HX711 DT/SCK;
 - WROOM GPIO6/7 owns Right HX711 DT/SCK;
-- the proven link is WROOM GPIO8/GPIO9 UART RX/TX at 115200 baud;
-- the proven HMI link is VIEWE GPIO11/GPIO12 UART RX/TX at 115200 baud;
+- at this historical checkpoint, the first proven link used WROOM GPIO8/GPIO9
+  and VIEWE GPIO11/GPIO12 UART RX/TX at 115200 baud;
 - `include/ArrowLab.conf` exposes the human-editable installation choices for
   controlled VIEWE GPIO17 one-wire and GPIO43/GPIO44 engineering trials, while
   `include/ArrowLabConfig.h` contains the implementation and pin-selection
   logic;
-- GPIO11/GPIO12 occupy VIEWE onboard-SD MOSI/SCK while that mode is selected,
+- that superseded GPIO11/GPIO12 mode occupied VIEWE onboard-SD MOSI/SCK,
   whereas GPIO43/GPIO44 are physically shared with VIEWE UART0/CH340 and must
   never be connected to WROOM TX while that USB-UART interface is attached;
 - WROOM owns `LoadCellChannel`, `MeasurementChannel`,
