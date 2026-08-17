@@ -1091,7 +1091,7 @@ namespace
             lv_textarea_get_text(wifiPasswordTextArea));
         lv_label_set_text(
             wifiPasswordStatusLabel,
-            "Testing WROOM and VIEWE...");
+            "Connecting ArrowLab...");
         lv_obj_add_state(wifiKeyboard, LV_STATE_DISABLED);
     }
 
