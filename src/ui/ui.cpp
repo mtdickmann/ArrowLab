@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "ArrowLabConfig.h"
+#include "Version.h"
 #include "network/NetworkService.h"
 
 namespace
@@ -45,6 +46,7 @@ namespace
     lv_obj_t *weighPage = nullptr;
     lv_obj_t *spinePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
+    lv_obj_t *aboutPage = nullptr;
     lv_obj_t *wifiPage = nullptr;
     lv_obj_t *wifiSavedPage = nullptr;
     lv_obj_t *wifiProfilePage = nullptr;
@@ -60,6 +62,10 @@ namespace
     lv_obj_t *faultLabel = nullptr;
     lv_obj_t *settingsCalibrationLabel = nullptr;
     lv_obj_t *settingsCalibrationButton = nullptr;
+    lv_obj_t *aboutReleaseLabel = nullptr;
+    lv_obj_t *aboutVieweLabel = nullptr;
+    lv_obj_t *aboutWroomLabel = nullptr;
+    lv_obj_t *aboutProtocolLabel = nullptr;
     lv_obj_t *vieweNetworkLabel = nullptr;
     lv_obj_t *wroomNetworkLabel = nullptr;
     lv_obj_t *headerWifiButton = nullptr;
@@ -619,6 +625,7 @@ namespace
         lv_obj_add_flag(weighPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(spinePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(aboutPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiSavedPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiProfilePage, LV_OBJ_FLAG_HIDDEN);
@@ -643,6 +650,8 @@ namespace
                     : "SPINE TEST";
             } else if (page == settingsPage) {
                 title = "SETTINGS";
+            } else if (page == aboutPage) {
+                title = "ABOUT & FIRMWARE";
             } else if (page == wifiPage) {
                 title = "WI-FI & NETWORK";
             } else if (page == wifiSavedPage) {
@@ -757,6 +766,20 @@ namespace
     }
 
     void settingsButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(settingsPage);
+        }
+    }
+
+    void aboutButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(aboutPage);
+        }
+    }
+
+    void aboutBackEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
@@ -2437,11 +2460,122 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_REQUIRED));
         lv_obj_align(settingsCalibrationLabel, LV_ALIGN_RIGHT_MID, -6, 0);
 
-        diagnosticsButton = createMenuButton(
+        createMenuButton(
             settingsPage,
-            "DIAGNOSTICS  [DEV]",
+            "ABOUT & FIRMWARE",
             174,
-            diagnosticsButtonEvent);
+            aboutButtonEvent);
+
+        aboutPage = lv_obj_create(screen);
+        lv_obj_set_size(aboutPage, 480, 228);
+        lv_obj_set_pos(aboutPage, 0, 44);
+        lv_obj_set_style_bg_opa(
+            aboutPage,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            aboutPage,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(aboutPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(aboutPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *aboutBack = lv_btn_create(aboutPage);
+        lv_obj_set_size(aboutBack, 112, 34);
+        lv_obj_set_pos(aboutBack, 14, 7);
+        lv_obj_add_event_cb(
+            aboutBack,
+            aboutBackEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *aboutBackLabel = createTextLabel(
+            aboutBack,
+            "< SETTINGS",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(aboutBackLabel);
+
+        char releaseText[48];
+        snprintf(
+            releaseText,
+            sizeof(releaseText),
+            "ARROWLAB RELEASE  v%u.%u.%u %s",
+            Version::MAJOR,
+            Version::MINOR,
+            Version::PATCH,
+            Version::STATUS);
+        aboutReleaseLabel = createTextLabel(
+            aboutPage,
+            releaseText,
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_ACCENT));
+        lv_obj_set_size(aboutReleaseLabel, 326, 24);
+        lv_obj_set_pos(aboutReleaseLabel, 138, 13);
+        lv_obj_set_style_text_align(
+            aboutReleaseLabel,
+            LV_TEXT_ALIGN_RIGHT,
+            LV_PART_MAIN);
+
+        lv_obj_t *vieweFirmwarePanel = lv_obj_create(aboutPage);
+        lv_obj_set_size(vieweFirmwarePanel, 214, 142);
+        lv_obj_set_pos(vieweFirmwarePanel, 20, 50);
+        stylePanel(vieweFirmwarePanel);
+        aboutVieweLabel = createTextLabel(
+            vieweFirmwarePanel,
+            "",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(aboutVieweLabel, 194, 124);
+        lv_obj_set_pos(aboutVieweLabel, 10, 8);
+
+        lv_obj_t *wroomFirmwarePanel = lv_obj_create(aboutPage);
+        lv_obj_set_size(wroomFirmwarePanel, 214, 142);
+        lv_obj_set_pos(wroomFirmwarePanel, 246, 50);
+        stylePanel(wroomFirmwarePanel);
+        aboutWroomLabel = createTextLabel(
+            wroomFirmwarePanel,
+            "WROOM FIRMWARE\nWaiting for measurement node",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(aboutWroomLabel, 194, 124);
+        lv_obj_set_pos(aboutWroomLabel, 10, 8);
+
+        char vieweFirmwareText[160];
+        snprintf(
+            vieweFirmwareText,
+            sizeof(vieweFirmwareText),
+            "VIEWE FIRMWARE\nv%u.%u.%u %s\nROLE: DISPLAY / HMI\n\nSD IMAGE\narrowlab-viewe-%u.%u.%u.bin",
+            Version::MAJOR,
+            Version::MINOR,
+            Version::PATCH,
+            Version::STATUS,
+            Version::MAJOR,
+            Version::MINOR,
+            Version::PATCH);
+        lv_label_set_text(aboutVieweLabel, vieweFirmwareText);
+
+        aboutProtocolLabel = createTextLabel(
+            aboutPage,
+            "LINK PROTOCOL: --",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(aboutProtocolLabel, 210, 24);
+        lv_obj_set_pos(aboutProtocolLabel, 20, 202);
+
+        diagnosticsButton = lv_btn_create(aboutPage);
+        lv_obj_set_size(diagnosticsButton, 154, 28);
+        lv_obj_set_pos(diagnosticsButton, 306, 196);
+        lv_obj_add_event_cb(
+            diagnosticsButton,
+            diagnosticsButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *aboutDiagnosticsLabel = createTextLabel(
+            diagnosticsButton,
+            "DIAGNOSTICS [DEV]",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(aboutDiagnosticsLabel);
         if (!developerMode) {
             lv_obj_add_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
         }
