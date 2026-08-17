@@ -42,6 +42,10 @@ namespace ArrowLabNetwork
     bool configured();
     bool connected();
     bool hasSavedCredentials();
+    bool savedPasswordForSsid(
+        const char *ssid,
+        char *password,
+        size_t passwordSize);
     Info info();
 
     bool testCredentials(const char *ssid, const char *password);
