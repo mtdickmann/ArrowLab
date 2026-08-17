@@ -340,6 +340,86 @@ namespace ArrowLabNetwork
         return loadProfilePassword(ssid, password, passwordSize);
     }
 
+    size_t savedProfileSsids(
+        char ssids[][33],
+        size_t maximumProfiles)
+    {
+        if (ssids == nullptr || maximumProfiles == 0) return 0;
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE, true)) return 0;
+
+        size_t written = 0;
+        const String primarySsid = preferences.getString(SSID_KEY, "");
+        if (!primarySsid.isEmpty()) {
+            copyText(ssids[written], sizeof(ssids[written]), primarySsid.c_str());
+            ++written;
+        }
+
+        for (
+            size_t index = 0;
+            index < MAX_SAVED_PROFILES && written < maximumProfiles;
+            ++index
+        ) {
+            char ssidKey[5];
+            profileKey(ssidKey, sizeof(ssidKey), index, 's');
+            const String savedSsid = preferences.getString(ssidKey, "");
+            if (savedSsid.isEmpty()) continue;
+
+            bool duplicate = false;
+            for (size_t existing = 0; existing < written; ++existing) {
+                if (savedSsid == ssids[existing]) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            copyText(
+                ssids[written],
+                sizeof(ssids[written]),
+                savedSsid.c_str());
+            ++written;
+        }
+        preferences.end();
+        return written;
+    }
+
+    bool forgetSavedProfile(const char *ssid)
+    {
+        if (ssid == nullptr || ssid[0] == '\0') return false;
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
+
+        bool removed = false;
+        if (preferences.getString(SSID_KEY, "") == ssid) {
+            preferences.remove(SSID_KEY);
+            preferences.remove(PASSWORD_KEY);
+            savedCredentialsAvailable = false;
+            removed = true;
+        }
+
+        for (size_t index = 0; index < MAX_SAVED_PROFILES; ++index) {
+            char ssidKey[5];
+            char passwordKey[5];
+            profileKey(ssidKey, sizeof(ssidKey), index, 's');
+            profileKey(passwordKey, sizeof(passwordKey), index, 'p');
+            if (preferences.getString(ssidKey, "") == ssid) {
+                preferences.remove(ssidKey);
+                preferences.remove(passwordKey);
+                removed = true;
+            }
+        }
+        preferences.end();
+
+        Serial.printf(
+            "AL_NET,WIFI,FORGET,%s,%s\n",
+            ssid,
+            removed ? "REMOVED" : "NOT_FOUND");
+        return removed;
+    }
+
     Info info()
     {
         Info result;
