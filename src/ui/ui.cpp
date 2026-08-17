@@ -56,6 +56,10 @@ namespace
     lv_obj_t *settingsCalibrationButton = nullptr;
     lv_obj_t *vieweNetworkLabel = nullptr;
     lv_obj_t *wroomNetworkLabel = nullptr;
+    lv_obj_t *headerWifiButton = nullptr;
+    lv_obj_t *headerWifiArcs[3] = {};
+    lv_obj_t *headerWifiDot = nullptr;
+    lv_obj_t *firmwareUpdateOverlay = nullptr;
     lv_obj_t *weighSourceLabel = nullptr;
     lv_obj_t *weighValueLabel = nullptr;
     lv_obj_t *weighUnitLabel = nullptr;
@@ -696,6 +700,46 @@ namespace
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
+        }
+    }
+
+    void updateHeaderWifiStrength(bool connected, int16_t rssiDbm)
+    {
+        uint8_t activeArcs = 0;
+        uint32_t activeColour = COLOUR_REQUIRED;
+
+        if (connected) {
+            activeArcs = rssiDbm >= -55
+                ? 3
+                : rssiDbm >= -67
+                    ? 2
+                    : rssiDbm >= -75
+                        ? 1
+                        : 0;
+            activeColour = activeArcs >= 2
+                ? COLOUR_OK
+                : COLOUR_REQUIRED;
+        }
+
+        for (uint8_t index = 0; index < 3; ++index) {
+            if (headerWifiArcs[index] == nullptr) continue;
+            lv_obj_set_style_arc_color(
+                headerWifiArcs[index],
+                lv_color_hex(
+                    connected && index < activeArcs
+                        ? activeColour
+                        : COLOUR_BORDER),
+                LV_PART_MAIN);
+        }
+
+        if (headerWifiDot != nullptr) {
+            lv_obj_set_style_bg_color(
+                headerWifiDot,
+                lv_color_hex(
+                    connected
+                        ? activeColour
+                        : 0xFF4D4D),
+                LV_PART_MAIN);
         }
     }
 
@@ -1503,12 +1547,86 @@ namespace ArrowLabUI
             "HOME",
             &lv_font_montserrat_16,
             lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_size(headerContextLabel, 244, 24);
+        lv_obj_set_size(headerContextLabel, 204, 24);
         lv_obj_set_pos(headerContextLabel, 174, 11);
         lv_obj_set_style_text_align(
             headerContextLabel,
             LV_TEXT_ALIGN_CENTER,
             LV_PART_MAIN);
+
+        headerWifiButton = lv_btn_create(header);
+        lv_obj_set_size(headerWifiButton, 38, 34);
+        lv_obj_align(headerWifiButton, LV_ALIGN_RIGHT_MID, -54, 0);
+        lv_obj_set_style_bg_opa(
+            headerWifiButton,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            headerWifiButton,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(
+            headerWifiButton,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(
+            headerWifiButton,
+            0,
+            LV_PART_MAIN);
+        lv_obj_add_event_cb(
+            headerWifiButton,
+            wifiButtonEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+
+        const int wifiArcSizes[3] = {12, 21, 30};
+        for (uint8_t index = 0; index < 3; ++index) {
+            headerWifiArcs[index] = lv_arc_create(headerWifiButton);
+            lv_obj_set_size(
+                headerWifiArcs[index],
+                wifiArcSizes[index],
+                wifiArcSizes[index]);
+            lv_obj_align(
+                headerWifiArcs[index],
+                LV_ALIGN_CENTER,
+                0,
+                8);
+            lv_arc_set_bg_angles(headerWifiArcs[index], 210, 330);
+            lv_obj_set_style_arc_width(
+                headerWifiArcs[index],
+                2,
+                LV_PART_MAIN);
+            lv_obj_set_style_arc_color(
+                headerWifiArcs[index],
+                lv_color_hex(COLOUR_BORDER),
+                LV_PART_MAIN);
+            lv_obj_set_style_arc_opa(
+                headerWifiArcs[index],
+                LV_OPA_TRANSP,
+                LV_PART_INDICATOR);
+            lv_obj_remove_style(
+                headerWifiArcs[index],
+                nullptr,
+                LV_PART_KNOB);
+            lv_obj_clear_flag(
+                headerWifiArcs[index],
+                LV_OBJ_FLAG_CLICKABLE);
+        }
+
+        headerWifiDot = lv_obj_create(headerWifiButton);
+        lv_obj_set_size(headerWifiDot, 5, 5);
+        lv_obj_align(headerWifiDot, LV_ALIGN_BOTTOM_MID, 0, -3);
+        lv_obj_set_style_radius(headerWifiDot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(
+            headerWifiDot,
+            lv_color_hex(0xFF4D4D),
+            LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(
+            headerWifiDot,
+            LV_OPA_COVER,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(headerWifiDot, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(headerWifiDot, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *helpButton = lv_btn_create(header);
         lv_obj_set_size(helpButton, 34, 30);
@@ -1843,7 +1961,7 @@ namespace ArrowLabUI
 
         lv_obj_t *wifiHint = createTextLabel(
             wifiPage,
-            "Live station details - MAC may be used for DHCP reservations",
+            "MAC addresses support DHCP reservations",
             &lv_font_montserrat_12,
             lv_color_hex(COLOUR_MUTED));
         lv_obj_set_pos(wifiHint, 130, 15);
@@ -2743,6 +2861,63 @@ namespace ArrowLabUI
         }
     }
 
+    void setFirmwareUpdateActive(bool active)
+    {
+        if (active) {
+            if (firmwareUpdateOverlay == nullptr) {
+                firmwareUpdateOverlay = lv_obj_create(lv_scr_act());
+                lv_obj_set_size(firmwareUpdateOverlay, 480, 272);
+                lv_obj_set_pos(firmwareUpdateOverlay, 0, 0);
+                lv_obj_set_style_bg_color(
+                    firmwareUpdateOverlay,
+                    lv_color_hex(COLOUR_BACKGROUND),
+                    LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(
+                    firmwareUpdateOverlay,
+                    LV_OPA_COVER,
+                    LV_PART_MAIN);
+                lv_obj_set_style_border_width(
+                    firmwareUpdateOverlay,
+                    0,
+                    LV_PART_MAIN);
+                lv_obj_set_style_radius(
+                    firmwareUpdateOverlay,
+                    0,
+                    LV_PART_MAIN);
+                lv_obj_clear_flag(
+                    firmwareUpdateOverlay,
+                    LV_OBJ_FLAG_SCROLLABLE);
+
+                lv_obj_t *title = createTextLabel(
+                    firmwareUpdateOverlay,
+                    "FIRMWARE UPDATE",
+                    &lv_font_montserrat_20,
+                    lv_color_hex(COLOUR_ACCENT));
+                lv_obj_align(title, LV_ALIGN_CENTER, 0, -28);
+
+                lv_obj_t *message = createTextLabel(
+                    firmwareUpdateOverlay,
+                    "Installing VIEWE firmware\nDo not remove power",
+                    &lv_font_montserrat_16,
+                    lv_color_hex(COLOUR_TEXT));
+                lv_obj_set_style_text_align(
+                    message,
+                    LV_TEXT_ALIGN_CENTER,
+                    LV_PART_MAIN);
+                lv_obj_align(message, LV_ALIGN_CENTER, 0, 18);
+            }
+
+            lv_obj_clear_flag(
+                firmwareUpdateOverlay,
+                LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(firmwareUpdateOverlay);
+        } else if (firmwareUpdateOverlay != nullptr) {
+            lv_obj_add_flag(
+                firmwareUpdateOverlay,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     void setNetworkStatus(
         bool vieweConnected,
         const char *vieweHostname,
@@ -2766,12 +2941,13 @@ namespace ArrowLabUI
         };
 
         char text[256];
+        updateHeaderWifiStrength(vieweConnected, vieweRssiDbm);
 
         if (vieweNetworkLabel != nullptr) {
             snprintf(
                 text,
                 sizeof(text),
-                "VIEWE  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm  %s\nMAC: %s",
+                "VIEWE  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm\nSIGNAL: %s\nMAC: %s",
                 vieweConnected ? "ONLINE" : "OFFLINE",
                 vieweHostname != nullptr ? vieweHostname : "--",
                 vieweConnected && vieweSsid != nullptr ? vieweSsid : "--",
@@ -2788,7 +2964,7 @@ namespace ArrowLabUI
             snprintf(
                 text,
                 sizeof(text),
-                "WROOM  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm  %s\nMAC: %s",
+                "WROOM  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm\nSIGNAL: %s\nMAC: %s",
                 wroomOnline
                     ? (wroomConnected ? "ONLINE" : "WI-FI OFF")
                     : "NODE OFFLINE",

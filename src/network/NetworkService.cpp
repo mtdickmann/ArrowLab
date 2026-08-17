@@ -20,6 +20,9 @@ namespace
     bool otaStarted = false;
     uint32_t lastConnectionLog = 0;
     const char *deviceHostname = "arrowlab";
+    ArrowLabNetwork::UpdateCallback updateStartCallback = nullptr;
+    ArrowLabNetwork::UpdateCallback updateFinishCallback = nullptr;
+    bool updating = false;
 
     void startOta()
     {
@@ -31,6 +34,10 @@ namespace
         }
 
         ArduinoOTA.onStart([]() {
+            updating = true;
+            if (updateStartCallback != nullptr) {
+                updateStartCallback();
+            }
             Serial.printf(
                 "AL_NET,OTA,START,%s\n",
                 ArduinoOTA.getCommand() == U_FLASH
@@ -50,6 +57,10 @@ namespace
             }
         });
         ArduinoOTA.onError([](ota_error_t error) {
+            updating = false;
+            if (updateFinishCallback != nullptr) {
+                updateFinishCallback();
+            }
             Serial.printf("AL_NET,OTA,ERROR,%u\n", error);
         });
         ArduinoOTA.begin();
@@ -158,5 +169,18 @@ namespace ArrowLabNetwork
         }
 #endif
         return result;
+    }
+
+    void setUpdateCallbacks(
+        UpdateCallback startCallback,
+        UpdateCallback finishCallback)
+    {
+        updateStartCallback = startCallback;
+        updateFinishCallback = finishCallback;
+    }
+
+    bool updateInProgress()
+    {
+        return updating;
     }
 }

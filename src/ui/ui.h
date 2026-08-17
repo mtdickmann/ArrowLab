@@ -63,6 +63,8 @@ namespace ArrowLabUI
         bool leftLive,
         bool rightLive);
 
+    void setFirmwareUpdateActive(bool active);
+
     void setNetworkStatus(
         bool vieweConnected,
         const char *vieweHostname,

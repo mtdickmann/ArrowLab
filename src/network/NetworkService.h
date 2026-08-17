@@ -4,6 +4,8 @@
 
 namespace ArrowLabNetwork
 {
+    using UpdateCallback = void (*)();
+
     struct Info
     {
         bool configured = false;
@@ -25,4 +27,9 @@ namespace ArrowLabNetwork
     bool configured();
     bool connected();
     Info info();
+
+    void setUpdateCallbacks(
+        UpdateCallback startCallback,
+        UpdateCallback finishCallback);
+    bool updateInProgress();
 }

@@ -64,6 +64,20 @@ namespace
             : ArrowLabProtocol::Side::Right;
     }
 
+    void handleOtaStart()
+    {
+        lvgl_port_lock(-1);
+        ArrowLabUI::setFirmwareUpdateActive(true);
+        lvgl_port_unlock();
+    }
+
+    void handleOtaFinish()
+    {
+        lvgl_port_lock(-1);
+        ArrowLabUI::setFirmwareUpdateActive(false);
+        lvgl_port_unlock();
+    }
+
     void requestTare(ArrowLabUI::LoadSide side)
     {
         measurementNode.requestTare(protocolSide(side));
@@ -953,6 +967,9 @@ void setup()
     lvgl_port_lock(-1);
 
     ArrowLabUI::create();
+    ArrowLabNetwork::setUpdateCallbacks(
+        handleOtaStart,
+        handleOtaFinish);
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
