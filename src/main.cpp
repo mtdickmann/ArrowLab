@@ -159,7 +159,7 @@ namespace
         snprintf(
             connectionMessage,
             sizeof(connectionMessage),
-            "Connecting to %s...",
+            "Connecting to:\n%s",
             pendingWifiSsid);
         ArrowLabUI::setWifiSetupResult(
             true,
@@ -232,7 +232,7 @@ namespace
                     ArrowLabUI::setWifiSetupResult(
                         true,
                         false,
-                        "Completing ArrowLab connection...");
+                        "Completing ArrowLab\nconnection...");
                     lvgl_port_unlock();
                 }
             } else if (
