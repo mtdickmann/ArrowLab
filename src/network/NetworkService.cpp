@@ -23,6 +23,7 @@ namespace
     constexpr char SSID_KEY[] = "ssid";
     constexpr char PASSWORD_KEY[] = "password";
     constexpr char PROFILE_NEXT_KEY[] = "pnext";
+    constexpr char FALLBACK_SUPPRESSED_KEY[] = "noFallback";
     constexpr size_t MAX_SAVED_PROFILES = 8;
 
     bool started = false;
@@ -30,6 +31,7 @@ namespace
     bool updating = false;
     bool savedCredentialsAvailable = false;
     bool activeProfileForgotten = false;
+    bool fallbackSuppressed = false;
     uint32_t lastConnectionLog = 0;
     uint32_t credentialDeadline = 0;
     const char *deviceHostname = "arrowlab";
