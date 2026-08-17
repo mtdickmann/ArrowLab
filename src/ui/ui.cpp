@@ -924,9 +924,8 @@ namespace
             message,
             sizeof(message),
             active
-                ? "Forget %s?\nArrowLab stays connected now, but this "
-                  "network will not be available after restart unless it "
-                  "is the compiled bootstrap network."
+                ? "Forget %s?\nArrowLab stays connected for now, but this "
+                  "network will not be available after restart."
                 : "Forget %s on both VIEWE and WROOM?",
             wifiSavedSsids[wifiForgetIndex]);
 
