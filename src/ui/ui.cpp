@@ -4232,6 +4232,78 @@ namespace ArrowLabUI
         }
     }
 
+    void setFirmwareVersions(
+        bool wroomOnline,
+        uint8_t wroomMajor,
+        uint8_t wroomMinor,
+        uint8_t wroomPatch,
+        const char *wroomStatus,
+        uint8_t protocolVersion)
+    {
+        const bool versionsMatch =
+            wroomOnline
+            && wroomMajor == Version::MAJOR
+            && wroomMinor == Version::MINOR
+            && wroomPatch == Version::PATCH
+            && wroomStatus != nullptr
+            && strcmp(wroomStatus, Version::STATUS) == 0;
+
+        if (aboutWroomLabel != nullptr) {
+            char text[192];
+            if (wroomOnline) {
+                snprintf(
+                    text,
+                    sizeof(text),
+                    "WROOM FIRMWARE\nv%u.%u.%u %s\nROLE: MEASUREMENT NODE\n%s\nSD IMAGE\narrowlab-wroom-%u.%u.%u.bin",
+                    wroomMajor,
+                    wroomMinor,
+                    wroomPatch,
+                    wroomStatus != nullptr ? wroomStatus : "",
+                    versionsMatch ? "" : "UPDATE REQUIRED",
+                    wroomMajor,
+                    wroomMinor,
+                    wroomPatch);
+            } else {
+                snprintf(
+                    text,
+                    sizeof(text),
+                    "WROOM FIRMWARE\nUNAVAILABLE\n\nMeasurement node is offline");
+            }
+            lv_label_set_text(aboutWroomLabel, text);
+            lv_obj_set_style_text_color(
+                aboutWroomLabel,
+                lv_color_hex(
+                    !wroomOnline
+                        ? COLOUR_MUTED
+                        : versionsMatch
+                            ? COLOUR_TEXT
+                            : 0xFF4D4D),
+                LV_PART_MAIN);
+        }
+
+        if (aboutProtocolLabel != nullptr) {
+            char text[96];
+            snprintf(
+                text,
+                sizeof(text),
+                "LINK PROTOCOL: v%u%s",
+                protocolVersion,
+                wroomOnline
+                    ? versionsMatch
+                        ? "  |  COMPONENTS MATCH"
+                        : "  |  VERSION MISMATCH"
+                    : "  |  WROOM OFFLINE");
+            lv_label_set_text(aboutProtocolLabel, text);
+            lv_obj_set_style_text_color(
+                aboutProtocolLabel,
+                lv_color_hex(
+                    wroomOnline && versionsMatch
+                        ? COLOUR_OK
+                        : COLOUR_REQUIRED),
+                LV_PART_MAIN);
+        }
+    }
+
     void setNetworkStatus(
         bool vieweConnected,
         const char *vieweHostname,
