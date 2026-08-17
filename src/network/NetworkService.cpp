@@ -18,7 +18,8 @@
 namespace
 {
     constexpr uint32_t CONNECTION_LOG_INTERVAL_MS = 10000;
-    constexpr uint32_t CREDENTIAL_TEST_TIMEOUT_MS = 20000;
+    constexpr uint32_t CREDENTIAL_TEST_TIMEOUT_MS = 30000;
+    constexpr uint32_t CREDENTIAL_STABLE_MS = 1200;
     constexpr char PREFERENCES_NAMESPACE[] = "arrowlab-net";
     constexpr char SSID_KEY[] = "ssid";
     constexpr char PASSWORD_KEY[] = "password";
@@ -34,6 +35,7 @@ namespace
     bool fallbackSuppressed = false;
     uint32_t lastConnectionLog = 0;
     uint32_t credentialDeadline = 0;
+    uint32_t credentialConnectedSince = 0;
     const char *deviceHostname = "arrowlab";
     ArrowLabNetwork::UpdateCallback updateStartCallback = nullptr;
     ArrowLabNetwork::UpdateCallback updateFinishCallback = nullptr;
