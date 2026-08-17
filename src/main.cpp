@@ -930,6 +930,16 @@ namespace
             wroomNetwork.rssiDbm,
             wroomNetwork.mac);
 
+        const ArrowLabProtocol::StatusPacket &nodeStatus =
+            measurementNode.status();
+        ArrowLabUI::setFirmwareVersions(
+            nodeConnected,
+            nodeStatus.firmwareMajor,
+            nodeStatus.firmwareMinor,
+            nodeStatus.firmwarePatch,
+            nodeStatus.firmwareStatus,
+            ArrowLabProtocol::VERSION);
+
         ArrowLabUI::setWifiSavedCredentials(
             vieweNetwork.savedCredentials);
         ArrowLabUI::setCalibrationValidity(
