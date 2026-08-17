@@ -116,6 +116,17 @@ namespace
         ArrowLabUI::setWifiScanBusy();
     }
 
+    bool lookupWifiPassword(
+        const char *ssid,
+        char *password,
+        size_t passwordSize)
+    {
+        return ArrowLabNetwork::savedPasswordForSsid(
+            ssid,
+            password,
+            passwordSize);
+    }
+
     void requestWifiConnect(const char *ssid, const char *password)
     {
         snprintf(
@@ -152,12 +163,15 @@ namespace
         if (wifiScanPending) {
             const int scanState = ArrowLabNetwork::scanComplete();
             if (scanState >= 0) {
-                ArrowLabNetwork::ScanResult results[4];
+                constexpr size_t MAX_SCAN_RESULTS = 12;
+                ArrowLabNetwork::ScanResult results[MAX_SCAN_RESULTS];
                 const size_t count =
-                    ArrowLabNetwork::takeScanResults(results, 4);
-                char ssids[4][33] = {};
-                int16_t rssi[4] = {};
-                bool secured[4] = {};
+                    ArrowLabNetwork::takeScanResults(
+                        results,
+                        MAX_SCAN_RESULTS);
+                char ssids[MAX_SCAN_RESULTS][33] = {};
+                int16_t rssi[MAX_SCAN_RESULTS] = {};
+                bool secured[MAX_SCAN_RESULTS] = {};
                 for (size_t index = 0; index < count; ++index) {
                     snprintf(
                         ssids[index],
@@ -1159,7 +1173,8 @@ void setup()
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setWifiCallbacks(
         requestWifiScan,
-        requestWifiConnect);
+        requestWifiConnect,
+        lookupWifiPassword);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
