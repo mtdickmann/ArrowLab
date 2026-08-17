@@ -86,6 +86,13 @@ namespace ArrowLabUI
 
     void setFirmwareUpdateActive(bool active);
     void setFirmwareUpdateFailed();
+    void setFirmwareVersions(
+        bool wroomOnline,
+        uint8_t wroomMajor,
+        uint8_t wroomMinor,
+        uint8_t wroomPatch,
+        const char *wroomStatus,
+        uint8_t protocolVersion);
 
     void setNetworkStatus(
         bool vieweConnected,
