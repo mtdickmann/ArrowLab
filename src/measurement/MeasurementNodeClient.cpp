@@ -186,6 +186,16 @@ bool MeasurementNodeClient::revertWifiCredentials()
         0);
 }
 
+bool MeasurementNodeClient::forgetWifiProfile(const char *ssid)
+{
+    return send(
+        ArrowLabProtocol::CommandType::ForgetWifiProfile,
+        ArrowLabProtocol::Side::Left,
+        0,
+        ssid,
+        nullptr);
+}
+
 bool MeasurementNodeClient::connected(uint32_t currentTime) const
 {
     return hasPacket_
