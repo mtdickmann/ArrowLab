@@ -4121,8 +4121,16 @@ namespace ArrowLabUI
         };
 
         char text[256];
+        const bool sameNetwork =
+            vieweSsid != nullptr
+            && wroomSsid != nullptr
+            && vieweSsid[0] != '\0'
+            && strcmp(vieweSsid, wroomSsid) == 0;
         const bool arrowLabConnected =
-            vieweConnected && wroomOnline && wroomConnected;
+            vieweConnected
+            && wroomOnline
+            && wroomConnected
+            && sameNetwork;
         const int16_t arrowLabRssi =
             vieweRssiDbm < wroomRssiDbm
                 ? vieweRssiDbm
