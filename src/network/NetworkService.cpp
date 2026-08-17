@@ -22,6 +22,8 @@ namespace
     constexpr char PREFERENCES_NAMESPACE[] = "arrowlab-net";
     constexpr char SSID_KEY[] = "ssid";
     constexpr char PASSWORD_KEY[] = "password";
+    constexpr char PROFILE_NEXT_KEY[] = "pnext";
+    constexpr size_t MAX_SAVED_PROFILES = 8;
 
     bool started = false;
     bool otaStarted = false;
@@ -68,15 +70,105 @@ namespace
         return true;
     }
 
+    void profileKey(char *key, size_t keySize, size_t index, char suffix)
+    {
+        snprintf(key, keySize, "p%u%c", static_cast<unsigned>(index), suffix);
+    }
+
     bool savePendingCredentials()
     {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
-        const size_t ssidWritten =
-            preferences.putString(SSID_KEY, pendingSsid);
+
+        const size_t ssidWritten = preferences.putString(SSID_KEY, pendingSsid);
         preferences.putString(PASSWORD_KEY, pendingPassword);
+
+        size_t profileIndex = MAX_SAVED_PROFILES;
+        size_t emptyIndex = MAX_SAVED_PROFILES;
+        for (size_t index = 0; index < MAX_SAVED_PROFILES; ++index) {
+            char ssidKey[5];
+            profileKey(ssidKey, sizeof(ssidKey), index, 's');
+            const String savedSsid = preferences.getString(ssidKey, "");
+            if (savedSsid == pendingSsid) {
+                profileIndex = index;
+                break;
+            }
+            if (savedSsid.isEmpty() && emptyIndex == MAX_SAVED_PROFILES) {
+                emptyIndex = index;
+            }
+        }
+
+        if (profileIndex == MAX_SAVED_PROFILES) {
+            profileIndex = emptyIndex < MAX_SAVED_PROFILES
+                ? emptyIndex
+                : preferences.getUChar(PROFILE_NEXT_KEY, 0)
+                    % MAX_SAVED_PROFILES;
+        }
+
+        char profileSsidKey[5];
+        char profilePasswordKey[5];
+        profileKey(profileSsidKey, sizeof(profileSsidKey), profileIndex, 's');
+        profileKey(
+            profilePasswordKey,
+            sizeof(profilePasswordKey),
+            profileIndex,
+            'p');
+        const size_t profileWritten =
+            preferences.putString(profileSsidKey, pendingSsid);
+        preferences.putString(profilePasswordKey, pendingPassword);
+        preferences.putUChar(
+            PROFILE_NEXT_KEY,
+            static_cast<uint8_t>(
+                (profileIndex + 1) % MAX_SAVED_PROFILES));
         preferences.end();
-        return ssidWritten > 0;
+        return ssidWritten > 0 && profileWritten > 0;
+    }
+
+    bool loadProfilePassword(
+        const char *ssid,
+        char *password,
+        size_t passwordSize)
+    {
+        if (
+            ssid == nullptr
+            || ssid[0] == '\0'
+            || password == nullptr
+            || passwordSize == 0
+        ) {
+            return false;
+        }
+
+        if (strcmp(ssid, activeSsid) == 0) {
+            copyText(password, passwordSize, activePassword);
+            return true;
+        }
+
+        Preferences preferences;
+        if (preferences.begin(PREFERENCES_NAMESPACE, true)) {
+            for (size_t index = 0; index < MAX_SAVED_PROFILES; ++index) {
+                char ssidKey[5];
+                char passwordKey[5];
+                profileKey(ssidKey, sizeof(ssidKey), index, 's');
+                profileKey(passwordKey, sizeof(passwordKey), index, 'p');
+                const String savedSsid = preferences.getString(ssidKey, "");
+                if (savedSsid == ssid) {
+                    const String savedPassword =
+                        preferences.getString(passwordKey, "");
+                    preferences.end();
+                    copyText(password, passwordSize, savedPassword.c_str());
+                    return true;
+                }
+            }
+            preferences.end();
+        }
+
+#if ARROWLAB_HAS_NETWORK_SECRETS
+        if (strcmp(ssid, ARROWLAB_WIFI_SSID) == 0) {
+            copyText(password, passwordSize, ARROWLAB_WIFI_PASSWORD);
+            return true;
+        }
+#endif
+        return false;
     }
 
     void startOta()
@@ -225,6 +317,14 @@ namespace ArrowLabNetwork
     bool hasSavedCredentials()
     {
         return savedCredentialsAvailable;
+    }
+
+    bool savedPasswordForSsid(
+        const char *ssid,
+        char *password,
+        size_t passwordSize)
+    {
+        return loadProfilePassword(ssid, password, passwordSize);
     }
 
     Info info()
