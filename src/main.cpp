@@ -175,7 +175,7 @@ namespace
                     count);
                 lvgl_port_unlock();
                 wifiScanPending = false;
-            } else if (scanState == WIFI_SCAN_FAILED) {
+            } else if (scanState == -2) {
                 lvgl_port_lock(-1);
                 ArrowLabUI::setWifiScanResults(
                     nullptr,
