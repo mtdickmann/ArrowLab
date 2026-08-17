@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include "ArrowLabConfig.h"
+#include "network/NetworkService.h"
 
 namespace
 {
@@ -65,9 +66,11 @@ namespace
     lv_obj_t *firmwareUpdateMessage = nullptr;
     lv_obj_t *firmwareUpdateDismissButton = nullptr;
     lv_obj_t *wifiConfigureButtonLabel = nullptr;
+    constexpr size_t MAX_WIFI_SCAN_RESULTS = 12;
     lv_obj_t *wifiScanStatusLabel = nullptr;
-    lv_obj_t *wifiNetworkButtons[4] = {};
-    lv_obj_t *wifiNetworkButtonLabels[4] = {};
+    lv_obj_t *wifiNetworkList = nullptr;
+    lv_obj_t *wifiNetworkButtons[MAX_WIFI_SCAN_RESULTS] = {};
+    lv_obj_t *wifiNetworkButtonLabels[MAX_WIFI_SCAN_RESULTS] = {};
     lv_obj_t *wifiPasswordSsidLabel = nullptr;
     lv_obj_t *wifiPasswordStatusLabel = nullptr;
     lv_obj_t *wifiPasswordTextArea = nullptr;
@@ -75,7 +78,7 @@ namespace
     lv_obj_t *wifiPasswordRevealIcon = nullptr;
     lv_obj_t *wifiKeyboard = nullptr;
     bool wifiPasswordRevealed = false;
-    char wifiScannedSsids[4][33] = {};
+    char wifiScannedSsids[MAX_WIFI_SCAN_RESULTS][33] = {};
     size_t wifiScannedCount = 0;
     size_t wifiSelectedIndex = 0;
     lv_obj_t *weighSourceLabel = nullptr;
@@ -108,6 +111,7 @@ namespace
     lv_obj_t *diagnosticHostLabel = nullptr;
     lv_obj_t *massInputBox = nullptr;
     lv_obj_t *massInputTextArea = nullptr;
+    lv_obj_t *massInputKeyboard = nullptr;
     lv_obj_t *diagnosticConfirmBox = nullptr;
     bool developerMode =
         ArrowLabConfig::DEVELOPER_MODE_DEFAULT_ENABLED;
@@ -786,6 +790,12 @@ namespace
     void wifiStartScan()
     {
         showPage(wifiNetworksPage);
+        if (wifiNetworkList != nullptr) {
+            lv_obj_scroll_to_y(
+                wifiNetworkList,
+                0,
+                LV_ANIM_OFF);
+        }
         if (wifiScanStatusLabel != nullptr) {
             lv_label_set_text(wifiScanStatusLabel, "SCANNING...");
         }
@@ -857,13 +867,23 @@ namespace
                 wifiScannedSsids[wifiSelectedIndex]);
             lv_label_set_text(wifiPasswordSsidLabel, text);
         }
+        char rememberedPassword[65] = {};
+        const bool remembered =
+            ArrowLabNetwork::savedPasswordForSsid(
+                wifiScannedSsids[wifiSelectedIndex],
+                rememberedPassword,
+                sizeof(rememberedPassword));
         if (wifiPasswordStatusLabel != nullptr) {
             lv_label_set_text(
                 wifiPasswordStatusLabel,
-                "Enter password, then tap the keyboard checkmark");
+                remembered
+                    ? "Saved password loaded - tap checkmark to connect"
+                    : "Enter password, then tap the keyboard checkmark");
         }
         if (wifiPasswordTextArea != nullptr) {
-            lv_textarea_set_text(wifiPasswordTextArea, "");
+            lv_textarea_set_text(
+                wifiPasswordTextArea,
+                remembered ? rememberedPassword : "");
             wifiPasswordRevealed = false;
             lv_textarea_set_password_mode(wifiPasswordTextArea, true);
         }
@@ -879,11 +899,22 @@ namespace
         showPage(wifiPasswordPage);
     }
 
+    void wifiPasswordFieldEvent(lv_event_t *event)
+    {
+        const lv_event_code_t code = lv_event_get_code(event);
+        if (
+            (code == LV_EVENT_CLICKED || code == LV_EVENT_FOCUSED)
+            && wifiKeyboard != nullptr
+        ) {
+            lv_obj_clear_flag(wifiKeyboard, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     void wifiKeyboardEvent(lv_event_t *event)
     {
         const lv_event_code_t code = lv_event_get_code(event);
         if (code == LV_EVENT_CANCEL) {
-            showPage(wifiNetworksPage);
+            lv_obj_add_flag(wifiKeyboard, LV_OBJ_FLAG_HIDDEN);
             return;
         }
         if (
@@ -1199,6 +1230,18 @@ namespace
             lv_obj_del_async(massInputBox);
             massInputBox = nullptr;
             massInputTextArea = nullptr;
+            massInputKeyboard = nullptr;
+        }
+    }
+
+    void massInputFieldEvent(lv_event_t *event)
+    {
+        const lv_event_code_t code = lv_event_get_code(event);
+        if (
+            (code == LV_EVENT_CLICKED || code == LV_EVENT_FOCUSED)
+            && massInputKeyboard != nullptr
+        ) {
+            lv_obj_clear_flag(massInputKeyboard, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -1208,7 +1251,11 @@ namespace
             lv_event_get_code(event);
 
         if (code == LV_EVENT_CANCEL) {
-            closeMassInput();
+            if (massInputKeyboard != nullptr) {
+                lv_obj_add_flag(
+                    massInputKeyboard,
+                    LV_OBJ_FLAG_HIDDEN);
+            }
             return;
         }
 
@@ -1302,6 +1349,11 @@ namespace
         lv_textarea_set_one_line(massInputTextArea, true);
         lv_textarea_set_accepted_chars(massInputTextArea, "0123456789.");
         lv_textarea_set_max_length(massInputTextArea, 8);
+        lv_obj_add_event_cb(
+            massInputTextArea,
+            massInputFieldEvent,
+            LV_EVENT_ALL,
+            nullptr);
 
         if (
             (purpose == MassInputPurpose::Calibration
@@ -1320,13 +1372,17 @@ namespace
             lv_textarea_set_text(massInputTextArea, currentMass);
         }
 
-        lv_obj_t *keyboard = lv_keyboard_create(massInputBox);
-        lv_obj_set_size(keyboard, 430, 160);
-        lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
-        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_NUMBER);
-        lv_keyboard_set_textarea(keyboard, massInputTextArea);
+        massInputKeyboard = lv_keyboard_create(massInputBox);
+        lv_obj_set_size(massInputKeyboard, 430, 160);
+        lv_obj_align(massInputKeyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_keyboard_set_mode(
+            massInputKeyboard,
+            LV_KEYBOARD_MODE_NUMBER);
+        lv_keyboard_set_textarea(
+            massInputKeyboard,
+            massInputTextArea);
         lv_obj_add_event_cb(
-            keyboard,
+            massInputKeyboard,
             massKeyboardEvent,
             LV_EVENT_ALL,
             nullptr);
@@ -2177,10 +2233,32 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_MUTED));
         lv_obj_set_pos(wifiScanStatusLabel, 130, 15);
 
-        for (uint8_t index = 0; index < 4; ++index) {
-            wifiNetworkButtons[index] = lv_btn_create(wifiNetworksPage);
-            lv_obj_set_size(wifiNetworkButtons[index], 440, 38);
-            lv_obj_set_pos(wifiNetworkButtons[index], 20, 52 + index * 43);
+        wifiNetworkList = lv_obj_create(wifiNetworksPage);
+        lv_obj_set_size(wifiNetworkList, 456, 176);
+        lv_obj_set_pos(wifiNetworkList, 12, 49);
+        lv_obj_set_style_bg_opa(
+            wifiNetworkList,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            wifiNetworkList,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiNetworkList, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(wifiNetworkList, 5, LV_PART_MAIN);
+        lv_obj_set_scroll_dir(wifiNetworkList, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(
+            wifiNetworkList,
+            LV_SCROLLBAR_MODE_AUTO);
+
+        for (
+            size_t index = 0;
+            index < MAX_WIFI_SCAN_RESULTS;
+            ++index
+        ) {
+            wifiNetworkButtons[index] = lv_btn_create(wifiNetworkList);
+            lv_obj_set_size(wifiNetworkButtons[index], 432, 38);
+            lv_obj_set_pos(wifiNetworkButtons[index], 4, index * 43);
             lv_obj_add_event_cb(
                 wifiNetworkButtons[index],
                 wifiNetworkSelectEvent,
@@ -2236,6 +2314,11 @@ namespace ArrowLabUI
         lv_textarea_set_one_line(wifiPasswordTextArea, true);
         lv_textarea_set_password_mode(wifiPasswordTextArea, true);
         lv_textarea_set_placeholder_text(wifiPasswordTextArea, "Wi-Fi password");
+        lv_obj_add_event_cb(
+            wifiPasswordTextArea,
+            wifiPasswordFieldEvent,
+            LV_EVENT_ALL,
+            nullptr);
 
         wifiPasswordRevealButton = lv_btn_create(wifiPasswordPage);
         lv_obj_set_size(wifiPasswordRevealButton, 38, 34);
@@ -2717,8 +2800,15 @@ namespace ArrowLabUI
         const bool *secured,
         size_t count)
     {
-        wifiScannedCount = count > 4 ? 4 : count;
-        for (size_t index = 0; index < 4; ++index) {
+        wifiScannedCount =
+            count > MAX_WIFI_SCAN_RESULTS
+                ? MAX_WIFI_SCAN_RESULTS
+                : count;
+        for (
+            size_t index = 0;
+            index < MAX_WIFI_SCAN_RESULTS;
+            ++index
+        ) {
             if (index >= wifiScannedCount) {
                 lv_obj_add_flag(
                     wifiNetworkButtons[index],
