@@ -116,6 +116,20 @@ namespace
         ArrowLabUI::setWifiScanBusy();
     }
 
+    bool requestWifiForget(const char *ssid)
+    {
+        if (
+            ssid == nullptr
+            || ssid[0] == '\0'
+            || !measurementNode.connected(millis())
+        ) {
+            return false;
+        }
+
+        if (!measurementNode.forgetWifiProfile(ssid)) return false;
+        return ArrowLabNetwork::forgetSavedProfile(ssid);
+    }
+
     void requestWifiConnect(const char *ssid, const char *password)
     {
         snprintf(
@@ -1162,7 +1176,8 @@ void setup()
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setWifiCallbacks(
         requestWifiScan,
-        requestWifiConnect);
+        requestWifiConnect,
+        requestWifiForget);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
