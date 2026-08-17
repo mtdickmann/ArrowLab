@@ -23,6 +23,10 @@ namespace ArrowLabUI
     using SpineStartCallback = void (*)(uint8_t positionCount, float markedSpine);
     using SpineControlCallback = void (*)();
     using SpineMarkedCallback = void (*)(float markedSpine);
+    using WifiScanCallback = void (*)();
+    using WifiConnectCallback = void (*)(
+        const char *ssid,
+        const char *password);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -45,6 +49,21 @@ namespace ArrowLabUI
         SpineControlCallback restartCallback,
         SpineMarkedCallback markedCallback);
     void setCalibrationReferenceGrams(float grams);
+    void setWifiCallbacks(
+        WifiScanCallback scanCallback,
+        WifiConnectCallback connectCallback);
+    void setWifiScanResults(
+        const char ssids[][33],
+        const int16_t *rssiDbm,
+        const bool *secured,
+        size_t count);
+    void setWifiScanBusy();
+    void setWifiSetupResult(
+        bool busy,
+        bool success,
+        const char *message);
+    void setWifiSavedCredentials(bool saved);
+
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,

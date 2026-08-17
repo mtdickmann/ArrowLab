@@ -57,6 +57,18 @@ namespace
     char serialLine[128];
     size_t serialLineLength = 0;
 
+    enum class WifiSetupStage
+    {
+        Idle,
+        TestingWroom,
+        TestingViewe
+    };
+    WifiSetupStage wifiSetupStage = WifiSetupStage::Idle;
+    char pendingWifiSsid[33] = {};
+    char pendingWifiPassword[65] = {};
+    uint32_t wifiSetupDeadline = 0;
+    bool wifiScanPending = false;
+
     ArrowLabProtocol::Side protocolSide(ArrowLabUI::LoadSide side)
     {
         return side == ArrowLabUI::LoadSide::Left
@@ -96,6 +108,158 @@ namespace
         lvgl_port_lock(-1);
         ArrowLabUI::setFirmwareUpdateFailed();
         lvgl_port_unlock();
+    }
+
+    void requestWifiScan()
+    {
+        wifiScanPending = ArrowLabNetwork::startScan();
+        ArrowLabUI::setWifiScanBusy();
+    }
+
+    void requestWifiConnect(const char *ssid, const char *password)
+    {
+        snprintf(
+            pendingWifiSsid,
+            sizeof(pendingWifiSsid),
+            "%s",
+            ssid != nullptr ? ssid : "");
+        snprintf(
+            pendingWifiPassword,
+            sizeof(pendingWifiPassword),
+            "%s",
+            password != nullptr ? password : "");
+
+        if (!measurementNode.testWifiCredentials(
+                pendingWifiSsid,
+                pendingWifiPassword)) {
+            ArrowLabUI::setWifiSetupResult(
+                false,
+                false,
+                "Unable to contact WROOM - try again");
+            return;
+        }
+
+        wifiSetupStage = WifiSetupStage::TestingWroom;
+        wifiSetupDeadline = millis() + 25000;
+        ArrowLabUI::setWifiSetupResult(
+            true,
+            false,
+            "Testing WROOM connection...");
+    }
+
+    void processWifiSetup(uint32_t now)
+    {
+        if (wifiScanPending) {
+            const int scanState = ArrowLabNetwork::scanComplete();
+            if (scanState >= 0) {
+                ArrowLabNetwork::ScanResult results[4];
+                const size_t count =
+                    ArrowLabNetwork::takeScanResults(results, 4);
+                char ssids[4][33] = {};
+                int16_t rssi[4] = {};
+                bool secured[4] = {};
+                for (size_t index = 0; index < count; ++index) {
+                    snprintf(
+                        ssids[index],
+                        sizeof(ssids[index]),
+                        "%s",
+                        results[index].ssid);
+                    rssi[index] = results[index].rssiDbm;
+                    secured[index] = results[index].secured;
+                }
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiScanResults(
+                    ssids,
+                    rssi,
+                    secured,
+                    count);
+                lvgl_port_unlock();
+                wifiScanPending = false;
+            } else if (scanState == WIFI_SCAN_FAILED) {
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiScanResults(
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    0);
+                lvgl_port_unlock();
+                wifiScanPending = false;
+            }
+        }
+
+        if (wifiSetupStage == WifiSetupStage::Idle) return;
+
+        const auto &remote = measurementNode.status().network;
+        const bool remoteSucceeded =
+            remote.flags
+                & ArrowLabProtocol::NetworkCredentialTestSucceeded;
+        const bool remoteFailed =
+            remote.flags
+                & ArrowLabProtocol::NetworkCredentialTestFailed;
+        const ArrowLabNetwork::Info local = ArrowLabNetwork::info();
+
+        if (wifiSetupStage == WifiSetupStage::TestingWroom) {
+            if (remoteSucceeded) {
+                if (ArrowLabNetwork::testCredentials(
+                        pendingWifiSsid,
+                        pendingWifiPassword)) {
+                    wifiSetupStage = WifiSetupStage::TestingViewe;
+                    wifiSetupDeadline = now + 25000;
+                    lvgl_port_lock(-1);
+                    ArrowLabUI::setWifiSetupResult(
+                        true,
+                        false,
+                        "WROOM connected - testing VIEWE...");
+                    lvgl_port_unlock();
+                }
+            } else if (
+                remoteFailed
+                || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+            ) {
+                measurementNode.revertWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    false,
+                    "Connection failed - check password and retry");
+                lvgl_port_unlock();
+            }
+            return;
+        }
+
+        if (
+            local.credentialTest
+                == ArrowLabNetwork::CredentialTestState::Succeeded
+        ) {
+            const bool localSaved =
+                ArrowLabNetwork::commitTestedCredentials();
+            const bool remoteSaved =
+                measurementNode.commitWifiCredentials();
+            wifiSetupStage = WifiSetupStage::Idle;
+            lvgl_port_lock(-1);
+            ArrowLabUI::setWifiSetupResult(
+                false,
+                localSaved && remoteSaved,
+                localSaved && remoteSaved
+                    ? "Wi-Fi saved on both processors"
+                    : "Connected, but saving failed - retry");
+            lvgl_port_unlock();
+        } else if (
+            local.credentialTest
+                    == ArrowLabNetwork::CredentialTestState::Failed
+            || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+        ) {
+            ArrowLabNetwork::revertCredentialTest();
+            measurementNode.revertWifiCredentials();
+            wifiSetupStage = WifiSetupStage::Idle;
+            lvgl_port_lock(-1);
+            ArrowLabUI::setWifiSetupResult(
+                false,
+                false,
+                "Connection failed - check password and retry");
+            lvgl_port_unlock();
+        }
     }
 
     void requestTare(ArrowLabUI::LoadSide side)
@@ -700,6 +864,8 @@ namespace
             wroomNetwork.rssiDbm,
             wroomNetwork.mac);
 
+        ArrowLabUI::setWifiSavedCredentials(
+            vieweNetwork.savedCredentials);
         ArrowLabUI::setCalibrationValidity(
             leftCalibrated,
             rightCalibrated
@@ -991,6 +1157,9 @@ void setup()
         handleOtaStart,
         handleOtaFinish);
     ArrowLabUI::setTareCallback(requestTare);
+    ArrowLabUI::setWifiCallbacks(
+        requestWifiScan,
+        requestWifiConnect);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
@@ -1032,6 +1201,7 @@ void loop()
 {
     const uint32_t now = millis();
     ArrowLabNetwork::handle();
+    processWifiSetup(now);
 
     // Serial commands must be serviced even between HX711 UI refreshes so
     // heartbeat/ACK traffic cannot be starved by the 100 ms sensor cadence.

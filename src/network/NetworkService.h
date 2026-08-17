@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 
 namespace ArrowLabNetwork
 {
@@ -12,6 +13,13 @@ namespace ArrowLabNetwork
         Testing = 1,
         Succeeded = 2,
         Failed = 3
+    };
+
+    struct ScanResult
+    {
+        char ssid[33] = {};
+        int16_t rssiDbm = -127;
+        bool secured = false;
     };
 
     struct Info
@@ -40,6 +48,10 @@ namespace ArrowLabNetwork
     bool commitTestedCredentials();
     void revertCredentialTest();
     void forgetSavedCredentials();
+
+    bool startScan();
+    int scanComplete();
+    size_t takeScanResults(ScanResult *results, size_t maximumResults);
 
     void setUpdateCallbacks(
         UpdateCallback startCallback,

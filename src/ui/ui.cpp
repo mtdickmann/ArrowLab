@@ -44,6 +44,8 @@ namespace
     lv_obj_t *spinePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *wifiPage = nullptr;
+    lv_obj_t *wifiNetworksPage = nullptr;
+    lv_obj_t *wifiPasswordPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *diagnosticsMenuPage = nullptr;
     lv_obj_t *diagnosticSidePage = nullptr;
@@ -62,6 +64,17 @@ namespace
     lv_obj_t *firmwareUpdateOverlay = nullptr;
     lv_obj_t *firmwareUpdateMessage = nullptr;
     lv_obj_t *firmwareUpdateDismissButton = nullptr;
+    lv_obj_t *wifiConfigureButtonLabel = nullptr;
+    lv_obj_t *wifiScanStatusLabel = nullptr;
+    lv_obj_t *wifiNetworkButtons[4] = {};
+    lv_obj_t *wifiNetworkButtonLabels[4] = {};
+    lv_obj_t *wifiPasswordSsidLabel = nullptr;
+    lv_obj_t *wifiPasswordStatusLabel = nullptr;
+    lv_obj_t *wifiPasswordTextArea = nullptr;
+    lv_obj_t *wifiKeyboard = nullptr;
+    char wifiScannedSsids[4][33] = {};
+    size_t wifiScannedCount = 0;
+    size_t wifiSelectedIndex = 0;
     lv_obj_t *weighSourceLabel = nullptr;
     lv_obj_t *weighValueLabel = nullptr;
     lv_obj_t *weighUnitLabel = nullptr;
@@ -126,6 +139,8 @@ namespace
     ArrowLabUI::SpineControlCallback spineConfirmZeroCallback = nullptr;
     ArrowLabUI::SpineControlCallback spineRestartCallback = nullptr;
     ArrowLabUI::SpineMarkedCallback spineMarkedCallback = nullptr;
+    ArrowLabUI::WifiScanCallback wifiScanCallback = nullptr;
+    ArrowLabUI::WifiConnectCallback wifiConnectCallback = nullptr;
     uint8_t selectedSpinePositionCount = 1;
     float markedSpine = 0.0f;
     bool spineRunActive = false;
@@ -574,6 +589,8 @@ namespace
         lv_obj_add_flag(spinePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifiNetworksPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifiPasswordPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticsMenuPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticSidePage, LV_OBJ_FLAG_HIDDEN);
@@ -595,6 +612,10 @@ namespace
                 title = "SETTINGS";
             } else if (page == wifiPage) {
                 title = "WI-FI & NETWORK";
+            } else if (page == wifiNetworksPage) {
+                title = "SELECT NETWORK";
+            } else if (page == wifiPasswordPage) {
+                title = "WI-FI PASSWORD";
             } else if (page == calibrationPage) {
                 title = "CALIBRATION";
             } else if (page == diagnosticsMenuPage) {
@@ -757,6 +778,96 @@ namespace
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
         }
+    }
+
+    void wifiStartScan()
+    {
+        showPage(wifiNetworksPage);
+        if (wifiScanStatusLabel != nullptr) {
+            lv_label_set_text(wifiScanStatusLabel, "SCANNING...");
+        }
+        for (auto *button : wifiNetworkButtons) {
+            if (button != nullptr) {
+                lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        if (wifiScanCallback != nullptr) wifiScanCallback();
+    }
+
+    void wifiConfigureEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) wifiStartScan();
+    }
+
+    void wifiRefreshEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) wifiStartScan();
+    }
+
+    void wifiNetworksBackEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) showPage(wifiPage);
+    }
+
+    void wifiPasswordBackEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(wifiNetworksPage);
+        }
+    }
+
+    void wifiNetworkSelectEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+        wifiSelectedIndex = reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+        if (wifiSelectedIndex >= wifiScannedCount) return;
+
+        if (wifiPasswordSsidLabel != nullptr) {
+            char text[64];
+            snprintf(
+                text,
+                sizeof(text),
+                "CONNECT TO: %s",
+                wifiScannedSsids[wifiSelectedIndex]);
+            lv_label_set_text(wifiPasswordSsidLabel, text);
+        }
+        if (wifiPasswordStatusLabel != nullptr) {
+            lv_label_set_text(
+                wifiPasswordStatusLabel,
+                "Enter password, then tap the keyboard checkmark");
+        }
+        if (wifiPasswordTextArea != nullptr) {
+            lv_textarea_set_text(wifiPasswordTextArea, "");
+        }
+        if (wifiKeyboard != nullptr) {
+            lv_obj_clear_state(wifiKeyboard, LV_STATE_DISABLED);
+        }
+        showPage(wifiPasswordPage);
+    }
+
+    void wifiKeyboardEvent(lv_event_t *event)
+    {
+        const lv_event_code_t code = lv_event_get_code(event);
+        if (code == LV_EVENT_CANCEL) {
+            showPage(wifiNetworksPage);
+            return;
+        }
+        if (
+            code != LV_EVENT_READY
+            || wifiConnectCallback == nullptr
+            || wifiSelectedIndex >= wifiScannedCount
+        ) {
+            return;
+        }
+
+        wifiConnectCallback(
+            wifiScannedSsids[wifiSelectedIndex],
+            lv_textarea_get_text(wifiPasswordTextArea));
+        lv_label_set_text(
+            wifiPasswordStatusLabel,
+            "Testing WROOM and VIEWE...");
+        lv_obj_add_state(wifiKeyboard, LV_STATE_DISABLED);
     }
 
     void weighButtonEvent(lv_event_t *event)
@@ -1961,12 +2072,20 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(wifiBackLabel);
 
-        lv_obj_t *wifiHint = createTextLabel(
-            wifiPage,
-            "MAC addresses support DHCP reservations",
-            &lv_font_montserrat_12,
-            lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_pos(wifiHint, 130, 15);
+        lv_obj_t *wifiConfigureButton = lv_btn_create(wifiPage);
+        lv_obj_set_size(wifiConfigureButton, 174, 34);
+        lv_obj_set_pos(wifiConfigureButton, 290, 7);
+        lv_obj_add_event_cb(
+            wifiConfigureButton,
+            wifiConfigureEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        wifiConfigureButtonLabel = createTextLabel(
+            wifiConfigureButton,
+            "CHANGE NETWORK",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(wifiConfigureButtonLabel);
 
         lv_obj_t *viewePanel = lv_obj_create(wifiPage);
         lv_obj_set_size(viewePanel, 214, 170);
@@ -1993,6 +2112,116 @@ namespace ArrowLabUI
         lv_obj_set_size(wroomNetworkLabel, 194, 150);
         lv_obj_set_pos(wroomNetworkLabel, 10, 9);
         lv_label_set_long_mode(wroomNetworkLabel, LV_LABEL_LONG_DOT);
+
+        wifiNetworksPage = lv_obj_create(screen);
+        lv_obj_set_size(wifiNetworksPage, 480, 228);
+        lv_obj_set_pos(wifiNetworksPage, 0, 44);
+        lv_obj_set_style_bg_opa(wifiNetworksPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(wifiNetworksPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiNetworksPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(wifiNetworksPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *netBack = lv_btn_create(wifiNetworksPage);
+        lv_obj_set_size(netBack, 100, 34);
+        lv_obj_set_pos(netBack, 14, 7);
+        lv_obj_add_event_cb(netBack, wifiNetworksBackEvent, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t *netBackLabel = createTextLabel(
+            netBack, "< BACK", &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(netBackLabel);
+
+        lv_obj_t *refresh = lv_btn_create(wifiNetworksPage);
+        lv_obj_set_size(refresh, 100, 34);
+        lv_obj_set_pos(refresh, 366, 7);
+        lv_obj_add_event_cb(refresh, wifiRefreshEvent, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t *refreshLabel = createTextLabel(
+            refresh, "REFRESH", &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(refreshLabel);
+
+        wifiScanStatusLabel = createTextLabel(
+            wifiNetworksPage,
+            "SCANNING...",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(wifiScanStatusLabel, 130, 15);
+
+        for (uint8_t index = 0; index < 4; ++index) {
+            wifiNetworkButtons[index] = lv_btn_create(wifiNetworksPage);
+            lv_obj_set_size(wifiNetworkButtons[index], 440, 38);
+            lv_obj_set_pos(wifiNetworkButtons[index], 20, 52 + index * 43);
+            lv_obj_add_event_cb(
+                wifiNetworkButtons[index],
+                wifiNetworkSelectEvent,
+                LV_EVENT_CLICKED,
+                reinterpret_cast<void *>(static_cast<uintptr_t>(index)));
+            wifiNetworkButtonLabels[index] = createTextLabel(
+                wifiNetworkButtons[index],
+                "--",
+                &lv_font_montserrat_14,
+                lv_color_hex(COLOUR_TEXT));
+            lv_obj_align(
+                wifiNetworkButtonLabels[index],
+                LV_ALIGN_LEFT_MID,
+                6,
+                0);
+            lv_obj_add_flag(
+                wifiNetworkButtons[index],
+                LV_OBJ_FLAG_HIDDEN);
+        }
+
+        wifiPasswordPage = lv_obj_create(screen);
+        lv_obj_set_size(wifiPasswordPage, 480, 228);
+        lv_obj_set_pos(wifiPasswordPage, 0, 44);
+        lv_obj_set_style_bg_opa(wifiPasswordPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(wifiPasswordPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiPasswordPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(wifiPasswordPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *passwordBack = lv_btn_create(wifiPasswordPage);
+        lv_obj_set_size(passwordBack, 86, 30);
+        lv_obj_set_pos(passwordBack, 8, 4);
+        lv_obj_add_event_cb(
+            passwordBack,
+            wifiPasswordBackEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *passwordBackLabel = createTextLabel(
+            passwordBack, "< BACK", &lv_font_montserrat_14, lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(passwordBackLabel);
+
+        wifiPasswordSsidLabel = createTextLabel(
+            wifiPasswordPage,
+            "CONNECT TO: --",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(wifiPasswordSsidLabel, 360, 22);
+        lv_obj_set_pos(wifiPasswordSsidLabel, 106, 8);
+        lv_label_set_long_mode(wifiPasswordSsidLabel, LV_LABEL_LONG_DOT);
+
+        wifiPasswordTextArea = lv_textarea_create(wifiPasswordPage);
+        lv_obj_set_size(wifiPasswordTextArea, 210, 34);
+        lv_obj_set_pos(wifiPasswordTextArea, 8, 38);
+        lv_textarea_set_one_line(wifiPasswordTextArea, true);
+        lv_textarea_set_password_mode(wifiPasswordTextArea, true);
+        lv_textarea_set_placeholder_text(wifiPasswordTextArea, "Wi-Fi password");
+
+        wifiPasswordStatusLabel = createTextLabel(
+            wifiPasswordPage,
+            "Enter password, then tap the keyboard checkmark",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(wifiPasswordStatusLabel, 246, 34);
+        lv_obj_set_pos(wifiPasswordStatusLabel, 226, 38);
+        lv_label_set_long_mode(wifiPasswordStatusLabel, LV_LABEL_LONG_WRAP);
+
+        wifiKeyboard = lv_keyboard_create(wifiPasswordPage);
+        lv_obj_set_size(wifiKeyboard, 464, 148);
+        lv_obj_set_pos(wifiKeyboard, 8, 78);
+        lv_keyboard_set_textarea(wifiKeyboard, wifiPasswordTextArea);
+        lv_obj_add_event_cb(
+            wifiKeyboard,
+            wifiKeyboardEvent,
+            LV_EVENT_ALL,
+            nullptr);
 
         diagnosticsMenuPage = lv_obj_create(screen);
         lv_obj_set_size(diagnosticsMenuPage, 480, 228);
@@ -2414,6 +2643,103 @@ namespace ArrowLabUI
     void setCalibrationReferenceGrams(float grams)
     {
         calibrationReferenceGrams = grams;
+    }
+
+    void setWifiCallbacks(
+        WifiScanCallback scanCallback,
+        WifiConnectCallback connectCallback)
+    {
+        wifiScanCallback = scanCallback;
+        wifiConnectCallback = connectCallback;
+    }
+
+    void setWifiScanBusy()
+    {
+        if (wifiScanStatusLabel != nullptr) {
+            lv_label_set_text(wifiScanStatusLabel, "SCANNING...");
+        }
+    }
+
+    void setWifiScanResults(
+        const char ssids[][33],
+        const int16_t *rssiDbm,
+        const bool *secured,
+        size_t count)
+    {
+        wifiScannedCount = count > 4 ? 4 : count;
+        for (size_t index = 0; index < 4; ++index) {
+            if (index >= wifiScannedCount) {
+                lv_obj_add_flag(
+                    wifiNetworkButtons[index],
+                    LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+            snprintf(
+                wifiScannedSsids[index],
+                sizeof(wifiScannedSsids[index]),
+                "%s",
+                ssids[index]);
+            char text[72];
+            snprintf(
+                text,
+                sizeof(text),
+                "%s   %d dBm   %s",
+                ssids[index],
+                static_cast<int>(rssiDbm[index]),
+                secured[index] ? "SECURED" : "OPEN");
+            lv_label_set_text(wifiNetworkButtonLabels[index], text);
+            lv_obj_clear_flag(
+                wifiNetworkButtons[index],
+                LV_OBJ_FLAG_HIDDEN);
+        }
+        if (wifiScanStatusLabel != nullptr) {
+            lv_label_set_text(
+                wifiScanStatusLabel,
+                wifiScannedCount > 0
+                    ? "SELECT A NETWORK"
+                    : "NO NETWORKS FOUND");
+        }
+    }
+
+    void setWifiSetupResult(
+        bool busy,
+        bool success,
+        const char *message)
+    {
+        if (wifiPasswordStatusLabel != nullptr) {
+            lv_label_set_text(
+                wifiPasswordStatusLabel,
+                message != nullptr ? message : "");
+            lv_obj_set_style_text_color(
+                wifiPasswordStatusLabel,
+                lv_color_hex(
+                    success
+                        ? COLOUR_OK
+                        : busy
+                            ? COLOUR_REQUIRED
+                            : 0xFF4D4D),
+                LV_PART_MAIN);
+        }
+        if (wifiKeyboard != nullptr) {
+            if (busy) {
+                lv_obj_add_state(wifiKeyboard, LV_STATE_DISABLED);
+            } else {
+                lv_obj_clear_state(wifiKeyboard, LV_STATE_DISABLED);
+            }
+        }
+        if (success) {
+            lv_textarea_set_text(wifiPasswordTextArea, "");
+            showPage(wifiPage);
+        }
+    }
+
+    void setWifiSavedCredentials(bool saved)
+    {
+        if (wifiConfigureButtonLabel != nullptr) {
+            lv_label_set_text(
+                wifiConfigureButtonLabel,
+                saved ? "CHANGE NETWORK" : "SET UP WI-FI");
+        }
     }
 
     void setDiagnosticCallbacks(

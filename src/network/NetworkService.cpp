@@ -302,6 +302,54 @@ namespace ArrowLabNetwork
         savedCredentialsAvailable = false;
     }
 
+    bool startScan()
+    {
+        const int state = WiFi.scanComplete();
+        if (state == WIFI_SCAN_RUNNING) return false;
+        WiFi.scanDelete();
+        return WiFi.scanNetworks(true, false) == WIFI_SCAN_RUNNING;
+    }
+
+    int scanComplete()
+    {
+        return WiFi.scanComplete();
+    }
+
+    size_t takeScanResults(ScanResult *results, size_t maximumResults)
+    {
+        const int count = WiFi.scanComplete();
+        if (results == nullptr || maximumResults == 0 || count < 0) {
+            return 0;
+        }
+
+        size_t written = 0;
+        for (int index = 0; index < count && written < maximumResults; ++index) {
+            const String ssid = WiFi.SSID(index);
+            if (ssid.isEmpty()) continue;
+
+            bool duplicate = false;
+            for (size_t existing = 0; existing < written; ++existing) {
+                if (ssid == results[existing].ssid) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            copyText(
+                results[written].ssid,
+                sizeof(results[written].ssid),
+                ssid.c_str());
+            results[written].rssiDbm =
+                static_cast<int16_t>(WiFi.RSSI(index));
+            results[written].secured =
+                WiFi.encryptionType(index) != WIFI_AUTH_OPEN;
+            ++written;
+        }
+        WiFi.scanDelete();
+        return written;
+    }
+
     void setUpdateCallbacks(
         UpdateCallback startCallback,
         UpdateCallback finishCallback)
