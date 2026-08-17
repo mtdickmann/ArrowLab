@@ -189,6 +189,14 @@ namespace
             spineTestController.currentPosition();
         statusPacket.spineHoldPercent =
             spineTestController.holdPercent(now);
+        statusPacket.firmwareMajor = Version::MAJOR;
+        statusPacket.firmwareMinor = Version::MINOR;
+        statusPacket.firmwarePatch = Version::PATCH;
+        snprintf(
+            statusPacket.firmwareStatus,
+            sizeof(statusPacket.firmwareStatus),
+            "%s",
+            Version::STATUS);
 
         const ArrowLabNetwork::Info network = ArrowLabNetwork::info();
         snprintf(
