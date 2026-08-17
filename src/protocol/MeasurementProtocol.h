@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 6;
+    constexpr uint8_t VERSION = 7;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -30,7 +30,8 @@ namespace ArrowLabProtocol
         ConfirmSpineClear = 9,
         TestWifiCredentials = 10,
         CommitWifiCredentials = 11,
-        RevertWifiCredentials = 12
+        RevertWifiCredentials = 12,
+        ForgetWifiProfile = 13
     };
 
     enum class CalibrationStage : uint8_t
@@ -183,7 +184,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::RevertWifiCredentials)
+                <= static_cast<uint8_t>(CommandType::ForgetWifiProfile)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }
