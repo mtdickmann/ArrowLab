@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
 
@@ -61,12 +62,14 @@ namespace
     {
         Idle,
         TestingWroom,
-        TestingViewe
+        TestingViewe,
+        VerifyingBoth
     };
     WifiSetupStage wifiSetupStage = WifiSetupStage::Idle;
     char pendingWifiSsid[33] = {};
     char pendingWifiPassword[65] = {};
     uint32_t wifiSetupDeadline = 0;
+    uint32_t wifiBothConnectedSince = 0;
     bool wifiScanPending = false;
 
     ArrowLabProtocol::Side protocolSide(ArrowLabUI::LoadSide side)
@@ -251,36 +254,76 @@ namespace
             return;
         }
 
+        if (wifiSetupStage == WifiSetupStage::TestingViewe) {
+            if (
+                local.credentialTest
+                    == ArrowLabNetwork::CredentialTestState::Succeeded
+            ) {
+                wifiSetupStage = WifiSetupStage::VerifyingBoth;
+                wifiSetupDeadline = now + 40000;
+                wifiBothConnectedSince = 0;
+            } else if (
+                local.credentialTest
+                        == ArrowLabNetwork::CredentialTestState::Failed
+                || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+            ) {
+                ArrowLabNetwork::revertCredentialTest();
+                measurementNode.revertWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    false,
+                    "Connection failed - check password and retry");
+                lvgl_port_unlock();
+            }
+            return;
+        }
+
+        const bool localOnTarget =
+            local.connected
+            && strcmp(local.ssid, pendingWifiSsid) == 0;
+        const bool remoteOnTarget =
+            measurementNode.connected(now)
+            && (remote.flags & ArrowLabProtocol::NetworkConnected)
+            && strcmp(remote.ssid, pendingWifiSsid) == 0;
+        if (localOnTarget && remoteOnTarget) {
+            if (wifiBothConnectedSince == 0) {
+                wifiBothConnectedSince = now;
+            }
+            if (now - wifiBothConnectedSince >= 1200) {
+                const bool localSaved =
+                    ArrowLabNetwork::commitTestedCredentials();
+                const bool remoteSaved =
+                    measurementNode.commitWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                wifiBothConnectedSince = 0;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    localSaved && remoteSaved,
+                    localSaved && remoteSaved
+                        ? "Connected - Wi-Fi profile saved"
+                        : "Connected, but saving failed - retry");
+                lvgl_port_unlock();
+            }
+        } else {
+            wifiBothConnectedSince = 0;
+        }
+
         if (
-            local.credentialTest
-                == ArrowLabNetwork::CredentialTestState::Succeeded
-        ) {
-            const bool localSaved =
-                ArrowLabNetwork::commitTestedCredentials();
-            const bool remoteSaved =
-                measurementNode.commitWifiCredentials();
-            wifiSetupStage = WifiSetupStage::Idle;
-            lvgl_port_lock(-1);
-            ArrowLabUI::setWifiSetupResult(
-                false,
-                localSaved && remoteSaved,
-                localSaved && remoteSaved
-                    ? "Connected - Wi-Fi profile saved"
-                    : "Connected, but saving failed - retry");
-            lvgl_port_unlock();
-        } else if (
-            local.credentialTest
-                    == ArrowLabNetwork::CredentialTestState::Failed
-            || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+            wifiSetupStage == WifiSetupStage::VerifyingBoth
+            && static_cast<int32_t>(now - wifiSetupDeadline) >= 0
         ) {
             ArrowLabNetwork::revertCredentialTest();
             measurementNode.revertWifiCredentials();
             wifiSetupStage = WifiSetupStage::Idle;
+            wifiBothConnectedSince = 0;
             lvgl_port_lock(-1);
             ArrowLabUI::setWifiSetupResult(
                 false,
                 false,
-                "Connection failed - check password and retry");
+                "ArrowLab could not complete the connection - retry");
             lvgl_port_unlock();
         }
     }
