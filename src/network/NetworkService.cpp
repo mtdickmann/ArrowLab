@@ -298,12 +298,26 @@ namespace ArrowLabNetwork
                 WiFi.status() == WL_CONNECTED
                 && WiFi.SSID() == pendingSsid
             ) {
-                credentialState = CredentialTestState::Succeeded;
-                Serial.printf(
-                    "AL_NET,WIFI,TEST_OK,%s\n",
-                    pendingSsid);
-            } else if (
-                static_cast<int32_t>(millis() - credentialDeadline) >= 0
+                if (credentialConnectedSince == 0) {
+                    credentialConnectedSince = millis();
+                } else if (
+                    millis() - credentialConnectedSince
+                        >= CREDENTIAL_STABLE_MS
+                ) {
+                    credentialState = CredentialTestState::Succeeded;
+                    credentialConnectedSince = 0;
+                    Serial.printf(
+                        "AL_NET,WIFI,TEST_OK,%s\n",
+                        pendingSsid);
+                }
+            } else {
+                credentialConnectedSince = 0;
+            }
+
+            if (
+                credentialState == CredentialTestState::Testing
+                && static_cast<int32_t>(
+                    millis() - credentialDeadline) >= 0
             ) {
                 credentialState = CredentialTestState::Failed;
                 connectUsing(previousSsid, previousPassword);
@@ -489,6 +503,7 @@ namespace ArrowLabNetwork
         copyText(pendingSsid, sizeof(pendingSsid), ssid);
         copyText(pendingPassword, sizeof(pendingPassword), password);
         credentialState = CredentialTestState::Testing;
+        credentialConnectedSince = 0;
         credentialDeadline = millis() + CREDENTIAL_TEST_TIMEOUT_MS;
         connectUsing(pendingSsid, pendingPassword);
         return true;
