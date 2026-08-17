@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "ArrowLabConfig.h"
 #include "network/NetworkService.h"
@@ -45,6 +46,7 @@ namespace
     lv_obj_t *spinePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *wifiPage = nullptr;
+    lv_obj_t *wifiSavedPage = nullptr;
     lv_obj_t *wifiNetworksPage = nullptr;
     lv_obj_t *wifiPasswordPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
@@ -67,6 +69,16 @@ namespace
     lv_obj_t *firmwareUpdateDismissButton = nullptr;
     lv_obj_t *wifiConfigureButtonLabel = nullptr;
     constexpr size_t MAX_WIFI_SCAN_RESULTS = 12;
+    constexpr size_t MAX_WIFI_SAVED_PROFILES = 8;
+    lv_obj_t *wifiSavedStatusLabel = nullptr;
+    lv_obj_t *wifiSavedList = nullptr;
+    lv_obj_t *wifiSavedRows[MAX_WIFI_SAVED_PROFILES] = {};
+    lv_obj_t *wifiSavedLabels[MAX_WIFI_SAVED_PROFILES] = {};
+    lv_obj_t *wifiSavedForgetButtons[MAX_WIFI_SAVED_PROFILES] = {};
+    lv_obj_t *wifiForgetBox = nullptr;
+    char wifiSavedSsids[MAX_WIFI_SAVED_PROFILES][33] = {};
+    size_t wifiSavedCount = 0;
+    size_t wifiForgetIndex = 0;
     lv_obj_t *wifiScanStatusLabel = nullptr;
     lv_obj_t *wifiNetworkList = nullptr;
     lv_obj_t *wifiNetworkButtons[MAX_WIFI_SCAN_RESULTS] = {};
@@ -148,6 +160,7 @@ namespace
     ArrowLabUI::SpineMarkedCallback spineMarkedCallback = nullptr;
     ArrowLabUI::WifiScanCallback wifiScanCallback = nullptr;
     ArrowLabUI::WifiConnectCallback wifiConnectCallback = nullptr;
+    ArrowLabUI::WifiForgetCallback wifiForgetCallback = nullptr;
     uint8_t selectedSpinePositionCount = 1;
     float markedSpine = 0.0f;
     bool spineRunActive = false;
@@ -596,6 +609,7 @@ namespace
         lv_obj_add_flag(spinePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifiSavedPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiNetworksPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPasswordPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
@@ -619,6 +633,8 @@ namespace
                 title = "SETTINGS";
             } else if (page == wifiPage) {
                 title = "WI-FI & NETWORK";
+            } else if (page == wifiSavedPage) {
+                title = "SAVED NETWORKS";
             } else if (page == wifiNetworksPage) {
                 title = "SELECT NETWORK";
             } else if (page == wifiPasswordPage) {
@@ -785,6 +801,152 @@ namespace
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
         }
+    }
+
+    void refreshSavedWifiProfiles()
+    {
+        wifiSavedCount = ArrowLabNetwork::savedProfileSsids(
+            wifiSavedSsids,
+            MAX_WIFI_SAVED_PROFILES);
+        const ArrowLabNetwork::Info network = ArrowLabNetwork::info();
+
+        for (
+            size_t index = 0;
+            index < MAX_WIFI_SAVED_PROFILES;
+            ++index
+        ) {
+            if (index >= wifiSavedCount) {
+                lv_obj_add_flag(
+                    wifiSavedRows[index],
+                    LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+
+            char text[48];
+            snprintf(
+                text,
+                sizeof(text),
+                "%s%s",
+                wifiSavedSsids[index],
+                network.connected
+                    && strcmp(network.ssid, wifiSavedSsids[index]) == 0
+                        ? "  [ACTIVE]"
+                        : "");
+            lv_label_set_text(wifiSavedLabels[index], text);
+            lv_obj_clear_flag(
+                wifiSavedRows[index],
+                LV_OBJ_FLAG_HIDDEN);
+        }
+
+        if (wifiSavedStatusLabel != nullptr) {
+            char text[40];
+            snprintf(
+                text,
+                sizeof(text),
+                wifiSavedCount == 0
+                    ? "NO SAVED NETWORKS"
+                    : "%u SAVED NETWORK%s",
+                static_cast<unsigned>(wifiSavedCount),
+                wifiSavedCount == 1 ? "" : "S");
+            lv_label_set_text(wifiSavedStatusLabel, text);
+        }
+        if (wifiSavedList != nullptr) {
+            lv_obj_scroll_to_y(wifiSavedList, 0, LV_ANIM_OFF);
+        }
+    }
+
+    void wifiSavedBackEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(wifiPage);
+        }
+    }
+
+    void wifiSavedOpenEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            refreshSavedWifiProfiles();
+            showPage(wifiSavedPage);
+        }
+    }
+
+    void wifiForgetConfirmEvent(lv_event_t *event)
+    {
+        lv_obj_t *messageBox = lv_event_get_current_target(event);
+        const uint16_t selectedButton =
+            lv_msgbox_get_active_btn(messageBox);
+
+        if (
+            selectedButton == 1
+            && wifiForgetCallback != nullptr
+            && wifiForgetIndex < wifiSavedCount
+        ) {
+            const bool removed =
+                wifiForgetCallback(wifiSavedSsids[wifiForgetIndex]);
+            if (wifiSavedStatusLabel != nullptr && !removed) {
+                lv_label_set_text(
+                    wifiSavedStatusLabel,
+                    "FORGET FAILED - WROOM MUST BE ONLINE");
+                lv_obj_set_style_text_color(
+                    wifiSavedStatusLabel,
+                    lv_color_hex(0xFF4D4D),
+                    LV_PART_MAIN);
+            }
+            if (removed) refreshSavedWifiProfiles();
+        }
+
+        wifiForgetBox = nullptr;
+        lv_msgbox_close(messageBox);
+    }
+
+    void wifiSavedForgetEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) != LV_EVENT_CLICKED
+            || wifiForgetBox != nullptr
+        ) {
+            return;
+        }
+
+        wifiForgetIndex = reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+        if (wifiForgetIndex >= wifiSavedCount) return;
+
+        const ArrowLabNetwork::Info network = ArrowLabNetwork::info();
+        const bool active =
+            network.connected
+            && strcmp(
+                network.ssid,
+                wifiSavedSsids[wifiForgetIndex]) == 0;
+
+        char message[180];
+        snprintf(
+            message,
+            sizeof(message),
+            active
+                ? "Forget %s?\nArrowLab stays connected now, but this "
+                  "network will not be available after restart unless it "
+                  "is the compiled bootstrap network."
+                : "Forget %s on both VIEWE and WROOM?",
+            wifiSavedSsids[wifiForgetIndex]);
+
+        static const char *buttons[] = {
+            "CANCEL",
+            "FORGET",
+            ""};
+        wifiForgetBox = lv_msgbox_create(
+            nullptr,
+            active ? "FORGET ACTIVE NETWORK?" : "FORGET NETWORK?",
+            message,
+            buttons,
+            false);
+        lv_obj_set_width(wifiForgetBox, 420);
+        lv_obj_add_event_cb(
+            wifiForgetBox,
+            wifiForgetConfirmEvent,
+            LV_EVENT_VALUE_CHANGED,
+            nullptr);
+        lv_obj_center(wifiForgetBox);
     }
 
     void wifiStartScan()
@@ -2161,6 +2323,21 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(wifiBackLabel);
 
+        lv_obj_t *wifiSavedButton = lv_btn_create(wifiPage);
+        lv_obj_set_size(wifiSavedButton, 160, 34);
+        lv_obj_set_pos(wifiSavedButton, 122, 7);
+        lv_obj_add_event_cb(
+            wifiSavedButton,
+            wifiSavedOpenEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *wifiSavedButtonLabel = createTextLabel(
+            wifiSavedButton,
+            "SAVED NETWORKS",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(wifiSavedButtonLabel);
+
         lv_obj_t *wifiConfigureButton = lv_btn_create(wifiPage);
         lv_obj_set_size(wifiConfigureButton, 174, 34);
         lv_obj_set_pos(wifiConfigureButton, 290, 7);
@@ -2201,6 +2378,121 @@ namespace ArrowLabUI
         lv_obj_set_size(wroomNetworkLabel, 194, 150);
         lv_obj_set_pos(wroomNetworkLabel, 10, 9);
         lv_label_set_long_mode(wroomNetworkLabel, LV_LABEL_LONG_DOT);
+
+        wifiSavedPage = lv_obj_create(screen);
+        lv_obj_set_size(wifiSavedPage, 480, 228);
+        lv_obj_set_pos(wifiSavedPage, 0, 44);
+        lv_obj_set_style_bg_opa(
+            wifiSavedPage,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            wifiSavedPage,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiSavedPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(wifiSavedPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *savedBack = lv_btn_create(wifiSavedPage);
+        lv_obj_set_size(savedBack, 104, 34);
+        lv_obj_set_pos(savedBack, 14, 7);
+        lv_obj_add_event_cb(
+            savedBack,
+            wifiSavedBackEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *savedBackLabel = createTextLabel(
+            savedBack,
+            "< WI-FI",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(savedBackLabel);
+
+        wifiSavedStatusLabel = createTextLabel(
+            wifiSavedPage,
+            "NO SAVED NETWORKS",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(wifiSavedStatusLabel, 330, 24);
+        lv_obj_set_pos(wifiSavedStatusLabel, 130, 14);
+        lv_obj_set_style_text_align(
+            wifiSavedStatusLabel,
+            LV_TEXT_ALIGN_RIGHT,
+            LV_PART_MAIN);
+
+        wifiSavedList = lv_obj_create(wifiSavedPage);
+        lv_obj_set_size(wifiSavedList, 456, 176);
+        lv_obj_set_pos(wifiSavedList, 12, 49);
+        lv_obj_set_style_bg_opa(
+            wifiSavedList,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            wifiSavedList,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiSavedList, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(wifiSavedList, 5, LV_PART_MAIN);
+        lv_obj_set_scroll_dir(wifiSavedList, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(
+            wifiSavedList,
+            LV_SCROLLBAR_MODE_AUTO);
+
+        for (
+            size_t index = 0;
+            index < MAX_WIFI_SAVED_PROFILES;
+            ++index
+        ) {
+            wifiSavedRows[index] = lv_obj_create(wifiSavedList);
+            lv_obj_set_size(wifiSavedRows[index], 432, 42);
+            lv_obj_set_pos(wifiSavedRows[index], 4, index * 47);
+            stylePanel(wifiSavedRows[index]);
+            lv_obj_clear_flag(
+                wifiSavedRows[index],
+                LV_OBJ_FLAG_SCROLLABLE);
+
+            wifiSavedLabels[index] = createTextLabel(
+                wifiSavedRows[index],
+                "--",
+                &lv_font_montserrat_14,
+                lv_color_hex(COLOUR_TEXT));
+            lv_obj_set_size(wifiSavedLabels[index], 292, 24);
+            lv_obj_align(
+                wifiSavedLabels[index],
+                LV_ALIGN_LEFT_MID,
+                8,
+                0);
+            lv_label_set_long_mode(
+                wifiSavedLabels[index],
+                LV_LABEL_LONG_DOT);
+
+            wifiSavedForgetButtons[index] =
+                lv_btn_create(wifiSavedRows[index]);
+            lv_obj_set_size(
+                wifiSavedForgetButtons[index],
+                104,
+                30);
+            lv_obj_align(
+                wifiSavedForgetButtons[index],
+                LV_ALIGN_RIGHT_MID,
+                -4,
+                0);
+            lv_obj_add_event_cb(
+                wifiSavedForgetButtons[index],
+                wifiSavedForgetEvent,
+                LV_EVENT_CLICKED,
+                reinterpret_cast<void *>(
+                    static_cast<uintptr_t>(index)));
+            lv_obj_t *forgetLabel = createTextLabel(
+                wifiSavedForgetButtons[index],
+                "FORGET",
+                &lv_font_montserrat_12,
+                lv_color_hex(COLOUR_TEXT));
+            lv_obj_center(forgetLabel);
+            lv_obj_add_flag(
+                wifiSavedRows[index],
+                LV_OBJ_FLAG_HIDDEN);
+        }
 
         wifiNetworksPage = lv_obj_create(screen);
         lv_obj_set_size(wifiNetworksPage, 480, 228);
@@ -2781,10 +3073,12 @@ namespace ArrowLabUI
 
     void setWifiCallbacks(
         WifiScanCallback scanCallback,
-        WifiConnectCallback connectCallback)
+        WifiConnectCallback connectCallback,
+        WifiForgetCallback forgetCallback)
     {
         wifiScanCallback = scanCallback;
         wifiConnectCallback = connectCallback;
+        wifiForgetCallback = forgetCallback;
     }
 
     void setWifiScanBusy()
