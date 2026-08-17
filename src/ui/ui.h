@@ -64,6 +64,7 @@ namespace ArrowLabUI
         bool rightLive);
 
     void setFirmwareUpdateActive(bool active);
+    void setFirmwareUpdateFailed();
 
     void setNetworkStatus(
         bool vieweConnected,

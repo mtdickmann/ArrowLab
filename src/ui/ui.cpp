@@ -60,6 +60,8 @@ namespace
     lv_obj_t *headerWifiArcs[3] = {};
     lv_obj_t *headerWifiDot = nullptr;
     lv_obj_t *firmwareUpdateOverlay = nullptr;
+    lv_obj_t *firmwareUpdateMessage = nullptr;
+    lv_obj_t *firmwareUpdateDismissButton = nullptr;
     lv_obj_t *weighSourceLabel = nullptr;
     lv_obj_t *weighValueLabel = nullptr;
     lv_obj_t *weighUnitLabel = nullptr;
@@ -592,7 +594,7 @@ namespace
             } else if (page == settingsPage) {
                 title = "SETTINGS";
             } else if (page == wifiPage) {
-                title = "WI-FI";
+                title = "WI-FI & NETWORK";
             } else if (page == calibrationPage) {
                 title = "CALIBRATION";
             } else if (page == diagnosticsMenuPage) {
@@ -2861,6 +2863,18 @@ namespace ArrowLabUI
         }
     }
 
+    void firmwareUpdateDismissEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) == LV_EVENT_CLICKED
+            && firmwareUpdateOverlay != nullptr
+        ) {
+            lv_obj_add_flag(
+                firmwareUpdateOverlay,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     void setFirmwareUpdateActive(bool active)
     {
         if (active) {
@@ -2895,16 +2909,58 @@ namespace ArrowLabUI
                     lv_color_hex(COLOUR_ACCENT));
                 lv_obj_align(title, LV_ALIGN_CENTER, 0, -28);
 
-                lv_obj_t *message = createTextLabel(
+                firmwareUpdateMessage = createTextLabel(
                     firmwareUpdateOverlay,
-                    "Installing VIEWE firmware\nDo not remove power",
+                    "Preparing wireless update...\nDo not remove power\nScreen will turn off briefly",
                     &lv_font_montserrat_16,
                     lv_color_hex(COLOUR_TEXT));
                 lv_obj_set_style_text_align(
-                    message,
+                    firmwareUpdateMessage,
                     LV_TEXT_ALIGN_CENTER,
                     LV_PART_MAIN);
-                lv_obj_align(message, LV_ALIGN_CENTER, 0, 18);
+                lv_obj_align(
+                    firmwareUpdateMessage,
+                    LV_ALIGN_CENTER,
+                    0,
+                    18);
+
+                firmwareUpdateDismissButton =
+                    lv_btn_create(firmwareUpdateOverlay);
+                lv_obj_set_size(
+                    firmwareUpdateDismissButton,
+                    120,
+                    38);
+                lv_obj_align(
+                    firmwareUpdateDismissButton,
+                    LV_ALIGN_CENTER,
+                    0,
+                    78);
+                lv_obj_add_event_cb(
+                    firmwareUpdateDismissButton,
+                    firmwareUpdateDismissEvent,
+                    LV_EVENT_CLICKED,
+                    nullptr);
+                lv_obj_t *dismissLabel = createTextLabel(
+                    firmwareUpdateDismissButton,
+                    "CONTINUE",
+                    &lv_font_montserrat_14,
+                    lv_color_hex(COLOUR_TEXT));
+                lv_obj_center(dismissLabel);
+            }
+
+            if (firmwareUpdateMessage != nullptr) {
+                lv_label_set_text(
+                    firmwareUpdateMessage,
+                    "Preparing wireless update...\nDo not remove power\nScreen will turn off briefly");
+                lv_obj_set_style_text_color(
+                    firmwareUpdateMessage,
+                    lv_color_hex(COLOUR_TEXT),
+                    LV_PART_MAIN);
+            }
+            if (firmwareUpdateDismissButton != nullptr) {
+                lv_obj_add_flag(
+                    firmwareUpdateDismissButton,
+                    LV_OBJ_FLAG_HIDDEN);
             }
 
             lv_obj_clear_flag(
@@ -2915,6 +2971,34 @@ namespace ArrowLabUI
             lv_obj_add_flag(
                 firmwareUpdateOverlay,
                 LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    void setFirmwareUpdateFailed()
+    {
+        if (firmwareUpdateOverlay == nullptr) {
+            setFirmwareUpdateActive(true);
+        }
+
+        if (firmwareUpdateMessage != nullptr) {
+            lv_label_set_text(
+                firmwareUpdateMessage,
+                "UPDATE FAILED\nArrowLab remains operational\nCheck PlatformIO and retry");
+            lv_obj_set_style_text_color(
+                firmwareUpdateMessage,
+                lv_color_hex(0xFF4D4D),
+                LV_PART_MAIN);
+        }
+        if (firmwareUpdateDismissButton != nullptr) {
+            lv_obj_clear_flag(
+                firmwareUpdateDismissButton,
+                LV_OBJ_FLAG_HIDDEN);
+        }
+        if (firmwareUpdateOverlay != nullptr) {
+            lv_obj_clear_flag(
+                firmwareUpdateOverlay,
+                LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(firmwareUpdateOverlay);
         }
     }
 

@@ -69,12 +69,32 @@ namespace
         lvgl_port_lock(-1);
         ArrowLabUI::setFirmwareUpdateActive(true);
         lvgl_port_unlock();
+
+        // Give LVGL and the RGB panel enough time to present a deliberate
+        // update notice before flash writes can disrupt the display stream.
+        delay(3000);
+
+        auto backlight = displayBoard != nullptr
+            ? displayBoard->getBacklight()
+            : nullptr;
+        const bool off = backlight != nullptr && backlight->off();
+        Serial.printf(
+            "AL_HMI,OTA,BACKLIGHT_OFF=%s\n",
+            off ? "OK" : "FAILED");
     }
 
     void handleOtaFinish()
     {
+        auto backlight = displayBoard != nullptr
+            ? displayBoard->getBacklight()
+            : nullptr;
+        const bool on = backlight != nullptr && backlight->on();
+        Serial.printf(
+            "AL_HMI,OTA,BACKLIGHT_RESTORE=%s\n",
+            on ? "OK" : "FAILED");
+
         lvgl_port_lock(-1);
-        ArrowLabUI::setFirmwareUpdateActive(false);
+        ArrowLabUI::setFirmwareUpdateFailed();
         lvgl_port_unlock();
     }
 
