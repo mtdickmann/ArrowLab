@@ -20,6 +20,11 @@ namespace
     constexpr uint32_t CONNECTION_LOG_INTERVAL_MS = 10000;
     constexpr uint32_t CREDENTIAL_TEST_TIMEOUT_MS = 30000;
     constexpr uint32_t CREDENTIAL_STABLE_MS = 1200;
+    constexpr uint32_t AUTO_CONNECT_GRACE_MS = 15000;
+    constexpr uint32_t AUTO_CONNECT_RETRY_MS = 30000;
+    constexpr uint32_t AUTO_CONNECT_TIMEOUT_MS = 30000;
+    constexpr uint32_t AUTO_CONNECT_FAILED_HOLD_MS = 120000;
+    constexpr size_t MAX_AUTO_SCAN_RESULTS = 20;
     constexpr char PREFERENCES_NAMESPACE[] = "arrowlab-net";
     constexpr char SSID_KEY[] = "ssid";
     constexpr char PASSWORD_KEY[] = "password";
@@ -42,12 +47,27 @@ namespace
     ArrowLabNetwork::CredentialTestState credentialState =
         ArrowLabNetwork::CredentialTestState::Idle;
 
+    enum class AutoConnectState : uint8_t
+    {
+        Waiting,
+        Scanning,
+        Connecting
+    };
+    AutoConnectState autoConnectState = AutoConnectState::Waiting;
+    uint32_t autoConnectDeadline = 0;
+    uint32_t autoConnectedSince = 0;
+    uint32_t autoFailedUntil = 0;
+    bool externalScanActive = false;
+
     char activeSsid[33] = {};
     char activePassword[65] = {};
     char previousSsid[33] = {};
     char previousPassword[65] = {};
     char pendingSsid[33] = {};
     char pendingPassword[65] = {};
+    char autoConnectSsid[33] = {};
+    char autoConnectPassword[65] = {};
+    char autoFailedSsid[33] = {};
 
     void copyText(char *destination, size_t size, const char *source)
     {
@@ -203,6 +223,212 @@ namespace
         return false;
     }
 
+    void scheduleAutoConnect(uint32_t now, uint32_t delayMs)
+    {
+        autoConnectState = AutoConnectState::Waiting;
+        autoConnectDeadline = now + delayMs;
+        autoConnectedSince = 0;
+    }
+
+    bool autoCandidateTemporarilyFailed(
+        const char *ssid,
+        uint32_t now)
+    {
+        return autoFailedSsid[0] != '\0'
+            && strcmp(autoFailedSsid, ssid) == 0
+            && static_cast<int32_t>(now - autoFailedUntil) < 0;
+    }
+
+    void rememberAutomaticConnection()
+    {
+        Preferences preferences;
+        if (preferences.begin(PREFERENCES_NAMESPACE, false)) {
+            preferences.putString(SSID_KEY, autoConnectSsid);
+            preferences.putString(PASSWORD_KEY, autoConnectPassword);
+#if ARROWLAB_HAS_NETWORK_SECRETS
+            if (strcmp(autoConnectSsid, ARROWLAB_WIFI_SSID) == 0) {
+                preferences.putBool(FALLBACK_SUPPRESSED_KEY, false);
+                fallbackSuppressed = false;
+            }
+#endif
+            preferences.end();
+        }
+
+        copyText(activeSsid, sizeof(activeSsid), autoConnectSsid);
+        copyText(
+            activePassword,
+            sizeof(activePassword),
+            autoConnectPassword);
+        savedCredentialsAvailable = true;
+        activeProfileForgotten = false;
+        autoFailedSsid[0] = '\0';
+        Serial.printf(
+            "AL_NET,WIFI,AUTO_CONNECTED,%s\n",
+            activeSsid);
+    }
+
+    void serviceAutomaticConnection()
+    {
+        if (
+            credentialState
+                != ArrowLabNetwork::CredentialTestState::Idle
+            || updating
+        ) {
+            return;
+        }
+
+        const uint32_t now = millis();
+        if (WiFi.status() == WL_CONNECTED) {
+            if (autoConnectState == AutoConnectState::Connecting) {
+                if (WiFi.SSID() == autoConnectSsid) {
+                    if (autoConnectedSince == 0) {
+                        autoConnectedSince = now;
+                    } else if (
+                        now - autoConnectedSince
+                            >= CREDENTIAL_STABLE_MS
+                    ) {
+                        rememberAutomaticConnection();
+                        scheduleAutoConnect(
+                            now,
+                            AUTO_CONNECT_GRACE_MS);
+                    }
+                } else {
+                    // A previous connection can remain visible briefly
+                    // after WiFi.begin() selects the fallback candidate.
+                    autoConnectedSince = 0;
+                }
+                return;
+            }
+
+            if (autoConnectState == AutoConnectState::Scanning) {
+                WiFi.scanDelete();
+            }
+            autoFailedSsid[0] = '\0';
+            scheduleAutoConnect(now, AUTO_CONNECT_GRACE_MS);
+            return;
+        }
+
+        if (externalScanActive) return;
+
+        if (autoConnectState == AutoConnectState::Waiting) {
+            if (
+                static_cast<int32_t>(
+                    now - autoConnectDeadline) < 0
+            ) {
+                return;
+            }
+
+            WiFi.scanDelete();
+            if (
+                WiFi.scanNetworks(true, false)
+                    == WIFI_SCAN_RUNNING
+            ) {
+                autoConnectState = AutoConnectState::Scanning;
+                Serial.println("AL_NET,WIFI,AUTO_SCAN,START");
+            } else {
+                scheduleAutoConnect(now, AUTO_CONNECT_RETRY_MS);
+            }
+            return;
+        }
+
+        if (autoConnectState == AutoConnectState::Scanning) {
+            const int scanState = WiFi.scanComplete();
+            if (scanState == WIFI_SCAN_RUNNING) return;
+            if (scanState < 0) {
+                WiFi.scanDelete();
+                scheduleAutoConnect(now, AUTO_CONNECT_RETRY_MS);
+                return;
+            }
+
+            ArrowLabNetwork::ScanResult results[MAX_AUTO_SCAN_RESULTS];
+            const size_t resultCount =
+                ArrowLabNetwork::takeScanResults(
+                    results,
+                    MAX_AUTO_SCAN_RESULTS);
+            char profiles[MAX_SAVED_PROFILES][33] = {};
+            const size_t profileCount =
+                ArrowLabNetwork::savedProfileSsids(
+                    profiles,
+                    MAX_SAVED_PROFILES);
+
+            autoConnectSsid[0] = '\0';
+            autoConnectPassword[0] = '\0';
+            for (
+                size_t profile = 0;
+                profile < profileCount
+                    && autoConnectSsid[0] == '\0';
+                ++profile
+            ) {
+                if (
+                    autoCandidateTemporarilyFailed(
+                        profiles[profile],
+                        now)
+                ) {
+                    continue;
+                }
+
+                for (
+                    size_t result = 0;
+                    result < resultCount;
+                    ++result
+                ) {
+                    if (
+                        strcmp(
+                            profiles[profile],
+                            results[result].ssid) != 0
+                    ) {
+                        continue;
+                    }
+
+                    if (
+                        loadProfilePassword(
+                            profiles[profile],
+                            autoConnectPassword,
+                            sizeof(autoConnectPassword))
+                    ) {
+                        copyText(
+                            autoConnectSsid,
+                            sizeof(autoConnectSsid),
+                            profiles[profile]);
+                    }
+                    break;
+                }
+            }
+
+            if (autoConnectSsid[0] == '\0') {
+                Serial.println(
+                    "AL_NET,WIFI,AUTO_SCAN,NO_KNOWN_NETWORK");
+                scheduleAutoConnect(now, AUTO_CONNECT_RETRY_MS);
+                return;
+            }
+
+            Serial.printf(
+                "AL_NET,WIFI,AUTO_CONNECTING,%s\n",
+                autoConnectSsid);
+            connectUsing(autoConnectSsid, autoConnectPassword);
+            autoConnectState = AutoConnectState::Connecting;
+            autoConnectDeadline = now + AUTO_CONNECT_TIMEOUT_MS;
+            autoConnectedSince = 0;
+            return;
+        }
+
+        if (
+            autoConnectState == AutoConnectState::Connecting
+            && static_cast<int32_t>(
+                now - autoConnectDeadline) >= 0
+        ) {
+            copyText(
+                autoFailedSsid,
+                sizeof(autoFailedSsid),
+                autoConnectSsid);
+            autoFailedUntil = now + AUTO_CONNECT_FAILED_HOLD_MS;
+            Serial.printf(
+                "AL_NET,WIFI,AUTO_FAILED,%s\n",
+                autoConnectSsid);
+            scheduleAutoConnect(now, AUTO_CONNECT_RETRY_MS);
+        }
+    }
+
     void startOta()
     {
 #if ARROWLAB_HAS_NETWORK_SECRETS
@@ -287,6 +513,12 @@ namespace ArrowLabNetwork
             Serial.println(
                 "AL_NET,DISABLED,no saved or fallback credentials");
         }
+
+        scheduleAutoConnect(
+            millis(),
+            activeSsid[0] != '\0'
+                ? AUTO_CONNECT_GRACE_MS
+                : 1000);
     }
 
     void handle()
@@ -331,6 +563,8 @@ namespace ArrowLabNetwork
                     pendingSsid);
             }
         }
+
+        serviceAutomaticConnection();
 
         if (WiFi.status() == WL_CONNECTED) {
             if (!otaStarted) startOta();
@@ -548,15 +782,28 @@ namespace ArrowLabNetwork
 
     bool startScan()
     {
+        externalScanActive = true;
         const int state = WiFi.scanComplete();
-        if (state == WIFI_SCAN_RUNNING) return false;
+        if (state == WIFI_SCAN_RUNNING) return true;
+
         WiFi.scanDelete();
-        return WiFi.scanNetworks(true, false) == WIFI_SCAN_RUNNING;
+        const bool startedScan =
+            WiFi.scanNetworks(true, false) == WIFI_SCAN_RUNNING;
+        if (!startedScan) {
+            externalScanActive = false;
+            scheduleAutoConnect(millis(), 1000);
+        }
+        return startedScan;
     }
 
     int scanComplete()
     {
-        return WiFi.scanComplete();
+        const int state = WiFi.scanComplete();
+        if (state == WIFI_SCAN_FAILED && externalScanActive) {
+            externalScanActive = false;
+            scheduleAutoConnect(millis(), 1000);
+        }
+        return state;
     }
 
     size_t takeScanResults(ScanResult *results, size_t maximumResults)
@@ -591,6 +838,10 @@ namespace ArrowLabNetwork
             ++written;
         }
         WiFi.scanDelete();
+        if (externalScanActive) {
+            externalScanActive = false;
+            scheduleAutoConnect(millis(), 1000);
+        }
         return written;
     }
 
