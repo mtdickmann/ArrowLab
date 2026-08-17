@@ -142,7 +142,11 @@ namespace
         preferences.putString(PASSWORD_KEY, pendingPassword);
         const bool pendingStored =
             saveProfile(preferences, pendingSsid, pendingPassword);
-        preferences.putBool(FALLBACK_SUPPRESSED_KEY, false);
+#if ARROWLAB_HAS_NETWORK_SECRETS
+        if (strcmp(pendingSsid, ARROWLAB_WIFI_SSID) == 0) {
+            preferences.putBool(FALLBACK_SUPPRESSED_KEY, false);
+        }
+#endif
         preferences.end();
         return previousStored && ssidWritten > 0 && pendingStored;
     }
@@ -497,7 +501,11 @@ namespace ArrowLabNetwork
         copyText(activePassword, sizeof(activePassword), pendingPassword);
         savedCredentialsAvailable = true;
         activeProfileForgotten = false;
-        fallbackSuppressed = false;
+#if ARROWLAB_HAS_NETWORK_SECRETS
+        if (strcmp(pendingSsid, ARROWLAB_WIFI_SSID) == 0) {
+            fallbackSuppressed = false;
+        }
+#endif
         credentialState = CredentialTestState::Idle;
         return true;
     }
