@@ -81,11 +81,15 @@ namespace
     lv_obj_t *wifiProfileStateLabel = nullptr;
     lv_obj_t *wifiProfilePasswordLabel = nullptr;
     lv_obj_t *wifiProfileRevealIcon = nullptr;
+    lv_obj_t *wifiProfileConnectButton = nullptr;
+    lv_obj_t *wifiProfileConnectLabel = nullptr;
+    char wifiProfileSsid[33] = {};
     char wifiSavedSsids[MAX_WIFI_SAVED_PROFILES][33] = {};
     char wifiProfilePassword[65] = {};
     size_t wifiSavedCount = 0;
     size_t wifiForgetIndex = 0;
     bool wifiProfilePasswordRevealed = false;
+    bool wifiProfileConnectionActive = false;
     lv_obj_t *wifiScanStatusLabel = nullptr;
     lv_obj_t *wifiNetworkList = nullptr;
     lv_obj_t *wifiNetworkButtons[MAX_WIFI_SCAN_RESULTS] = {};
@@ -934,6 +938,28 @@ namespace
         }
     }
 
+    void wifiProfileConnectEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) != LV_EVENT_CLICKED
+            || wifiConnectCallback == nullptr
+            || wifiProfileSsid[0] == '\0'
+        ) {
+            return;
+        }
+
+        wifiProfileConnectionActive = true;
+        lv_obj_add_state(
+            wifiProfileConnectButton,
+            LV_STATE_DISABLED);
+        lv_label_set_text(
+            wifiProfileConnectLabel,
+            "CONNECTING");
+        wifiConnectCallback(
+            wifiProfileSsid,
+            wifiProfilePassword);
+    }
+
     void wifiSavedProfileEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
@@ -942,9 +968,14 @@ namespace
             lv_event_get_user_data(event));
         if (index >= wifiSavedCount) return;
 
+        snprintf(
+            wifiProfileSsid,
+            sizeof(wifiProfileSsid),
+            "%s",
+            wifiSavedSsids[index]);
         lv_label_set_text(
             wifiProfileSsidLabel,
-            wifiSavedSsids[index]);
+            wifiProfileSsid);
 
         const ArrowLabNetwork::Info network =
             ArrowLabNetwork::info();
@@ -958,6 +989,19 @@ namespace
             wifiProfileStateLabel,
             lv_color_hex(active ? COLOUR_OK : COLOUR_MUTED),
             LV_PART_MAIN);
+        wifiProfileConnectionActive = false;
+        lv_label_set_text(
+            wifiProfileConnectLabel,
+            active ? "CONNECTED" : "CONNECT");
+        if (active) {
+            lv_obj_add_state(
+                wifiProfileConnectButton,
+                LV_STATE_DISABLED);
+        } else {
+            lv_obj_clear_state(
+                wifiProfileConnectButton,
+                LV_STATE_DISABLED);
+        }
 
         wifiProfilePassword[0] = '\0';
         ArrowLabNetwork::savedPasswordForSsid(
@@ -2639,6 +2683,21 @@ namespace ArrowLabUI
             lv_color_hex(COLOUR_TEXT));
         lv_obj_center(profileBackLabel);
 
+        wifiProfileConnectButton = lv_btn_create(wifiProfilePage);
+        lv_obj_set_size(wifiProfileConnectButton, 142, 34);
+        lv_obj_set_pos(wifiProfileConnectButton, 324, 7);
+        lv_obj_add_event_cb(
+            wifiProfileConnectButton,
+            wifiProfileConnectEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        wifiProfileConnectLabel = createTextLabel(
+            wifiProfileConnectButton,
+            "CONNECT",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(wifiProfileConnectLabel);
+
         lv_obj_t *profilePanel = lv_obj_create(wifiProfilePage);
         lv_obj_set_size(profilePanel, 440, 166);
         lv_obj_set_pos(profilePanel, 20, 52);
@@ -3386,19 +3445,45 @@ namespace ArrowLabUI
         bool success,
         const char *message)
     {
+        const uint32_t messageColour =
+            success
+                ? COLOUR_OK
+                : busy
+                    ? COLOUR_REQUIRED
+                    : 0xFF4D4D;
         if (wifiPasswordStatusLabel != nullptr) {
             lv_label_set_text(
                 wifiPasswordStatusLabel,
                 message != nullptr ? message : "");
             lv_obj_set_style_text_color(
                 wifiPasswordStatusLabel,
-                lv_color_hex(
-                    success
-                        ? COLOUR_OK
-                        : busy
-                            ? COLOUR_REQUIRED
-                            : 0xFF4D4D),
+                lv_color_hex(messageColour),
                 LV_PART_MAIN);
+        }
+        if (
+            wifiProfileConnectionActive
+            && wifiProfileStateLabel != nullptr
+        ) {
+            lv_label_set_text(
+                wifiProfileStateLabel,
+                message != nullptr ? message : "");
+            lv_obj_set_style_text_color(
+                wifiProfileStateLabel,
+                lv_color_hex(messageColour),
+                LV_PART_MAIN);
+            lv_label_set_text(
+                wifiProfileConnectLabel,
+                busy ? "CONNECTING" : success ? "CONNECTED" : "RETRY");
+            if (busy || success) {
+                lv_obj_add_state(
+                    wifiProfileConnectButton,
+                    LV_STATE_DISABLED);
+            } else {
+                lv_obj_clear_state(
+                    wifiProfileConnectButton,
+                    LV_STATE_DISABLED);
+                wifiProfileConnectionActive = false;
+            }
         }
         if (wifiKeyboard != nullptr) {
             if (busy) {
@@ -3408,6 +3493,7 @@ namespace ArrowLabUI
             }
         }
         if (success) {
+            wifiProfileConnectionActive = false;
             lv_textarea_set_text(wifiPasswordTextArea, "");
             showPage(wifiPage);
         }
@@ -4031,7 +4117,15 @@ namespace ArrowLabUI
         };
 
         char text[256];
-        updateHeaderWifiStrength(vieweConnected, vieweRssiDbm);
+        const bool arrowLabConnected =
+            vieweConnected && wroomOnline && wroomConnected;
+        const int16_t arrowLabRssi =
+            vieweRssiDbm < wroomRssiDbm
+                ? vieweRssiDbm
+                : wroomRssiDbm;
+        updateHeaderWifiStrength(
+            arrowLabConnected,
+            arrowLabRssi);
 
         if (vieweNetworkLabel != nullptr) {
             snprintf(
