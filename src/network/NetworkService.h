@@ -46,6 +46,10 @@ namespace ArrowLabNetwork
         const char *ssid,
         char *password,
         size_t passwordSize);
+    size_t savedProfileSsids(
+        char ssids[][33],
+        size_t maximumProfiles);
+    bool forgetSavedProfile(const char *ssid);
     Info info();
 
     bool testCredentials(const char *ssid, const char *password);
