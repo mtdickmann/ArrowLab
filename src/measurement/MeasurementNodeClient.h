@@ -25,6 +25,7 @@ public:
     bool testWifiCredentials(const char *ssid, const char *password);
     bool commitWifiCredentials();
     bool revertWifiCredentials();
+    bool forgetWifiProfile(const char *ssid);
 
     bool connected(uint32_t currentTime) const;
     bool freshPacket() const;
