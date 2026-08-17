@@ -11,6 +11,7 @@
 #include "calibration/CalibrationController.h"
 #include "measurement/LoadCellChannel.h"
 #include "measurement/MeasurementChannel.h"
+#include "network/NetworkService.h"
 #include "protocol/MeasurementProtocol.h"
 #include "spine/SpineTestController.h"
 #include "storage/InstrumentStorage.h"
@@ -370,6 +371,8 @@ void setup()
         Version::PATCH,
         Version::STATUS);
 
+    ArrowLabNetwork::begin("arrowlab-measurement");
+
     if (!instrumentStorage.begin()) {
         Serial.println("WARNING: measurement-node storage unavailable");
     }
@@ -415,6 +418,8 @@ void setup()
 void loop()
 {
     const uint32_t now = millis();
+    ArrowLabNetwork::handle();
+
     if (
         ArrowLabConfig::measurementLinkIsOneWire()
         && !firstBusLowLogged

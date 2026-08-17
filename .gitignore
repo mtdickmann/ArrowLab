@@ -12,3 +12,4 @@ calibration/diagnostics/wroom_*.csv
 calibration/diagnostics/wroom_*.xlsx
 .chatgpt/config.json
 AGENTS.md
+include/NetworkSecrets.h

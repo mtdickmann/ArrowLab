@@ -18,6 +18,7 @@
 #include "measurement/LoadCellChannel.h"
 #include "measurement/LoadAggregation.h"
 #include "measurement/MeasurementNodeClient.h"
+#include "network/NetworkService.h"
 #include "diagnostics/CreepDiagnostic.h"
 #include "protocol/MeasurementProtocol.h"
 #include "spine/SpineCalculation.h"
@@ -887,6 +888,8 @@ void setup()
         Version::STATUS
     );
 
+    ArrowLabNetwork::begin("arrowlab-viewe");
+
     displayBoard = new Board();
     displayBoard->init();
 
@@ -969,6 +972,7 @@ void setup()
 void loop()
 {
     const uint32_t now = millis();
+    ArrowLabNetwork::handle();
 
     // Serial commands must be serviced even between HX711 UI refreshes so
     // heartbeat/ACK traffic cannot be starved by the 100 ms sensor cadence.
