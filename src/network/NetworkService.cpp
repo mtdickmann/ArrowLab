@@ -29,6 +29,7 @@ namespace
     bool otaStarted = false;
     bool updating = false;
     bool savedCredentialsAvailable = false;
+    bool activeProfileForgotten = false;
     uint32_t lastConnectionLog = 0;
     uint32_t credentialDeadline = 0;
     const char *deviceHostname = "arrowlab";
@@ -127,7 +128,12 @@ namespace
         // Preserve the network that was active before switching, including
         // credentials saved by older single-profile firmware.
         const bool previousStored =
-            saveProfile(preferences, activeSsid, activePassword);
+            activeProfileForgotten
+                ? true
+                : saveProfile(
+                    preferences,
+                    activeSsid,
+                    activePassword);
         const size_t ssidWritten =
             preferences.putString(SSID_KEY, pendingSsid);
         preferences.putString(PASSWORD_KEY, pendingPassword);
@@ -151,7 +157,10 @@ namespace
             return false;
         }
 
-        if (strcmp(ssid, activeSsid) == 0) {
+        if (
+            !activeProfileForgotten
+            && strcmp(ssid, activeSsid) == 0
+        ) {
             copyText(password, passwordSize, activePassword);
             return true;
         }
@@ -413,6 +422,10 @@ namespace ArrowLabNetwork
         }
         preferences.end();
 
+        if (strcmp(ssid, activeSsid) == 0) {
+            activeProfileForgotten = true;
+        }
+
         Serial.printf(
             "AL_NET,WIFI,FORGET,%s,%s\n",
             ssid,
@@ -472,6 +485,7 @@ namespace ArrowLabNetwork
         copyText(activeSsid, sizeof(activeSsid), pendingSsid);
         copyText(activePassword, sizeof(activePassword), pendingPassword);
         savedCredentialsAvailable = true;
+        activeProfileForgotten = false;
         credentialState = CredentialTestState::Idle;
         return true;
     }
