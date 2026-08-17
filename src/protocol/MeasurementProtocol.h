@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 7;
+    constexpr uint8_t VERSION = 8;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -119,6 +119,10 @@ namespace ArrowLabProtocol
         uint8_t spinePositionCount = 0;
         uint8_t spineCurrentPosition = 0;
         uint8_t spineHoldPercent = 0;
+        uint8_t firmwareMajor = 0;
+        uint8_t firmwareMinor = 0;
+        uint8_t firmwarePatch = 0;
+        char firmwareStatus[8] = {};
         NetworkStatus network;
         uint8_t checksum = 0;
     };
@@ -140,7 +144,7 @@ namespace ArrowLabProtocol
 
     static_assert(sizeof(ChannelStatus) == 21, "Unexpected channel packet padding");
     static_assert(sizeof(NetworkStatus) == 94, "Unexpected network packet padding");
-    static_assert(sizeof(StatusPacket) == 173, "Unexpected status packet size");
+    static_assert(sizeof(StatusPacket) == 184, "Unexpected status packet size");
     static_assert(sizeof(CommandPacket) == 111, "Unexpected command packet size");
 
     inline uint8_t checksum(const void *data, size_t length)
