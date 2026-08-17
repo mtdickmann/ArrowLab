@@ -71,7 +71,10 @@ namespace
     lv_obj_t *wifiPasswordSsidLabel = nullptr;
     lv_obj_t *wifiPasswordStatusLabel = nullptr;
     lv_obj_t *wifiPasswordTextArea = nullptr;
+    lv_obj_t *wifiPasswordRevealButton = nullptr;
+    lv_obj_t *wifiPasswordRevealIcon = nullptr;
     lv_obj_t *wifiKeyboard = nullptr;
+    bool wifiPasswordRevealed = false;
     char wifiScannedSsids[4][33] = {};
     size_t wifiScannedCount = 0;
     size_t wifiSelectedIndex = 0;
@@ -816,6 +819,28 @@ namespace
         }
     }
 
+    void wifiPasswordRevealEvent(lv_event_t *event)
+    {
+        if (
+            lv_event_get_code(event) != LV_EVENT_CLICKED
+            || wifiPasswordTextArea == nullptr
+        ) {
+            return;
+        }
+
+        wifiPasswordRevealed = !wifiPasswordRevealed;
+        lv_textarea_set_password_mode(
+            wifiPasswordTextArea,
+            !wifiPasswordRevealed);
+        if (wifiPasswordRevealIcon != nullptr) {
+            lv_obj_set_style_text_color(
+                wifiPasswordRevealIcon,
+                lv_color_hex(
+                    wifiPasswordRevealed ? COLOUR_ACCENT : COLOUR_MUTED),
+                LV_PART_MAIN);
+        }
+    }
+
     void wifiNetworkSelectEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
@@ -839,6 +864,14 @@ namespace
         }
         if (wifiPasswordTextArea != nullptr) {
             lv_textarea_set_text(wifiPasswordTextArea, "");
+            wifiPasswordRevealed = false;
+            lv_textarea_set_password_mode(wifiPasswordTextArea, true);
+        }
+        if (wifiPasswordRevealIcon != nullptr) {
+            lv_obj_set_style_text_color(
+                wifiPasswordRevealIcon,
+                lv_color_hex(COLOUR_MUTED),
+                LV_PART_MAIN);
         }
         if (wifiKeyboard != nullptr) {
             lv_obj_clear_state(wifiKeyboard, LV_STATE_DISABLED);
@@ -2198,25 +2231,43 @@ namespace ArrowLabUI
         lv_label_set_long_mode(wifiPasswordSsidLabel, LV_LABEL_LONG_DOT);
 
         wifiPasswordTextArea = lv_textarea_create(wifiPasswordPage);
-        lv_obj_set_size(wifiPasswordTextArea, 210, 34);
+        lv_obj_set_size(wifiPasswordTextArea, 172, 34);
         lv_obj_set_pos(wifiPasswordTextArea, 8, 38);
         lv_textarea_set_one_line(wifiPasswordTextArea, true);
         lv_textarea_set_password_mode(wifiPasswordTextArea, true);
         lv_textarea_set_placeholder_text(wifiPasswordTextArea, "Wi-Fi password");
+
+        wifiPasswordRevealButton = lv_btn_create(wifiPasswordPage);
+        lv_obj_set_size(wifiPasswordRevealButton, 38, 34);
+        lv_obj_set_pos(wifiPasswordRevealButton, 184, 38);
+        lv_obj_add_event_cb(
+            wifiPasswordRevealButton,
+            wifiPasswordRevealEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        wifiPasswordRevealIcon = createTextLabel(
+            wifiPasswordRevealButton,
+            LV_SYMBOL_EYE_OPEN,
+            &lv_font_montserrat_18,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_center(wifiPasswordRevealIcon);
 
         wifiPasswordStatusLabel = createTextLabel(
             wifiPasswordPage,
             "Enter password, then tap the keyboard checkmark",
             &lv_font_montserrat_12,
             lv_color_hex(COLOUR_MUTED));
-        lv_obj_set_size(wifiPasswordStatusLabel, 246, 34);
-        lv_obj_set_pos(wifiPasswordStatusLabel, 226, 38);
+        lv_obj_set_size(wifiPasswordStatusLabel, 242, 34);
+        lv_obj_set_pos(wifiPasswordStatusLabel, 230, 38);
         lv_label_set_long_mode(wifiPasswordStatusLabel, LV_LABEL_LONG_WRAP);
 
         wifiKeyboard = lv_keyboard_create(wifiPasswordPage);
-        lv_obj_set_size(wifiKeyboard, 464, 148);
-        lv_obj_set_pos(wifiKeyboard, 8, 78);
+        lv_obj_set_size(wifiKeyboard, 464, 146);
+        lv_obj_set_style_pad_all(wifiKeyboard, 3, LV_PART_MAIN);
+        lv_obj_set_style_pad_row(wifiKeyboard, 2, LV_PART_MAIN);
+        lv_obj_set_style_pad_column(wifiKeyboard, 2, LV_PART_MAIN);
         lv_keyboard_set_textarea(wifiKeyboard, wifiPasswordTextArea);
+        lv_obj_align(wifiKeyboard, LV_ALIGN_BOTTOM_MID, 0, -2);
         lv_obj_add_event_cb(
             wifiKeyboard,
             wifiKeyboardEvent,
