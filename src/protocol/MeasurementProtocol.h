@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 5;
+    constexpr uint8_t VERSION = 6;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -27,7 +27,10 @@ namespace ArrowLabProtocol
         CancelSpineTest = 6,
         ConfirmSpineZero = 7,
         RestartSpineAttempt = 8,
-        ConfirmSpineClear = 9
+        ConfirmSpineClear = 9,
+        TestWifiCredentials = 10,
+        CommitWifiCredentials = 11,
+        RevertWifiCredentials = 12
     };
 
     enum class CalibrationStage : uint8_t
@@ -82,7 +85,11 @@ namespace ArrowLabProtocol
     enum NetworkFlags : uint8_t
     {
         NetworkConfigured = 1U << 0,
-        NetworkConnected = 1U << 1
+        NetworkConnected = 1U << 1,
+        NetworkCredentialsSaved = 1U << 2,
+        NetworkCredentialTesting = 1U << 3,
+        NetworkCredentialTestSucceeded = 1U << 4,
+        NetworkCredentialTestFailed = 1U << 5
     };
 
     struct NetworkStatus
@@ -124,6 +131,8 @@ namespace ArrowLabProtocol
         uint8_t command = 0;
         uint8_t side = 0;
         int32_t referenceMilliGrams = 0;
+        char wifiSsid[33] = {};
+        char wifiPassword[65] = {};
         uint8_t checksum = 0;
     };
 #pragma pack(pop)
@@ -131,7 +140,7 @@ namespace ArrowLabProtocol
     static_assert(sizeof(ChannelStatus) == 21, "Unexpected channel packet padding");
     static_assert(sizeof(NetworkStatus) == 94, "Unexpected network packet padding");
     static_assert(sizeof(StatusPacket) == 173, "Unexpected status packet size");
-    static_assert(sizeof(CommandPacket) == 13, "Unexpected command packet size");
+    static_assert(sizeof(CommandPacket) == 111, "Unexpected command packet size");
 
     inline uint8_t checksum(const void *data, size_t length)
     {
@@ -174,7 +183,7 @@ namespace ArrowLabProtocol
             && packet.version == VERSION
             && packet.packetSize == sizeof(CommandPacket)
             && packet.command
-                <= static_cast<uint8_t>(CommandType::ConfirmSpineClear)
+                <= static_cast<uint8_t>(CommandType::RevertWifiCredentials)
             && packet.side <= static_cast<uint8_t>(Side::Right)
             && checksumValid(packet);
     }

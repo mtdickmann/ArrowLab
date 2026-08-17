@@ -22,6 +22,9 @@ public:
     bool confirmSpineClear();
     bool confirmSpineZero();
     bool restartSpineAttempt();
+    bool testWifiCredentials(const char *ssid, const char *password);
+    bool commitWifiCredentials();
+    bool revertWifiCredentials();
 
     bool connected(uint32_t currentTime) const;
     bool freshPacket() const;
@@ -34,7 +37,9 @@ private:
     bool send(
         ArrowLabProtocol::CommandType command,
         ArrowLabProtocol::Side side,
-        int32_t referenceMilliGrams);
+        int32_t referenceMilliGrams,
+        const char *wifiSsid = nullptr,
+        const char *wifiPassword = nullptr);
 
     HardwareSerial nodeSerial_{1};
     ArrowLabProtocol::StatusPacket status_;

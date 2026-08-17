@@ -221,6 +221,26 @@ namespace
             statusPacket.network.flags |=
                 ArrowLabProtocol::NetworkConnected;
         }
+        if (network.savedCredentials) {
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkCredentialsSaved;
+        }
+        switch (network.credentialTest) {
+        case ArrowLabNetwork::CredentialTestState::Testing:
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkCredentialTesting;
+            break;
+        case ArrowLabNetwork::CredentialTestState::Succeeded:
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkCredentialTestSucceeded;
+            break;
+        case ArrowLabNetwork::CredentialTestState::Failed:
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkCredentialTestFailed;
+            break;
+        case ArrowLabNetwork::CredentialTestState::Idle:
+            break;
+        }
 
         ArrowLabProtocol::seal(statusPacket);
     }
@@ -325,6 +345,20 @@ namespace
         case ArrowLabProtocol::CommandType::RestartSpineAttempt:
             spineTestController.restartAttempt(millis());
             serviceSpineAction();
+            break;
+
+        case ArrowLabProtocol::CommandType::TestWifiCredentials:
+            ArrowLabNetwork::testCredentials(
+                command.wifiSsid,
+                command.wifiPassword);
+            break;
+
+        case ArrowLabProtocol::CommandType::CommitWifiCredentials:
+            ArrowLabNetwork::commitTestedCredentials();
+            break;
+
+        case ArrowLabProtocol::CommandType::RevertWifiCredentials:
+            ArrowLabNetwork::revertCredentialTest();
             break;
 
         case ArrowLabProtocol::CommandType::None:

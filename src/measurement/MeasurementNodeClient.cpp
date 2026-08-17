@@ -158,6 +158,34 @@ bool MeasurementNodeClient::restartSpineAttempt()
         0);
 }
 
+bool MeasurementNodeClient::testWifiCredentials(
+    const char *ssid,
+    const char *password)
+{
+    return send(
+        ArrowLabProtocol::CommandType::TestWifiCredentials,
+        ArrowLabProtocol::Side::Left,
+        0,
+        ssid,
+        password);
+}
+
+bool MeasurementNodeClient::commitWifiCredentials()
+{
+    return send(
+        ArrowLabProtocol::CommandType::CommitWifiCredentials,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
+bool MeasurementNodeClient::revertWifiCredentials()
+{
+    return send(
+        ArrowLabProtocol::CommandType::RevertWifiCredentials,
+        ArrowLabProtocol::Side::Left,
+        0);
+}
+
 bool MeasurementNodeClient::connected(uint32_t currentTime) const
 {
     return hasPacket_
@@ -185,13 +213,29 @@ const ArrowLabProtocol::ChannelStatus &MeasurementNodeClient::channel(
 bool MeasurementNodeClient::send(
     ArrowLabProtocol::CommandType command,
     ArrowLabProtocol::Side side,
-    int32_t referenceMilliGrams)
+    int32_t referenceMilliGrams,
+    const char *wifiSsid,
+    const char *wifiPassword)
 {
     ArrowLabProtocol::CommandPacket packet;
     packet.sequence = ++commandSequence_;
     packet.command = static_cast<uint8_t>(command);
     packet.side = static_cast<uint8_t>(side);
     packet.referenceMilliGrams = referenceMilliGrams;
+    if (wifiSsid != nullptr) {
+        snprintf(
+            packet.wifiSsid,
+            sizeof(packet.wifiSsid),
+            "%s",
+            wifiSsid);
+    }
+    if (wifiPassword != nullptr) {
+        snprintf(
+            packet.wifiPassword,
+            sizeof(packet.wifiPassword),
+            "%s",
+            wifiPassword);
+    }
     ArrowLabProtocol::seal(packet);
 
     const bool sent = nodeSerial_.write(

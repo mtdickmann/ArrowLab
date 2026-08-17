@@ -6,27 +6,40 @@ namespace ArrowLabNetwork
 {
     using UpdateCallback = void (*)();
 
+    enum class CredentialTestState : uint8_t
+    {
+        Idle = 0,
+        Testing = 1,
+        Succeeded = 2,
+        Failed = 3
+    };
+
     struct Info
     {
         bool configured = false;
         bool connected = false;
+        bool savedCredentials = false;
         char hostname[24] = {};
         char ssid[33] = {};
         char ip[16] = {};
         char mac[18] = {};
         int16_t rssiDbm = -127;
+        CredentialTestState credentialTest =
+            CredentialTestState::Idle;
     };
 
-    // Starts a non-blocking station-mode Wi-Fi connection. The OTA service
-    // becomes available automatically after the network connection succeeds.
     void begin(const char *hostname);
-
-    // Must be called frequently from loop(). It never waits for Wi-Fi.
     void handle();
 
     bool configured();
     bool connected();
+    bool hasSavedCredentials();
     Info info();
+
+    bool testCredentials(const char *ssid, const char *password);
+    bool commitTestedCredentials();
+    void revertCredentialTest();
+    void forgetSavedCredentials();
 
     void setUpdateCallbacks(
         UpdateCallback startCallback,
