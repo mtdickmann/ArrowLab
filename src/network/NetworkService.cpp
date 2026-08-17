@@ -254,6 +254,7 @@ namespace
             preferences.end();
         }
 
+        WiFi.setAutoReconnect(true);
         copyText(activeSsid, sizeof(activeSsid), autoConnectSsid);
         copyText(
             activePassword,
@@ -318,15 +319,22 @@ namespace
                 return;
             }
 
+            // The ESP32 connection manager can keep retrying a vanished
+            // SSID and reject an asynchronous scan. Stop that dead attempt
+            // explicitly before looking for another saved network.
+            WiFi.setAutoReconnect(false);
+            WiFi.disconnect(false, false);
+            delay(50);
             WiFi.scanDelete();
-            if (
-                WiFi.scanNetworks(true, false)
-                    == WIFI_SCAN_RUNNING
-            ) {
+            const int scanStart = WiFi.scanNetworks(true, false);
+            if (scanStart == WIFI_SCAN_RUNNING) {
                 autoConnectState = AutoConnectState::Scanning;
                 Serial.println("AL_NET,WIFI,AUTO_SCAN,START");
             } else {
-                scheduleAutoConnect(now, AUTO_CONNECT_RETRY_MS);
+                Serial.printf(
+                    "AL_NET,WIFI,AUTO_SCAN,START_FAILED,STATE=%d\n",
+                    scanStart);
+                scheduleAutoConnect(now, 2000);
             }
             return;
         }
@@ -405,6 +413,7 @@ namespace
             Serial.printf(
                 "AL_NET,WIFI,AUTO_CONNECTING,%s\n",
                 autoConnectSsid);
+            WiFi.setAutoReconnect(true);
             connectUsing(autoConnectSsid, autoConnectPassword);
             autoConnectState = AutoConnectState::Connecting;
             autoConnectDeadline = now + AUTO_CONNECT_TIMEOUT_MS;
