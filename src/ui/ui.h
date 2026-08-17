@@ -27,6 +27,7 @@ namespace ArrowLabUI
     using WifiConnectCallback = void (*)(
         const char *ssid,
         const char *password);
+    using WifiForgetCallback = bool (*)(const char *ssid);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -51,7 +52,8 @@ namespace ArrowLabUI
     void setCalibrationReferenceGrams(float grams);
     void setWifiCallbacks(
         WifiScanCallback scanCallback,
-        WifiConnectCallback connectCallback);
+        WifiConnectCallback connectCallback,
+        WifiForgetCallback forgetCallback);
     void setWifiScanResults(
         const char ssids[][33],
         const int16_t *rssiDbm,
