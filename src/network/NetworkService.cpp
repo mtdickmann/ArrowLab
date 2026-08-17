@@ -65,6 +65,7 @@ namespace
         if (!preferences.begin(PREFERENCES_NAMESPACE, true)) return false;
         const String ssid = preferences.getString(SSID_KEY, "");
         const String password = preferences.getString(PASSWORD_KEY, "");
+        fallbackSuppressed = preferences.getBool(FALLBACK_SUPPRESSED_KEY, false);
         preferences.end();
 
         if (ssid.isEmpty()) return false;
@@ -141,6 +142,7 @@ namespace
         preferences.putString(PASSWORD_KEY, pendingPassword);
         const bool pendingStored =
             saveProfile(preferences, pendingSsid, pendingPassword);
+        preferences.putBool(FALLBACK_SUPPRESSED_KEY, false);
         preferences.end();
         return previousStored && ssidWritten > 0 && pendingStored;
     }
@@ -187,7 +189,7 @@ namespace
         }
 
 #if ARROWLAB_HAS_NETWORK_SECRETS
-        if (strcmp(ssid, ARROWLAB_WIFI_SSID) == 0) {
+        if (!fallbackSuppressed && strcmp(ssid, ARROWLAB_WIFI_SSID) == 0) {
             copyText(password, passwordSize, ARROWLAB_WIFI_PASSWORD);
             return true;
         }
@@ -250,7 +252,7 @@ namespace ArrowLabNetwork
                 : "arrowlab";
 
         savedCredentialsAvailable = loadSavedCredentials();
-        if (!savedCredentialsAvailable) {
+        if (!savedCredentialsAvailable && !fallbackSuppressed) {
 #if ARROWLAB_HAS_NETWORK_SECRETS
             copyText(
                 activeSsid,
@@ -422,6 +424,13 @@ namespace ArrowLabNetwork
                 removed = true;
             }
         }
+#if ARROWLAB_HAS_NETWORK_SECRETS
+        if (strcmp(ssid, ARROWLAB_WIFI_SSID) == 0) {
+            preferences.putBool(FALLBACK_SUPPRESSED_KEY, true);
+            fallbackSuppressed = true;
+            removed = true;
+        }
+#endif
         preferences.end();
 
         if (strcmp(ssid, activeSsid) == 0) {
@@ -488,6 +497,7 @@ namespace ArrowLabNetwork
         copyText(activePassword, sizeof(activePassword), pendingPassword);
         savedCredentialsAvailable = true;
         activeProfileForgotten = false;
+        fallbackSuppressed = false;
         credentialState = CredentialTestState::Idle;
         return true;
     }
