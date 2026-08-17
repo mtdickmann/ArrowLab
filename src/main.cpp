@@ -149,16 +149,22 @@ namespace
             ArrowLabUI::setWifiSetupResult(
                 false,
                 false,
-                "Unable to contact WROOM - try again");
+                "ArrowLab connection unavailable - try again");
             return;
         }
 
         wifiSetupStage = WifiSetupStage::TestingWroom;
-        wifiSetupDeadline = millis() + 25000;
+        wifiSetupDeadline = millis() + 40000;
+        char connectionMessage[80];
+        snprintf(
+            connectionMessage,
+            sizeof(connectionMessage),
+            "Connecting to %s...",
+            pendingWifiSsid);
         ArrowLabUI::setWifiSetupResult(
             true,
             false,
-            "Testing WROOM connection...");
+            connectionMessage);
     }
 
     void processWifiSetup(uint32_t now)
@@ -221,12 +227,12 @@ namespace
                         pendingWifiSsid,
                         pendingWifiPassword)) {
                     wifiSetupStage = WifiSetupStage::TestingViewe;
-                    wifiSetupDeadline = now + 25000;
+                    wifiSetupDeadline = now + 40000;
                     lvgl_port_lock(-1);
                     ArrowLabUI::setWifiSetupResult(
                         true,
                         false,
-                        "WROOM connected - testing VIEWE...");
+                        "Completing ArrowLab connection...");
                     lvgl_port_unlock();
                 }
             } else if (
@@ -259,7 +265,7 @@ namespace
                 false,
                 localSaved && remoteSaved,
                 localSaved && remoteSaved
-                    ? "Wi-Fi saved on both processors"
+                    ? "Connected - Wi-Fi profile saved"
                     : "Connected, but saving failed - retry");
             lvgl_port_unlock();
         } else if (
