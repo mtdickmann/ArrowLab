@@ -3466,7 +3466,11 @@ namespace ArrowLabUI
         ) {
             lv_label_set_text(
                 wifiProfileStateLabel,
-                message != nullptr ? message : "");
+                busy
+                    ? "STATUS: CONNECTING"
+                    : success
+                        ? "STATUS: ACTIVE"
+                        : "STATUS: FAILED");
             lv_obj_set_style_text_color(
                 wifiProfileStateLabel,
                 lv_color_hex(messageColour),
