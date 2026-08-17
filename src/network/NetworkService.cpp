@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+#include <cstdio>
+#include <cstring>
 #include <WiFi.h>
 
 #if __has_include("NetworkSecrets.h")
@@ -121,5 +123,40 @@ namespace ArrowLabNetwork
 #else
         return false;
 #endif
+    }
+
+    Info info()
+    {
+        Info result;
+        result.configured = configured();
+        result.connected = connected();
+        snprintf(
+            result.hostname,
+            sizeof(result.hostname),
+            "%s",
+            deviceHostname);
+
+#if ARROWLAB_HAS_NETWORK_SECRETS
+        snprintf(
+            result.mac,
+            sizeof(result.mac),
+            "%s",
+            WiFi.macAddress().c_str());
+
+        if (result.connected) {
+            snprintf(
+                result.ssid,
+                sizeof(result.ssid),
+                "%s",
+                WiFi.SSID().c_str());
+            snprintf(
+                result.ip,
+                sizeof(result.ip),
+                "%s",
+                WiFi.localIP().toString().c_str());
+            result.rssiDbm = static_cast<int16_t>(WiFi.RSSI());
+        }
+#endif
+        return result;
     }
 }

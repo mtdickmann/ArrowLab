@@ -644,6 +644,28 @@ namespace
             nodeConnected,
             leftLive,
             rightLive);
+
+        const ArrowLabNetwork::Info vieweNetwork =
+            ArrowLabNetwork::info();
+        const ArrowLabProtocol::NetworkStatus &wroomNetwork =
+            measurementNode.status().network;
+        ArrowLabUI::setNetworkStatus(
+            vieweNetwork.connected,
+            vieweNetwork.hostname,
+            vieweNetwork.ssid,
+            vieweNetwork.ip,
+            vieweNetwork.rssiDbm,
+            vieweNetwork.mac,
+            nodeConnected,
+            nodeConnected
+                && (wroomNetwork.flags
+                    & ArrowLabProtocol::NetworkConnected),
+            wroomNetwork.hostname,
+            wroomNetwork.ssid,
+            wroomNetwork.ip,
+            wroomNetwork.rssiDbm,
+            wroomNetwork.mac);
+
         ArrowLabUI::setCalibrationValidity(
             leftCalibrated,
             rightCalibrated

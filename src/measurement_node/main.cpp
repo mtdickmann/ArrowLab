@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 #include <driver/gpio.h>
 
@@ -188,6 +189,39 @@ namespace
             spineTestController.currentPosition();
         statusPacket.spineHoldPercent =
             spineTestController.holdPercent(now);
+
+        const ArrowLabNetwork::Info network = ArrowLabNetwork::info();
+        snprintf(
+            statusPacket.network.hostname,
+            sizeof(statusPacket.network.hostname),
+            "%s",
+            network.hostname);
+        snprintf(
+            statusPacket.network.ssid,
+            sizeof(statusPacket.network.ssid),
+            "%s",
+            network.ssid);
+        snprintf(
+            statusPacket.network.ip,
+            sizeof(statusPacket.network.ip),
+            "%s",
+            network.ip);
+        snprintf(
+            statusPacket.network.mac,
+            sizeof(statusPacket.network.mac),
+            "%s",
+            network.mac);
+        statusPacket.network.rssiDbm = network.rssiDbm;
+        statusPacket.network.flags = 0;
+        if (network.configured) {
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkConfigured;
+        }
+        if (network.connected) {
+            statusPacket.network.flags |=
+                ArrowLabProtocol::NetworkConnected;
+        }
+
         ArrowLabProtocol::seal(statusPacket);
     }
 

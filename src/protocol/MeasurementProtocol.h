@@ -6,7 +6,7 @@
 
 namespace ArrowLabProtocol
 {
-    constexpr uint8_t VERSION = 4;
+    constexpr uint8_t VERSION = 5;
     constexpr uint16_t STATUS_MAGIC = 0x5341;  // "AS"
     constexpr uint16_t COMMAND_MAGIC = 0x4341; // "AC"
 
@@ -79,6 +79,22 @@ namespace ArrowLabProtocol
         uint8_t flags = 0;
     };
 
+    enum NetworkFlags : uint8_t
+    {
+        NetworkConfigured = 1U << 0,
+        NetworkConnected = 1U << 1
+    };
+
+    struct NetworkStatus
+    {
+        char hostname[24] = {};
+        char ssid[33] = {};
+        char ip[16] = {};
+        char mac[18] = {};
+        int16_t rssiDbm = -127;
+        uint8_t flags = 0;
+    };
+
     struct StatusPacket
     {
         uint16_t magic = STATUS_MAGIC;
@@ -95,6 +111,7 @@ namespace ArrowLabProtocol
         uint8_t spinePositionCount = 0;
         uint8_t spineCurrentPosition = 0;
         uint8_t spineHoldPercent = 0;
+        NetworkStatus network;
         uint8_t checksum = 0;
     };
 
@@ -112,7 +129,8 @@ namespace ArrowLabProtocol
 #pragma pack(pop)
 
     static_assert(sizeof(ChannelStatus) == 21, "Unexpected channel packet padding");
-    static_assert(sizeof(StatusPacket) == 79, "Unexpected status packet size");
+    static_assert(sizeof(NetworkStatus) == 94, "Unexpected network packet padding");
+    static_assert(sizeof(StatusPacket) == 173, "Unexpected status packet size");
     static_assert(sizeof(CommandPacket) == 13, "Unexpected command packet size");
 
     inline uint8_t checksum(const void *data, size_t length)

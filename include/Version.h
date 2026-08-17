@@ -8,7 +8,7 @@ namespace Version
 
   constexpr uint8_t MAJOR = 0;
   constexpr uint8_t MINOR = 2;
-  constexpr uint8_t PATCH = 5;
+  constexpr uint8_t PATCH = 6;
 
   constexpr char STATUS[] = "DEV";
 }

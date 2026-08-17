@@ -63,6 +63,21 @@ namespace ArrowLabUI
         bool leftLive,
         bool rightLive);
 
+    void setNetworkStatus(
+        bool vieweConnected,
+        const char *vieweHostname,
+        const char *vieweSsid,
+        const char *vieweIp,
+        int16_t vieweRssiDbm,
+        const char *vieweMac,
+        bool wroomOnline,
+        bool wroomConnected,
+        const char *wroomHostname,
+        const char *wroomSsid,
+        const char *wroomIp,
+        int16_t wroomRssiDbm,
+        const char *wroomMac);
+
     /**
      * Update the displayed raw reading for the left sensor.
      */

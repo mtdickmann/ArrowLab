@@ -43,6 +43,7 @@ namespace
     lv_obj_t *weighPage = nullptr;
     lv_obj_t *spinePage = nullptr;
     lv_obj_t *settingsPage = nullptr;
+    lv_obj_t *wifiPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
     lv_obj_t *diagnosticsMenuPage = nullptr;
     lv_obj_t *diagnosticSidePage = nullptr;
@@ -53,6 +54,8 @@ namespace
     lv_obj_t *faultLabel = nullptr;
     lv_obj_t *settingsCalibrationLabel = nullptr;
     lv_obj_t *settingsCalibrationButton = nullptr;
+    lv_obj_t *vieweNetworkLabel = nullptr;
+    lv_obj_t *wroomNetworkLabel = nullptr;
     lv_obj_t *weighSourceLabel = nullptr;
     lv_obj_t *weighValueLabel = nullptr;
     lv_obj_t *weighUnitLabel = nullptr;
@@ -564,6 +567,7 @@ namespace
         lv_obj_add_flag(weighPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(spinePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifiPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticsMenuPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(diagnosticSidePage, LV_OBJ_FLAG_HIDDEN);
@@ -583,6 +587,8 @@ namespace
                     : "SPINE TEST";
             } else if (page == settingsPage) {
                 title = "SETTINGS";
+            } else if (page == wifiPage) {
+                title = "WI-FI";
             } else if (page == calibrationPage) {
                 title = "CALIBRATION";
             } else if (page == diagnosticsMenuPage) {
@@ -687,6 +693,20 @@ namespace
     }
 
     void settingsButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(settingsPage);
+        }
+    }
+
+    void wifiButtonEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(wifiPage);
+        }
+    }
+
+    void wifiBackEvent(lv_event_t *event)
     {
         if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
             showPage(settingsPage);
@@ -1771,10 +1791,16 @@ namespace ArrowLabUI
             8,
             homeButtonEvent);
 
+        createMenuButton(
+            settingsPage,
+            "WI-FI & NETWORK",
+            64,
+            wifiButtonEvent);
+
         settingsCalibrationButton = createMenuButton(
             settingsPage,
             "CALIBRATION",
-            70,
+            120,
             calibrationPageButtonEvent);
         settingsCalibrationLabel = createTextLabel(
             settingsCalibrationButton,
@@ -1786,11 +1812,67 @@ namespace ArrowLabUI
         diagnosticsButton = createMenuButton(
             settingsPage,
             "DIAGNOSTICS  [DEV]",
-            132,
+            174,
             diagnosticsButtonEvent);
         if (!developerMode) {
             lv_obj_add_flag(diagnosticsButton, LV_OBJ_FLAG_HIDDEN);
         }
+
+        wifiPage = lv_obj_create(screen);
+        lv_obj_set_size(wifiPage, 480, 228);
+        lv_obj_set_pos(wifiPage, 0, 44);
+        lv_obj_set_style_bg_opa(wifiPage, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(wifiPage, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(wifiPage, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(wifiPage, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *wifiBack = lv_btn_create(wifiPage);
+        lv_obj_set_size(wifiBack, 104, 34);
+        lv_obj_set_pos(wifiBack, 14, 7);
+        lv_obj_add_event_cb(
+            wifiBack,
+            wifiBackEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *wifiBackLabel = createTextLabel(
+            wifiBack,
+            "< SETTINGS",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(wifiBackLabel);
+
+        lv_obj_t *wifiHint = createTextLabel(
+            wifiPage,
+            "Live station details - MAC may be used for DHCP reservations",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(wifiHint, 130, 15);
+
+        lv_obj_t *viewePanel = lv_obj_create(wifiPage);
+        lv_obj_set_size(viewePanel, 214, 170);
+        lv_obj_set_pos(viewePanel, 20, 50);
+        stylePanel(viewePanel);
+        vieweNetworkLabel = createTextLabel(
+            viewePanel,
+            "VIEWE\nWaiting for network information",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(vieweNetworkLabel, 194, 150);
+        lv_obj_set_pos(vieweNetworkLabel, 10, 9);
+        lv_label_set_long_mode(vieweNetworkLabel, LV_LABEL_LONG_DOT);
+
+        lv_obj_t *wroomPanel = lv_obj_create(wifiPage);
+        lv_obj_set_size(wroomPanel, 214, 170);
+        lv_obj_set_pos(wroomPanel, 246, 50);
+        stylePanel(wroomPanel);
+        wroomNetworkLabel = createTextLabel(
+            wroomPanel,
+            "WROOM\nWaiting for measurement node",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(wroomNetworkLabel, 194, 150);
+        lv_obj_set_pos(wroomNetworkLabel, 10, 9);
+        lv_label_set_long_mode(wroomNetworkLabel, LV_LABEL_LONG_DOT);
 
         diagnosticsMenuPage = lv_obj_create(screen);
         lv_obj_set_size(diagnosticsMenuPage, 480, 228);
@@ -2658,6 +2740,69 @@ namespace ArrowLabUI
         if (statusLabel != nullptr)
         {
             lv_label_set_text(statusLabel, text);
+        }
+    }
+
+    void setNetworkStatus(
+        bool vieweConnected,
+        const char *vieweHostname,
+        const char *vieweSsid,
+        const char *vieweIp,
+        int16_t vieweRssiDbm,
+        const char *vieweMac,
+        bool wroomOnline,
+        bool wroomConnected,
+        const char *wroomHostname,
+        const char *wroomSsid,
+        const char *wroomIp,
+        int16_t wroomRssiDbm,
+        const char *wroomMac)
+    {
+        const auto quality = [](int16_t rssi) {
+            if (rssi >= -55) return "EXCELLENT";
+            if (rssi >= -67) return "GOOD";
+            if (rssi >= -75) return "FAIR";
+            return "WEAK";
+        };
+
+        char text[256];
+
+        if (vieweNetworkLabel != nullptr) {
+            snprintf(
+                text,
+                sizeof(text),
+                "VIEWE  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm  %s\nMAC: %s",
+                vieweConnected ? "ONLINE" : "OFFLINE",
+                vieweHostname != nullptr ? vieweHostname : "--",
+                vieweConnected && vieweSsid != nullptr ? vieweSsid : "--",
+                vieweConnected && vieweIp != nullptr ? vieweIp : "--",
+                static_cast<int>(vieweRssiDbm),
+                vieweConnected ? quality(vieweRssiDbm) : "--",
+                vieweMac != nullptr && vieweMac[0] != '\0'
+                    ? vieweMac
+                    : "--");
+            lv_label_set_text(vieweNetworkLabel, text);
+        }
+
+        if (wroomNetworkLabel != nullptr) {
+            snprintf(
+                text,
+                sizeof(text),
+                "WROOM  %s\n%s\nSSID: %s\nIP: %s\nRSSI: %d dBm  %s\nMAC: %s",
+                wroomOnline
+                    ? (wroomConnected ? "ONLINE" : "WI-FI OFF")
+                    : "NODE OFFLINE",
+                wroomHostname != nullptr && wroomHostname[0] != '\0'
+                    ? wroomHostname
+                    : "arrowlab-measurement",
+                wroomConnected && wroomSsid != nullptr ? wroomSsid : "--",
+                wroomConnected && wroomIp != nullptr ? wroomIp : "--",
+                static_cast<int>(wroomRssiDbm),
+                wroomConnected ? quality(wroomRssiDbm) : "--",
+                wroomMac != nullptr && wroomMac[0] != '\0'
+                    ? wroomMac
+                    : "--");
+            lv_label_set_text(wroomNetworkLabel, text);
         }
     }
 
