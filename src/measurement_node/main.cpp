@@ -361,6 +361,10 @@ namespace
             ArrowLabNetwork::revertCredentialTest();
             break;
 
+        case ArrowLabProtocol::CommandType::ForgetWifiProfile:
+            ArrowLabNetwork::forgetSavedProfile(command.wifiSsid);
+            break;
+
         case ArrowLabProtocol::CommandType::None:
         default:
             return;
