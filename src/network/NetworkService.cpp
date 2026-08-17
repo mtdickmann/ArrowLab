@@ -75,13 +75,12 @@ namespace
         snprintf(key, keySize, "p%u%c", static_cast<unsigned>(index), suffix);
     }
 
-    bool savePendingCredentials()
+    bool saveProfile(
+        Preferences &preferences,
+        const char *ssid,
+        const char *password)
     {
-        Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
-
-        const size_t ssidWritten = preferences.putString(SSID_KEY, pendingSsid);
-        preferences.putString(PASSWORD_KEY, pendingPassword);
+        if (ssid == nullptr || ssid[0] == '\0') return true;
 
         size_t profileIndex = MAX_SAVED_PROFILES;
         size_t emptyIndex = MAX_SAVED_PROFILES;
@@ -89,7 +88,7 @@ namespace
             char ssidKey[5];
             profileKey(ssidKey, sizeof(ssidKey), index, 's');
             const String savedSsid = preferences.getString(ssidKey, "");
-            if (savedSsid == pendingSsid) {
+            if (savedSsid == ssid) {
                 profileIndex = index;
                 break;
             }
@@ -105,23 +104,37 @@ namespace
                     % MAX_SAVED_PROFILES;
         }
 
-        char profileSsidKey[5];
-        char profilePasswordKey[5];
-        profileKey(profileSsidKey, sizeof(profileSsidKey), profileIndex, 's');
-        profileKey(
-            profilePasswordKey,
-            sizeof(profilePasswordKey),
-            profileIndex,
-            'p');
-        const size_t profileWritten =
-            preferences.putString(profileSsidKey, pendingSsid);
-        preferences.putString(profilePasswordKey, pendingPassword);
+        char ssidKey[5];
+        char passwordKey[5];
+        profileKey(ssidKey, sizeof(ssidKey), profileIndex, 's');
+        profileKey(passwordKey, sizeof(passwordKey), profileIndex, 'p');
+        const size_t written = preferences.putString(ssidKey, ssid);
+        preferences.putString(
+            passwordKey,
+            password != nullptr ? password : "");
         preferences.putUChar(
             PROFILE_NEXT_KEY,
             static_cast<uint8_t>(
                 (profileIndex + 1) % MAX_SAVED_PROFILES));
+        return written > 0;
+    }
+
+    bool savePendingCredentials()
+    {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
+
+        // Preserve the network that was active before switching, including
+        // credentials saved by older single-profile firmware.
+        const bool previousStored =
+            saveProfile(preferences, activeSsid, activePassword);
+        const size_t ssidWritten =
+            preferences.putString(SSID_KEY, pendingSsid);
+        preferences.putString(PASSWORD_KEY, pendingPassword);
+        const bool pendingStored =
+            saveProfile(preferences, pendingSsid, pendingPassword);
         preferences.end();
-        return ssidWritten > 0 && profileWritten > 0;
+        return previousStored && ssidWritten > 0 && pendingStored;
     }
 
     bool loadProfilePassword(
