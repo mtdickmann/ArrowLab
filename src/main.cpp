@@ -116,17 +116,6 @@ namespace
         ArrowLabUI::setWifiScanBusy();
     }
 
-    bool lookupWifiPassword(
-        const char *ssid,
-        char *password,
-        size_t passwordSize)
-    {
-        return ArrowLabNetwork::savedPasswordForSsid(
-            ssid,
-            password,
-            passwordSize);
-    }
-
     void requestWifiConnect(const char *ssid, const char *password)
     {
         snprintf(
@@ -1173,8 +1162,7 @@ void setup()
     ArrowLabUI::setTareCallback(requestTare);
     ArrowLabUI::setWifiCallbacks(
         requestWifiScan,
-        requestWifiConnect,
-        lookupWifiPassword);
+        requestWifiConnect);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
