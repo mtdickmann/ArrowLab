@@ -47,6 +47,7 @@ namespace
     lv_obj_t *settingsPage = nullptr;
     lv_obj_t *wifiPage = nullptr;
     lv_obj_t *wifiSavedPage = nullptr;
+    lv_obj_t *wifiProfilePage = nullptr;
     lv_obj_t *wifiNetworksPage = nullptr;
     lv_obj_t *wifiPasswordPage = nullptr;
     lv_obj_t *calibrationPage = nullptr;
@@ -76,9 +77,15 @@ namespace
     lv_obj_t *wifiSavedLabels[MAX_WIFI_SAVED_PROFILES] = {};
     lv_obj_t *wifiSavedForgetButtons[MAX_WIFI_SAVED_PROFILES] = {};
     lv_obj_t *wifiForgetBox = nullptr;
+    lv_obj_t *wifiProfileSsidLabel = nullptr;
+    lv_obj_t *wifiProfileStateLabel = nullptr;
+    lv_obj_t *wifiProfilePasswordLabel = nullptr;
+    lv_obj_t *wifiProfileRevealIcon = nullptr;
     char wifiSavedSsids[MAX_WIFI_SAVED_PROFILES][33] = {};
+    char wifiProfilePassword[65] = {};
     size_t wifiSavedCount = 0;
     size_t wifiForgetIndex = 0;
+    bool wifiProfilePasswordRevealed = false;
     lv_obj_t *wifiScanStatusLabel = nullptr;
     lv_obj_t *wifiNetworkList = nullptr;
     lv_obj_t *wifiNetworkButtons[MAX_WIFI_SCAN_RESULTS] = {};
@@ -610,6 +617,7 @@ namespace
         lv_obj_add_flag(settingsPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiSavedPage, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifiProfilePage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiNetworksPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifiPasswordPage, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(calibrationPage, LV_OBJ_FLAG_HIDDEN);
@@ -635,6 +643,8 @@ namespace
                 title = "WI-FI & NETWORK";
             } else if (page == wifiSavedPage) {
                 title = "SAVED NETWORKS";
+            } else if (page == wifiProfilePage) {
+                title = "NETWORK PROFILE";
             } else if (page == wifiNetworksPage) {
                 title = "SELECT NETWORK";
             } else if (page == wifiPasswordPage) {
@@ -870,6 +880,99 @@ namespace
         }
     }
 
+    void refreshWifiProfilePassword()
+    {
+        if (wifiProfilePasswordLabel == nullptr) return;
+
+        if (wifiProfilePassword[0] == '\0') {
+            lv_label_set_text(
+                wifiProfilePasswordLabel,
+                "(no password)");
+            return;
+        }
+
+        if (wifiProfilePasswordRevealed) {
+            lv_label_set_text(
+                wifiProfilePasswordLabel,
+                wifiProfilePassword);
+            return;
+        }
+
+        char masked[65];
+        const size_t length = strlen(wifiProfilePassword);
+        const size_t visibleLength =
+            length < sizeof(masked) - 1
+                ? length
+                : sizeof(masked) - 1;
+        memset(masked, '*', visibleLength);
+        masked[visibleLength] = '\0';
+        lv_label_set_text(wifiProfilePasswordLabel, masked);
+    }
+
+    void wifiProfileRevealEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+
+        wifiProfilePasswordRevealed =
+            !wifiProfilePasswordRevealed;
+        refreshWifiProfilePassword();
+        if (wifiProfileRevealIcon != nullptr) {
+            lv_obj_set_style_text_color(
+                wifiProfileRevealIcon,
+                lv_color_hex(
+                    wifiProfilePasswordRevealed
+                        ? COLOUR_ACCENT
+                        : COLOUR_MUTED),
+                LV_PART_MAIN);
+        }
+    }
+
+    void wifiProfileBackEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) == LV_EVENT_CLICKED) {
+            showPage(wifiSavedPage);
+        }
+    }
+
+    void wifiSavedProfileEvent(lv_event_t *event)
+    {
+        if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+
+        const size_t index = reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+        if (index >= wifiSavedCount) return;
+
+        lv_label_set_text(
+            wifiProfileSsidLabel,
+            wifiSavedSsids[index]);
+
+        const ArrowLabNetwork::Info network =
+            ArrowLabNetwork::info();
+        const bool active =
+            network.connected
+            && strcmp(network.ssid, wifiSavedSsids[index]) == 0;
+        lv_label_set_text(
+            wifiProfileStateLabel,
+            active ? "STATUS: ACTIVE" : "STATUS: SAVED");
+        lv_obj_set_style_text_color(
+            wifiProfileStateLabel,
+            lv_color_hex(active ? COLOUR_OK : COLOUR_MUTED),
+            LV_PART_MAIN);
+
+        wifiProfilePassword[0] = '\0';
+        ArrowLabNetwork::savedPasswordForSsid(
+            wifiSavedSsids[index],
+            wifiProfilePassword,
+            sizeof(wifiProfilePassword));
+        wifiProfilePasswordRevealed = false;
+        refreshWifiProfilePassword();
+        lv_obj_set_style_text_color(
+            wifiProfileRevealIcon,
+            lv_color_hex(COLOUR_MUTED),
+            LV_PART_MAIN);
+        showPage(wifiProfilePage);
+    }
+
     void wifiForgetConfirmEvent(lv_event_t *event)
     {
         lv_obj_t *messageBox = lv_event_get_current_target(event);
@@ -924,9 +1027,9 @@ namespace
             message,
             sizeof(message),
             active
-                ? "Forget %s?\nArrowLab stays connected for now, but this "
-                  "network will not be available after restart."
-                : "Forget %s on both VIEWE and WROOM?",
+                ? "Forget network %s?\nArrowLab stays connected for now, "
+                  "but this network will not be available after restart."
+                : "Forget network %s?",
             wifiSavedSsids[wifiForgetIndex]);
 
         static const char *buttons[] = {
@@ -2449,6 +2552,15 @@ namespace ArrowLabUI
             lv_obj_clear_flag(
                 wifiSavedRows[index],
                 LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(
+                wifiSavedRows[index],
+                LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(
+                wifiSavedRows[index],
+                wifiSavedProfileEvent,
+                LV_EVENT_CLICKED,
+                reinterpret_cast<void *>(
+                    static_cast<uintptr_t>(index)));
 
             wifiSavedLabels[index] = createTextLabel(
                 wifiSavedRows[index],
@@ -2492,6 +2604,140 @@ namespace ArrowLabUI
                 wifiSavedRows[index],
                 LV_OBJ_FLAG_HIDDEN);
         }
+
+        wifiProfilePage = lv_obj_create(screen);
+        lv_obj_set_size(wifiProfilePage, 480, 228);
+        lv_obj_set_pos(wifiProfilePage, 0, 44);
+        lv_obj_set_style_bg_opa(
+            wifiProfilePage,
+            LV_OPA_TRANSP,
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            wifiProfilePage,
+            0,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(
+            wifiProfilePage,
+            0,
+            LV_PART_MAIN);
+        lv_obj_clear_flag(
+            wifiProfilePage,
+            LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *profileBack = lv_btn_create(wifiProfilePage);
+        lv_obj_set_size(profileBack, 118, 34);
+        lv_obj_set_pos(profileBack, 14, 7);
+        lv_obj_add_event_cb(
+            profileBack,
+            wifiProfileBackEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        lv_obj_t *profileBackLabel = createTextLabel(
+            profileBack,
+            "< SAVED",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_center(profileBackLabel);
+
+        lv_obj_t *profilePanel = lv_obj_create(wifiProfilePage);
+        lv_obj_set_size(profilePanel, 440, 166);
+        lv_obj_set_pos(profilePanel, 20, 52);
+        stylePanel(profilePanel);
+
+        lv_obj_t *networkCaption = createTextLabel(
+            profilePanel,
+            "NETWORK",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(networkCaption, 12, 8);
+
+        wifiProfileSsidLabel = createTextLabel(
+            profilePanel,
+            "--",
+            &lv_font_montserrat_18,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(wifiProfileSsidLabel, 290, 28);
+        lv_obj_set_pos(wifiProfileSsidLabel, 12, 25);
+        lv_label_set_long_mode(
+            wifiProfileSsidLabel,
+            LV_LABEL_LONG_DOT);
+
+        wifiProfileStateLabel = createTextLabel(
+            profilePanel,
+            "STATUS: SAVED",
+            &lv_font_montserrat_14,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_size(wifiProfileStateLabel, 130, 24);
+        lv_obj_set_pos(wifiProfileStateLabel, 296, 28);
+        lv_obj_set_style_text_align(
+            wifiProfileStateLabel,
+            LV_TEXT_ALIGN_RIGHT,
+            LV_PART_MAIN);
+
+        lv_obj_t *passwordCaption = createTextLabel(
+            profilePanel,
+            "STORED PASSWORD",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(passwordCaption, 12, 68);
+
+        lv_obj_t *passwordPanel = lv_obj_create(profilePanel);
+        lv_obj_set_size(passwordPanel, 350, 42);
+        lv_obj_set_pos(passwordPanel, 12, 88);
+        lv_obj_set_style_bg_color(
+            passwordPanel,
+            lv_color_hex(COLOUR_BACKGROUND),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_color(
+            passwordPanel,
+            lv_color_hex(COLOUR_BORDER),
+            LV_PART_MAIN);
+        lv_obj_set_style_border_width(
+            passwordPanel,
+            1,
+            LV_PART_MAIN);
+        lv_obj_set_style_pad_all(passwordPanel, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(
+            passwordPanel,
+            LV_OBJ_FLAG_SCROLLABLE);
+
+        wifiProfilePasswordLabel = createTextLabel(
+            passwordPanel,
+            "",
+            &lv_font_montserrat_16,
+            lv_color_hex(COLOUR_TEXT));
+        lv_obj_set_size(wifiProfilePasswordLabel, 326, 24);
+        lv_obj_align(
+            wifiProfilePasswordLabel,
+            LV_ALIGN_LEFT_MID,
+            10,
+            0);
+        lv_label_set_long_mode(
+            wifiProfilePasswordLabel,
+            LV_LABEL_LONG_DOT);
+
+        lv_obj_t *profileRevealButton =
+            lv_btn_create(profilePanel);
+        lv_obj_set_size(profileRevealButton, 48, 42);
+        lv_obj_set_pos(profileRevealButton, 370, 88);
+        lv_obj_add_event_cb(
+            profileRevealButton,
+            wifiProfileRevealEvent,
+            LV_EVENT_CLICKED,
+            nullptr);
+        wifiProfileRevealIcon = createTextLabel(
+            profileRevealButton,
+            LV_SYMBOL_EYE_OPEN,
+            &lv_font_montserrat_18,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_center(wifiProfileRevealIcon);
+
+        lv_obj_t *profileNote = createTextLabel(
+            profilePanel,
+            "Stored locally on ArrowLab",
+            &lv_font_montserrat_12,
+            lv_color_hex(COLOUR_MUTED));
+        lv_obj_set_pos(profileNote, 12, 137);
 
         wifiNetworksPage = lv_obj_create(screen);
         lv_obj_set_size(wifiNetworksPage, 480, 228);
