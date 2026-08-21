@@ -23,6 +23,11 @@ bool MeasurementNodeClient::begin()
     lastValidPacketTime_ = 0;
     receiveLength_ = 0;
     firstPollLogged_ = false;
+    commandQueueHead_ = 0;
+    commandQueueTail_ = 0;
+    commandQueueCount_ = 0;
+    commandInFlight_ = false;
+    inFlightRetryCount_ = 0;
     nodeSerial_.begin(
         ArrowLabConfig::MEASUREMENT_LINK_BAUD,
         SERIAL_8N1,
@@ -58,15 +63,8 @@ bool MeasurementNodeClient::poll(uint32_t currentTime)
         acceptByte(static_cast<uint8_t>(nodeSerial_.read()), currentTime);
     }
 
-    if (
-        ArrowLabConfig::measurementLinkIsOneWire()
-        && currentTime - lastPollTime_
-            >= ArrowLabConfig::MEASUREMENT_STATUS_INTERVAL_MS
-    ) {
-        send(
-            ArrowLabProtocol::CommandType::PollStatus,
-            ArrowLabProtocol::Side::Left,
-            0);
+    if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        serviceTransport(currentTime);
     }
     return freshPacket_;
 }
@@ -94,6 +92,19 @@ void MeasurementNodeClient::acceptByte(uint8_t value, uint32_t currentTime)
     status_ = incoming;
     hasPacket_ = true;
     lastValidPacketTime_ = currentTime;
+
+    if (
+        commandInFlight_
+        && incoming.lastCommandSequence == inFlightPacket_.sequence
+    ) {
+        Serial.printf(
+            "AL_HMI,LINK,COMMAND_ACK,SEQ=%u,CMD=%u,RETRIES=%u\n",
+            inFlightPacket_.sequence,
+            inFlightPacket_.command,
+            inFlightRetryCount_);
+        commandInFlight_ = false;
+        inFlightRetryCount_ = 0;
+    }
 }
 
 bool MeasurementNodeClient::requestTare(ArrowLabProtocol::Side side)
@@ -220,6 +231,110 @@ const ArrowLabProtocol::ChannelStatus &MeasurementNodeClient::channel(
         : status_.right;
 }
 
+void MeasurementNodeClient::serviceTransport(uint32_t currentTime)
+{
+    if (commandInFlight_) {
+        if (currentTime - inFlightSentAt_ < COMMAND_ACK_TIMEOUT_MS) return;
+
+        if (inFlightRetryCount_ >= COMMAND_MAX_RETRIES) {
+            Serial.printf(
+                "AL_HMI,LINK,COMMAND_FAILED,SEQ=%u,CMD=%u\n",
+                inFlightPacket_.sequence,
+                inFlightPacket_.command);
+            commandInFlight_ = false;
+            inFlightRetryCount_ = 0;
+        } else {
+            ++inFlightRetryCount_;
+            const bool sent = transmit(inFlightPacket_);
+            inFlightSentAt_ = millis();
+            Serial.printf(
+                "AL_HMI,LINK,COMMAND_RETRY,SEQ=%u,CMD=%u,TRY=%u,WRITE=%s\n",
+                inFlightPacket_.sequence,
+                inFlightPacket_.command,
+                inFlightRetryCount_,
+                sent ? "OK" : "FAILED");
+            return;
+        }
+    }
+
+    QueuedCommand queued;
+    bool haveCommand = false;
+    portENTER_CRITICAL(&commandQueueMux_);
+    if (commandQueueCount_ > 0) {
+        queued = commandQueue_[commandQueueHead_];
+        commandQueueHead_ =
+            (commandQueueHead_ + 1) % COMMAND_QUEUE_CAPACITY;
+        --commandQueueCount_;
+        haveCommand = true;
+    }
+    portEXIT_CRITICAL(&commandQueueMux_);
+
+    if (haveCommand) {
+        inFlightPacket_ = {};
+        inFlightPacket_.sequence = ++commandSequence_;
+        inFlightPacket_.command = static_cast<uint8_t>(queued.command);
+        inFlightPacket_.side = static_cast<uint8_t>(queued.side);
+        inFlightPacket_.referenceMilliGrams = queued.referenceMilliGrams;
+        snprintf(
+            inFlightPacket_.wifiSsid,
+            sizeof(inFlightPacket_.wifiSsid),
+            "%s",
+            queued.wifiSsid);
+        snprintf(
+            inFlightPacket_.wifiPassword,
+            sizeof(inFlightPacket_.wifiPassword),
+            "%s",
+            queued.wifiPassword);
+        ArrowLabProtocol::seal(inFlightPacket_);
+
+        commandInFlight_ = true;
+        inFlightRetryCount_ = 0;
+        const bool sent = transmit(inFlightPacket_);
+        inFlightSentAt_ = millis();
+        Serial.printf(
+            "AL_HMI,LINK,COMMAND_SENT,SEQ=%u,CMD=%u,WRITE=%s\n",
+            inFlightPacket_.sequence,
+            inFlightPacket_.command,
+            sent ? "OK" : "FAILED");
+        return;
+    }
+
+    if (
+        currentTime - lastPollTime_
+        < ArrowLabConfig::MEASUREMENT_STATUS_INTERVAL_MS
+    ) {
+        return;
+    }
+
+    ArrowLabProtocol::CommandPacket pollPacket;
+    pollPacket.sequence = ++commandSequence_;
+    pollPacket.command = static_cast<uint8_t>(
+        ArrowLabProtocol::CommandType::PollStatus);
+    pollPacket.side = static_cast<uint8_t>(ArrowLabProtocol::Side::Left);
+    ArrowLabProtocol::seal(pollPacket);
+    const bool sent = transmit(pollPacket);
+    if (!firstPollLogged_) {
+        Serial.printf(
+            "AL_HMI,LINK,POLL_QUEUED,SEQ=%u,WRITE=%s\n",
+            pollPacket.sequence,
+            sent ? "OK" : "FAILED");
+        firstPollLogged_ = true;
+    }
+}
+
+bool MeasurementNodeClient::transmit(
+    const ArrowLabProtocol::CommandPacket &packet)
+{
+    const bool sent = nodeSerial_.write(
+        reinterpret_cast<const uint8_t *>(&packet),
+        sizeof(packet)) == sizeof(packet);
+    if (ArrowLabConfig::measurementLinkIsOneWire()) {
+        nodeSerial_.flush();
+        lastPollTime_ = millis();
+    }
+    return sent;
+}
+
 bool MeasurementNodeClient::send(
     ArrowLabProtocol::CommandType command,
     ArrowLabProtocol::Side side,
@@ -227,43 +342,36 @@ bool MeasurementNodeClient::send(
     const char *wifiSsid,
     const char *wifiPassword)
 {
-    ArrowLabProtocol::CommandPacket packet;
-    packet.sequence = ++commandSequence_;
-    packet.command = static_cast<uint8_t>(command);
-    packet.side = static_cast<uint8_t>(side);
-    packet.referenceMilliGrams = referenceMilliGrams;
+    QueuedCommand queued;
+    queued.command = command;
+    queued.side = side;
+    queued.referenceMilliGrams = referenceMilliGrams;
     if (wifiSsid != nullptr) {
-        snprintf(
-            packet.wifiSsid,
-            sizeof(packet.wifiSsid),
-            "%s",
-            wifiSsid);
+        snprintf(queued.wifiSsid, sizeof(queued.wifiSsid), "%s", wifiSsid);
     }
     if (wifiPassword != nullptr) {
         snprintf(
-            packet.wifiPassword,
-            sizeof(packet.wifiPassword),
+            queued.wifiPassword,
+            sizeof(queued.wifiPassword),
             "%s",
             wifiPassword);
     }
-    ArrowLabProtocol::seal(packet);
 
-    const bool sent = nodeSerial_.write(
-        reinterpret_cast<const uint8_t *>(&packet),
-        sizeof(packet)) == sizeof(packet);
-    if (ArrowLabConfig::measurementLinkIsOneWire()) {
-        nodeSerial_.flush();
-        lastPollTime_ = millis();
-        if (
-            command == ArrowLabProtocol::CommandType::PollStatus
-            && !firstPollLogged_
-        ) {
-            Serial.printf(
-                "AL_HMI,LINK,POLL_QUEUED,SEQ=%u,WRITE=%s\n",
-                packet.sequence,
-                sent ? "OK" : "FAILED");
-            firstPollLogged_ = true;
-        }
+    bool accepted = false;
+    portENTER_CRITICAL(&commandQueueMux_);
+    if (commandQueueCount_ < COMMAND_QUEUE_CAPACITY) {
+        commandQueue_[commandQueueTail_] = queued;
+        commandQueueTail_ =
+            (commandQueueTail_ + 1) % COMMAND_QUEUE_CAPACITY;
+        ++commandQueueCount_;
+        accepted = true;
     }
-    return sent;
+    portEXIT_CRITICAL(&commandQueueMux_);
+
+    if (!accepted) {
+        Serial.printf(
+            "AL_HMI,LINK,COMMAND_QUEUE_FULL,CMD=%u\n",
+            static_cast<unsigned>(command));
+    }
+    return accepted;
 }
