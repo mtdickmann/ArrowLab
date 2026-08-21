@@ -34,7 +34,23 @@ public:
         ArrowLabProtocol::Side side) const;
 
 private:
+    struct QueuedCommand
+    {
+        ArrowLabProtocol::CommandType command =
+            ArrowLabProtocol::CommandType::None;
+        ArrowLabProtocol::Side side = ArrowLabProtocol::Side::Left;
+        int32_t referenceMilliGrams = 0;
+        char wifiSsid[33] = {};
+        char wifiPassword[65] = {};
+    };
+
+    static constexpr size_t COMMAND_QUEUE_CAPACITY = 8;
+    static constexpr uint32_t COMMAND_ACK_TIMEOUT_MS = 250;
+    static constexpr uint8_t COMMAND_MAX_RETRIES = 4;
+
     void acceptByte(uint8_t value, uint32_t currentTime);
+    void serviceTransport(uint32_t currentTime);
+    bool transmit(const ArrowLabProtocol::CommandPacket &packet);
     bool send(
         ArrowLabProtocol::CommandType command,
         ArrowLabProtocol::Side side,
@@ -49,6 +65,15 @@ private:
     uint32_t lastValidPacketTime_ = 0;
     uint32_t lastPollTime_ = 0;
     uint16_t commandSequence_ = 0;
+    QueuedCommand commandQueue_[COMMAND_QUEUE_CAPACITY] = {};
+    size_t commandQueueHead_ = 0;
+    size_t commandQueueTail_ = 0;
+    size_t commandQueueCount_ = 0;
+    portMUX_TYPE commandQueueMux_ = portMUX_INITIALIZER_UNLOCKED;
+    ArrowLabProtocol::CommandPacket inFlightPacket_ = {};
+    uint32_t inFlightSentAt_ = 0;
+    uint8_t inFlightRetryCount_ = 0;
+    bool commandInFlight_ = false;
     bool hasPacket_ = false;
     bool freshPacket_ = false;
     bool firstPollLogged_ = false;
