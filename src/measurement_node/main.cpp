@@ -305,6 +305,17 @@ namespace
         const auto type = static_cast<ArrowLabProtocol::CommandType>(
             command.command);
 
+        if (
+            type != ArrowLabProtocol::CommandType::PollStatus
+            && command.sequence == lastCommandSequence
+        ) {
+            Serial.printf(
+                "AL_NODE,LINK,DUPLICATE_COMMAND,SEQ=%u,CMD=%u\n",
+                command.sequence,
+                command.command);
+            return;
+        }
+
         switch (type) {
         case ArrowLabProtocol::CommandType::Tare:
             calibrationController.requestTare(localSide);
@@ -378,8 +389,8 @@ namespace
             return;
         }
 
-        lastCommandSequence = command.sequence;
         if (type != ArrowLabProtocol::CommandType::PollStatus) {
+            lastCommandSequence = command.sequence;
             Serial.printf(
                 "AL_NODE,EVENT,COMMAND,%u,%s,%u\n",
                 command.sequence,
