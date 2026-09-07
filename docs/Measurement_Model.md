@@ -1,0 +1,123 @@
+# ArrowLab Measurement Model
+
+## Purpose
+
+ArrowLab uses event-based measurement rather than displaying an indefinitely
+wandering live conversion. The model separates four facts that must not be
+conflated:
+
+- **raw conversion**: the latest signed HX711 count;
+- **zero reference**: the raw condition deliberately declared to be zero by
+  TARE for the current physical setup;
+- **calibration factor K**: signed counts per gram, stored independently for
+  Left and Right;
+- **held result**: the last accepted physical load state shown to the user.
+
+Tare is temporary and must be established after every power-up before weighing.
+K is persistent across ordinary power cycles and changes only after deliberate
+calibration, reset, or firmware-version invalidation.
+
+All four facts are now owned by the WROOM measurement processor. The VIEWE
+receives completed state over the dedicated UART and does not maintain a
+second tare, K or held-result calculation.
+
+## Equations
+
+Calibration uses the known reference mass after the fixed 30-second settling
+period:
+
+    K = (loaded_raw - zero_reference_raw) / reference_mass_g
+
+K may be positive or negative because either electrical signal direction is
+valid.
+
+For an accepted load change:
+
+    delta_g = (new_state_raw - pre_change_tracked_raw) / K
+    held_g  = previous_held_g + delta_g
+
+The raw reference is tracked only while no genuine load change is occurring.
+The displayed result is not repeatedly recalculated from a drifting absolute
+zero.
+
+## Operational state sequence
+
+1. **Needs Tare** — no weighing result is valid.
+2. **Taring** — average 20 fresh raw conversions and declare that condition
+   zero. Existing K is retained.
+3. **Tracking** — hold the accepted display while a slow private raw tracker
+   follows creep and drift.
+4. **Acquiring Change** — after four consecutive raw samples exceed the
+   provisional 300-count change threshold, freeze the pre-change tracker and
+   acquire the new state.
+5. **Accept** — use a robust average of the final samples at the fixed
+   operational endpoint selected in `ArrowLab.conf`. Apply only the
+   before/after difference to the held result, then resume tracking. The
+   current development default is 1000 ms; the setting deliberately remains
+   separate from calibration.
+
+Removal is an ordinary negative load event. A small residual while moving back
+toward zero is clamped to exactly zero within the provisional larger of 0.5 g
+or 0.2% of the previous held load. This rule prevents known unloading recovery
+from presenting a removed object as a remaining mass; it does not auto-zero
+while an unchanging object is present.
+
+## Why this is not cosmetic smoothing
+
+The display is a sample-and-hold representation of accepted physical states.
+Background tracking changes the raw reference used for the *next* detected
+step; it never edits an already accepted displayed mass. A genuine addition or
+removal freezes tracking before its difference is measured, so a small static
+mass is not gradually erased.
+
+The 30-second calibration interval and configurable operational interval have
+different jobs. Thirty seconds produces K from the known reference and is not
+user-configurable. The operational endpoint controls how quickly an ordinary
+addition, removal or replacement becomes the next held reading. Its development
+default is one second so real hardware can determine the final compromise
+between response time and repeatability.
+
+The measurement node keeps grams as its internal engineering unit. The HMI may
+present grams, grains or avoirdupois ounces as the primary value and derives the
+other two as secondary conversions. Display precision and unit selection do not
+alter K or the accepted raw-count difference.
+
+The configured primary unit is the power-up default. Tapping any large
+calibrated mass reading cycles `g -> gr -> oz -> g` for the current powered
+session. The unit is global across Calibration and Weigh so two screens cannot
+simultaneously imply different operator preferences. Persistent user
+preferences can later replace the configured default without changing the
+measurement-node protocol.
+
+The Weigh screen combines only accepted held results. It identifies Left,
+Right, or Left + Right from the active held states and sums the two
+milligram-domain results when both cassettes carry load. It never combines live
+HX711 samples or introduces a second tare/calibration calculation on the HMI.
+
+Spine/SAS capture deliberately uses a different view of the same calibrated
+channels. The calm held result supplies the resting arrow mass, while WROOM's
+instantaneous calibrated force supplies the mechanical-stop stability detector.
+This is not a second calibration or tare calculation. Subtracting the captured
+resting arrow mass isolates the applied bending force. See
+`docs/Spine_and_SAS_Test.md` for the state sequence and result calculation.
+
+## Diagnostics boundary
+
+Creep diagnostics intentionally do not use operational tare, K, tracking,
+filtering, held grams, or zero-baseline flags. Every run captures its own short
+raw reference and records:
+
+- absolute raw count;
+- that run's raw reference;
+- raw delta from that reference;
+- entered mass as metadata.
+
+This keeps the evidence suitable for analysing the measurement method itself.
+Running a diagnostic must not modify the operational zero or stored K.
+
+## Validation status
+
+The state engine has deterministic host tests for tare, calibration anchoring,
+slow drift, unloading, 20 g and 50 g changes, re-tare, persistent-K restore and
+both sensor polarities. Detection, stability and zero-return thresholds remain
+provisional until they pass the real dual-HX711 hardware trial.

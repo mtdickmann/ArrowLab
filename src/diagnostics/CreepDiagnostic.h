@@ -19,7 +19,7 @@ public:
     {
         Idle,
         WaitingForHost,
-        Taring,
+        CapturingReference,
         AwaitingLoad,
         Running,
         AwaitingSave,
@@ -34,22 +34,18 @@ public:
     static constexpr long LOAD_DETECT_THRESHOLD_COUNTS = 2000;
     static constexpr uint8_t LOAD_CONFIRM_SAMPLES = 5;
     static constexpr uint8_t SAMPLE_CAPACITY = 62;
+    static constexpr uint8_t REFERENCE_SAMPLE_COUNT = 20;
 
     bool start(
         DiagnosticSide side,
         float testMassGrams,
         bool zeroBaseline,
-        LoadCellChannel &left,
-        LoadCellChannel &right,
         uint32_t currentTime
     );
 
     void cancel();
     bool finishSession();
     void handleHostCommand(const char *line, uint32_t currentTime);
-
-    void setBaselineCaptured(DiagnosticSide side, bool captured);
-    bool baselineCaptured(DiagnosticSide side) const;
 
     void update(
         uint32_t currentTime,
@@ -74,22 +70,15 @@ private:
     {
         uint32_t elapsedMs = 0;
         long rawCount = 0;
-        long zeroedCount = 0;
-        float calculatedGrams = 0.0f;
-        float calibrationFactor = 0.0f;
+        long deltaCount = 0;
     };
-
-    LoadCellChannel &selectedSensor(
-        LoadCellChannel &left,
-        LoadCellChannel &right
-    ) const;
 
     const LoadCellChannel &selectedSensor(
         const LoadCellChannel &left,
         const LoadCellChannel &right
     ) const;
 
-    void beginTare();
+    void beginReferenceCapture();
     void beginRunning(uint32_t currentTime, const LoadCellChannel &sensor);
     void captureSample(uint32_t elapsedMs, const LoadCellChannel &sensor);
     void emitHeader() const;
@@ -108,12 +97,11 @@ private:
     uint32_t completedElapsedMs_ = 0;
     uint32_t runId_ = 0;
     uint32_t bootId_ = 0;
-    bool leftBaselineCaptured_ = false;
-    bool rightBaselineCaptured_ = false;
-
     bool hostSeen_ = false;
     uint32_t lastHostMessageTime_ = 0;
-    LoadCellChannel *pendingSensor_ = nullptr;
+    int64_t referenceAccumulator_ = 0;
+    uint8_t referenceSampleCount_ = 0;
+    long runReferenceRaw_ = 0;
 
     Sample samples_[SAMPLE_CAPACITY];
     uint8_t sampleCount_ = 0;

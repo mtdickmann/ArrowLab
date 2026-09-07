@@ -4,14 +4,21 @@
 2026-08-06
 
 ## Status
-Calibration is implemented and under hardware validation. Both HX711/load-cell channels have repeatedly calibrated independently and produced consistent converted gram readings.
+Calibration is implemented. The v0.2 event-based measurement core is under
+hardware validation. Earlier sections in this log describe the path to that
+decision; where they conflict with the final v0.2 section, the final section
+supersedes them.
 
 Spine calculations must not be added until calibration, repeatability, drift and measurement timing are considered reliable.
 
 ## Measurement architecture
 
 - `main.cpp` is the top-level coordinator. It does not own HX711 acquisition, tare maths or calibration maths.
-- `src/measurement/LoadCellChannel.*` owns the state and behaviour of one HX711/load-cell channel.
+- `src/measurement/LoadCellChannel.*` owns only one raw HX711 signal path.
+- `src/measurement/MeasurementChannel.*` owns operational tare, raw tracking,
+  change acquisition and the held result.
+- `src/calibration/CalibrationController.*` is the sole owner of calibration
+  workflow and K calculation.
 - Left and Right are independent channels with independent tare state and calibration factors.
 - The UI presents state and raises user actions; measurement maths does not belong in the UI.
 - Future measurement modes such as spine, whole-arrow mass and FOC will consume calibrated Left/Right loads rather than accessing HX711 hardware directly.
@@ -88,6 +95,30 @@ Initial hardware observation is approximately one million counts for a mass near
 
 This raw threshold is necessary before first calibration because a trustworthy counts-to-grams factor does not yet exist.
 
+## Post-calibration verification
+
+Completing the calibration calculation does not by itself prove that the new
+factor is trustworthy. Hardware testing has occasionally produced a completed
+calibration that does not reproduce the reference mass accurately when the
+weight is reapplied.
+
+Approved verification workflow:
+
+1. A newly calculated calibration factor is provisional.
+2. ArrowLab prompts the operator to remove and then replace the same reference
+   weight.
+3. The normal stable/held measurement is compared with the entered reference
+   mass.
+4. A result within +/-0.1 g is accepted as `CAL VERIFIED` and shown green.
+5. A result outside +/-0.1 g is reported as a failed check and recalibration is
+   required.
+6. A previously verified persistent factor is not overwritten by a failed
+   recalibration attempt. The replacement factor becomes trusted persistent
+   state only after verification succeeds.
+
+This keeps calibration completion and calibration validity as separate states
+and removes the need for the operator to remember an informal manual check.
+
 ## Status and colour conventions
 
 Status uses text and colour together. Colour is a quick visual cue, not the only source of state information.
@@ -132,6 +163,121 @@ Jitter and drift must not be treated as the same problem.
 - If creep proves repeatable per channel, a bounded per-channel correction may be considered.
 - Calibration should eventually have a limited valid action window after settling so a reference mass cannot remain loaded indefinitely before calibration is accepted.
 - Ordinary arrow mass/FOC measurements should use a controlled settle/sample/freeze window rather than indefinite live readings when a final measurement is required.
+
+### Long-idle zero drift and user confidence
+
+Extended unloaded testing has shown that indicated zero may move by several
+grams over long idle periods even though a deliberate re-tare immediately
+restores sensible, repeatable readings. This is treated as a zero-reference
+maintenance problem unless separate health evidence indicates a failed signal
+path.
+
+- Small/slow long-term zero movement must not automatically produce a hardware
+  fault alarm.
+- Calibration factor K and operational tare remain separate: refreshing tare
+  must not erase a verified calibration.
+- A blind periodic auto-tare is forbidden because a genuine static load could
+  otherwise be silently zeroed out.
+- Future idle/sleep behaviour may refresh zero automatically only when ArrowLab
+  can establish that the measurement channel is unloaded.
+- Otherwise the UI should recommend a re-tare before a new precision
+  measurement after prolonged idle.
+- Help/manual text must explain that long-term load-cell/HX711 zero drift is an
+  expected hardware characteristic and that re-taring refreshes the zero
+  reference.
+
+The objective is honest measurement without presenting normal analogue drift
+as an alarming instrument failure.
+
+## Dual-processor measurement architecture
+
+Inspection originally relied on the disabled generic custom-board template
+and incorrectly classified GPIO10-13 and GPIO17 as RGB signals. The active
+supported-board definition is authoritative: GPIO8 is RGB DATA0; GPIO17 is
+unused; GPIO18 is routed in the board hardware to the GT911 touch interrupt;
+and GPIO13 is free after the HX711 interfaces move to the WROOM. This
+correction is recorded explicitly to prevent another pin-map regression.
+
+The permanent architecture therefore adds an ESP32-S3-WROOM-1 N16R8 as a
+dedicated measurement and physical-I/O processor:
+
+- the VIEWE ESP32-S3 owns UI, touch, networking, OTA and high-level
+  application behaviour;
+- the measurement ESP32-S3 owns both HX711 interfaces and future
+  timing-sensitive sensors/physical I/O;
+- completed measurements and commands cross a dedicated inter-processor UART
+  rather than exposing HX711 timing to the display processor;
+- the first planned link was VIEWE TX GPIO17 to WROOM RX GPIO8 and WROOM TX
+  GPIO9 to VIEWE RX GPIO13, but bench testing replaced that provisional map;
+- GPIO18 is avoided because of its physical GT911 interrupt connection.
+
+The first measurement-node firmware was deliberately raw-only and was used as
+an independent hardware diagnostic before the permanent UART protocol was
+introduced.
+
+### Implemented measurement-node link (2026-08-10)
+
+Hardware isolation runs showed that the same load-cell/HX711 assemblies became
+well behaved on the WROOM and that GPIO4/5 and GPIO6/7 produced equivalent
+30-minute trends. The relevant comparison for LC1/HX1/Cassette1 was a raw shift
+of approximately +114 counts on GPIO4/5 and +112 counts on GPIO6/7. This
+eliminated the GPIO pair as a meaningful variable and exposed the VIEWE RGB pin
+contention as the architectural fault.
+
+The permanent division is now implemented:
+
+- WROOM GPIO4/5 owns Left HX711 DT/SCK;
+- WROOM GPIO6/7 owns Right HX711 DT/SCK;
+- at this historical checkpoint, the first proven link used WROOM GPIO8/GPIO9
+  and VIEWE GPIO11/GPIO12 UART RX/TX at 115200 baud;
+- `include/ArrowLab.conf` exposes the human-editable installation choices for
+  controlled VIEWE GPIO17 one-wire and GPIO43/GPIO44 engineering trials, while
+  `include/ArrowLabConfig.h` contains the implementation and pin-selection
+  logic;
+- that superseded GPIO11/GPIO12 mode occupied VIEWE onboard-SD MOSI/SCK,
+  whereas GPIO43/GPIO44 are physically shared with VIEWE UART0/CH340 and must
+  never be connected to WROOM TX while that USB-UART interface is attached;
+- WROOM owns `LoadCellChannel`, `MeasurementChannel`,
+  `CalibrationController` and `InstrumentStorage`;
+- VIEWE owns the existing calibration presentation and sends deliberate
+  commands over a versioned, checksummed protocol;
+- raw counts are mirrored to VIEWE solely for the hidden evidence logger;
+- a 1.5-second protocol timeout creates a persistent cross-screen node fault.
+
+The initial GPIO17 half-duplex trial exposed a framework limitation rather
+than a protocol or wiring fault. Both processors reported successful UART
+initialization, the VIEWE queued its first poll, and the WROOM continued to
+read both HX711s, but the WROOM observed neither a packet nor a low level on
+the shared line. Arduino-ESP32 3.1.1's peripheral manager does not preserve
+both UART routes when RX and TX use the same GPIO. A direct RX-only repair was
+also insufficient. The implementation now mirrors the newer core behaviour:
+configure the pad as input/output open-drain, then explicitly connect both the
+UART1 TX output matrix and UART1 RX input matrix to that pad. This diagnostic
+sequence and the first-low/first-packet tracing remain available until the
+GPIO17 bench trial is conclusively accepted or rejected.
+
+### Production one-wire link freeze (v0.2.1)
+
+The GPIO-matrix repair was subsequently validated in hardware. The production
+inter-processor link is frozen as one half-duplex, open-drain UART data wire
+between VIEWE GPIO17 at J7 and WROOM GPIO8, plus common GND and the documented
+4.7 kOhm pull-up. There is no WROOM GPIO9-to-VIEWE GPIO11 production conductor.
+
+VIEWE RX11/TX12 to WROOM RX8/TX9 remains a proven two-wire fallback only.
+VIEWE RX44/TX43 is an untested engineering option and is explicitly not an
+approved connection. GPIO17 is reserved permanently for the WROOM measurement
+link. J7 5 V is reserved for later evaluation of a single-inlet power design;
+it is not presently connected between the processors.
+
+The corresponding v0.2.1 calibration/weighing trace is recorded in
+`docs/Calibration_Weighing_Path_Audit.md`. It identifies differing tare,
+calibration and ordinary acquisition definitions as a controlled follow-up
+question, without changing the probationary event-based maths.
+
+During dual-USB development the boards share UART TX/RX and GND only. Their 3.3 V
+and 5 V rails must not be tied together. Existing VIEWE calibration records are
+not portable to the WROOM NVS, so the architecture transition intentionally
+requires one fresh Left and Right calibration.
 
 ## Next validation steps
 
@@ -243,26 +389,28 @@ Load-cell health is an instrument-level condition, not a page-local condition.
 Developer reveal is also explicitly timed by ArrowLab rather than relying on the touch stack's long-press event classification. Press duration is measured from press to release and must reach 2000 ms. Normal short taps have no developer-mode action.
 
 
-## Implemented creep diagnostic facility
+## Initial creep diagnostic facility (historical; superseded by v0.2.0)
 
 A hidden developer creep logger is now part of the maintained firmware rather than a disposable test build.
 
 Implementation boundaries:
 
 - src/diagnostics/CreepDiagnostic.* owns acquisition timing and serial diagnostic records.
-- The normal measurement channel continues to own HX711 acquisition, tare and calibration maths.
+- The then-current measurement channel owned HX711 acquisition, tare and
+  calibration maths.
 - The UI owns diagnostic navigation, side selection, numeric mass entry, confirmations and progress presentation.
 - tools/capture_creep.py owns host-side serial filtering and CSV creation.
 - docs/Creep_Diagnostic_Procedure.md owns the repeatable operator procedure; test/creep_diagnostic/README.md records design rationale.
 - calibration/diagnostics/ is the repository location for retained raw investigation datasets.
 
-Loaded diagnostic runs perform a fresh operational tare with the selected calibration platform fitted and the test mass removed. The entered mass is then applied. Five consecutive fresh samples above 2,000 zero-adjusted counts confirm the load and automatically start the 30-minute acquisition clock.
+The initial implementation performed a fresh operational tare for each run.
 
-Zero-baseline runs use only the normal fixed arrow-rest hardware and begin automatically after their fresh tare completes.
+Zero-baseline runs used only the normal fixed arrow-rest hardware.
 
 Each completed run emits samples at t=0 and t=10 seconds, followed by one sample every 30 seconds from t=30 seconds through 30 minutes, for 62 expected rows. The dedicated 10-second point captures the important initial creep reference without changing the established 30-second cadence for the remainder of the campaign.
 
-The CSV record preserves raw counts, zero-adjusted counts, calculated grams and the active calibration factor. The diagnostic never recalibrates itself for each mass.
+The initial CSV included operational zero and grams. Protocol v3 removes those
+fields and uses a private raw reference instead.
 
 ## Firmware update requirement
 
@@ -272,7 +420,7 @@ The current 16 MB flash partitioning provides two 6.25 MiB OTA application slots
 
 Stored calibration validity must remain tied to firmware version compatibility as documented above; a firmware update that changes the calibration compatibility version must force recalibration.
 
-## Diagnostic workflow and serial recovery revision (v0.1.1)
+## Diagnostic workflow and serial recovery revision (v0.1.1 — historical)
 
 Field testing exposed two design weaknesses in the first creep logger: the two channels were unnecessarily coupled by a both-baselines gate, and a PC/USB interruption could leave the operator unsure whether the final samples reached the CSV.
 
@@ -299,7 +447,7 @@ PC file and the control therefore implied authority it did not possess. A new
 or reset channel earns `BASE OK` only after a complete run is acknowledged by
 the logger.
 
-## Creep evidence decision (v0.1.2)
+## Creep evidence decision (v0.1.2 — superseded by v0.2.0)
 
 The retained campaign data shows short-term residual noise near 0.03-0.05 g,
 approximately 0.16-0.29 g movement over some 30-minute loaded runs, and drift
@@ -330,7 +478,7 @@ the same channel tare/calibration primitives, but diagnostic baseline state
 does not block a normal recalibration and normal calibration does not fabricate
 baseline evidence.
 
-## Diagnostic UI convention (v0.1.2)
+## Diagnostic UI convention (v0.1.2 — layout retained, gating superseded)
 
 - the persistent header names the current page/tool;
 - the compact state line reports selected side, BASE, TARE and CAL state;
@@ -344,7 +492,7 @@ baseline evidence.
   only one selected channel.
 
 
-### Diagnostic session rules
+### Historical diagnostic session rules (superseded by protocol v3)
 
 The creep diagnostic requires an explicit channel selection; there is no implicit/default Left or Right run.
 
@@ -411,3 +559,65 @@ Left and Right remain independent. Completing one side never navigates away from
 the Calibration screen; if the other side still needs attention, the next-action
 message continues to guide the user there. Global calibration validity becomes OK
 only when both stored channel factors are valid.
+
+## Event-based measurement core (v0.2.0 — superseding decision)
+
+The v0.1 live-conversion/filter approach is replaced for operational weighing.
+The retained UI, menu structure, calibration interaction and persistence rules
+are unchanged. Physical HX711 ownership and pin mapping subsequently moved to
+the WROOM as recorded in the implemented dual-processor section above.
+
+Ownership is now deliberately narrow:
+
+- `LoadCellChannel` reads one HX711 and reports signed raw conversions only;
+- `MeasurementChannel` owns temporary zero, slow raw tracking, load-change
+  detection, robust acquisition and the held display result;
+- `CalibrationController` owns the single 30-second known-mass workflow,
+  calculates signed counts-per-gram K and persists it;
+- `CreepDiagnostic` logs absolute raw/reference/delta evidence and cannot change
+  operational tare or K;
+- `main.cpp` coordinates those modules and does not implement alternative
+  measurement maths.
+
+The operational convention is:
+
+1. Every power-up requires deliberate TARE before weighing. TARE averages 20
+   fresh conversions and declares the complete current physical setup to be
+   zero. It does not erase K.
+2. K persists independently for Left and Right across ordinary power cycles.
+   The v0.2.0 compatibility bump deliberately invalidates older stored factors.
+3. While the load is physically unchanged, a private slow raw tracker follows
+   creep/drift and the accepted display remains fixed.
+4. Four consecutive fresh samples beyond the provisional 300-count threshold
+   freeze the pre-change tracker.
+5. The new state is robustly averaged after at least two stable seconds, with a
+   hard ten-second maximum. Only its raw difference from the frozen reference is
+   converted through K and added to the held result.
+6. Removal is handled as a negative event. A small return residual is clamped to
+   zero within the provisional larger of 0.5 g or 0.2% of the preceding held
+   load.
+
+This is a sample-and-hold measurement, not presentation-only smoothing and not
+unrestricted auto-zero. Tracking stops at the start of a candidate step, so a
+real static small mass is retained rather than absorbed. The accepted displayed
+mass does not wander merely because the cell creeps while nothing physically
+changes.
+
+Calibration anchors the held result to the entered known mass when the 30-second
+workflow completes. Ordinary readings then use the persistent K and the
+event-based maximum-ten-second acquisition. The separate time intervals are
+intentional: one establishes K repeatably; the other keeps normal operation
+responsive.
+
+The earlier diagnostic prerequisite chain is also superseded. A v3 raw run
+captures a private 20-sample reference, and records only raw count, run reference
+and raw delta. No baseline state is persisted on the ESP; the acknowledged CSV
+is the evidence. Operational TARE and stored K neither gate nor alter diagnostic
+evidence. TARE and CAL are absent from the raw logger screen and remain available
+in the normal Settings -> Calibration workflow.
+
+Host tests cover drift with a held display, unloading to zero, 20 g and 50 g
+steps, both signal polarities, re-tare with retained K, calibration anchoring,
+power-cycle-equivalent K restore, and raw diagnostics without operational
+preconditions. Detection and stability thresholds remain provisional pending
+the real dual-HX711 hardware test.

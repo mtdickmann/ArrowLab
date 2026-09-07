@@ -6,17 +6,19 @@ records. Reproduce the summary with:
 
     python tools/analyze_creep.py <csv> [<csv> ...]
 
-The script supports the legacy and protocol-v2 column layouts. It excludes the
+The script supports the raw-only protocol-v3 format and the retained legacy
+formats. It excludes the
 t=0 transition sample from trend/noise calculations, uses a Theil-Sen robust
 slope, and reports median first/last five-minute windows plus MAD-derived noise.
 
 ## Evidence used
 
 - complete legacy Left/Right 0 g, 21 g and 999.8 g runs;
-- later Left and Right zero runs, including the complete protocol-v2 Right run;
-- complete protocol-v2 Right 1761 g run.
+- later Left and Right zero runs, including the complete legacy protocol-v2
+  Right run;
+- complete legacy protocol-v2 Right 1761 g run.
 
-No equivalent protocol-v2 high-load Left run was supplied. High-load Left/Right
+No equivalent high-load Left run was supplied. High-load Left/Right
 symmetry is therefore not claimed.
 
 ## Material results
@@ -39,20 +41,28 @@ the transition sample as a normal measurement.
 A universal time correction is rejected. Drift is not repeatable enough in
 sign or rate, so subtracting a fixed curve would sometimes increase error.
 
-Operational firmware instead uses a 15-sample trimmed mean for display and
-calibration sampling. With a full window the three highest and three lowest
-samples are removed before averaging. This is deliberately small enough to
-respond quickly while strongly rejecting an isolated HX711 spike.
+Operational firmware therefore uses event-based sample-and-hold measurement,
+not a universal time correction and not an indefinitely wandering live grams
+conversion. A private slow raw tracker follows drift only while no load change
+is present. A confirmed step freezes the pre-change tracker, acquires a robust
+new raw state for no more than ten seconds, and applies only that difference to
+the held result.
 
 The measurement policy is:
 
-1. tare in the exact working configuration immediately before measurement;
-2. wait for a stable short window;
-3. capture/hold the result promptly rather than treating a 30-minute loaded
-   value as equally valid;
-4. retain diagnostic CSV values raw for future analysis;
-5. do not auto-zero, because real low masses could be silently absorbed;
-6. do not apply creep compensation without repeatable temperature-aware data.
+1. deliberately tare the exact working configuration after each power-up;
+2. retain persistent per-channel K across ordinary power cycles;
+3. track only slow background raw movement while the accepted display is held;
+4. freeze tracking before a confirmed addition or removal is measured;
+5. acquire the new state for at least two stable seconds and at most ten
+   seconds;
+6. retain diagnostics as unprocessed absolute raw/reference/delta evidence;
+7. do not apply a fixed elapsed-time creep curve.
+
+This tracker is not unrestricted auto-zero. It is suspended as soon as a
+candidate step is detected, so an unchanging small real mass is held rather
+than gradually erased. See `docs/Measurement_Model.md` for the equations,
+provisional thresholds and state ownership.
 
 For a spine force near the 880 g ATA load, a few tenths of a gram accumulated
 over 30 minutes is negligible relative to the applied load and the actual
@@ -61,9 +71,10 @@ material, so immediate tare and a short stable capture are mandatory.
 
 ## Remaining validation
 
-- perform the square-one normal Calibration workflow on both channels;
-- verify CAL can deliberately be rerun after a fresh tare;
-- verify the diagnostic workflow independently on Left and Right;
-- compare a known small secondary mass after the operational filter;
-- collect a high-load Left run only if later evidence shows that it would alter
-  a design decision.
+- build and upload the feature branch with PlatformIO;
+- recalibrate both channels because v0.2.0 intentionally invalidates older K;
+- verify held 999.8 g does not wander during several minutes of static load;
+- verify removal returns to zero and 999.8 g can be reapplied repeatedly;
+- compare the 113.8 g secondary mass and an arrow-range mass;
+- tune the provisional change/stability thresholds only from observed hardware
+  transitions.

@@ -34,14 +34,12 @@ bool CreepDiagnostic::start(
     DiagnosticSide side,
     float testMassGrams,
     bool zeroBaseline,
-    LoadCellChannel &left,
-    LoadCellChannel &right,
     uint32_t currentTime
 )
 {
     if (
         state_ == State::WaitingForHost
-        || state_ == State::Taring
+        || state_ == State::CapturingReference
         || state_ == State::AwaitingLoad
         || state_ == State::Running
         || state_ == State::AwaitingSave
@@ -50,8 +48,6 @@ bool CreepDiagnostic::start(
     }
 
     side_ = side;
-    LoadCellChannel &sensor = selectedSensor(left, right);
-
     if (
         !zeroBaseline
         && (
@@ -67,31 +63,15 @@ bool CreepDiagnostic::start(
         return false;
     }
 
-    if (!zeroBaseline && !baselineCaptured(side_)) {
-        Serial.printf(
-            "AL_DIAG,EVENT,%s,%.3f,BASELINE_REQUIRED\n",
-            sideText(),
-            testMassGrams
-        );
-        return false;
-    }
-
-    if (!zeroBaseline && !sensor.calibrated()) {
-        Serial.printf(
-            "AL_DIAG,EVENT,%s,%.3f,CALIBRATION_REQUIRED\n",
-            sideText(),
-            testMassGrams
-        );
-        return false;
-    }
-
     testMassGrams_ = zeroBaseline ? 0.0f : testMassGrams;
     zeroBaseline_ = zeroBaseline;
     loadConfirmSamples_ = 0;
     runStartTime_ = 0;
     completedElapsedMs_ = 0;
     sampleCount_ = 0;
-    pendingSensor_ = &sensor;
+    referenceAccumulator_ = 0;
+    referenceSampleCount_ = 0;
+    runReferenceRaw_ = 0;
     runId_++;
     state_ = State::WaitingForHost;
 
@@ -102,7 +82,7 @@ bool CreepDiagnostic::start(
     );
 
     if (hostConnected(currentTime)) {
-        beginTare();
+        beginReferenceCapture();
     }
 
     return true;
@@ -124,7 +104,6 @@ void CreepDiagnostic::cancel()
     loadConfirmSamples_ = 0;
     runStartTime_ = 0;
     completedElapsedMs_ = 0;
-    pendingSensor_ = nullptr;
     sampleCount_ = 0;
 }
 
@@ -132,7 +111,7 @@ bool CreepDiagnostic::finishSession()
 {
     if (
         state_ == State::WaitingForHost
-        || state_ == State::Taring
+        || state_ == State::CapturingReference
         || state_ == State::AwaitingLoad
         || state_ == State::Running
         || state_ == State::AwaitingSave
@@ -145,7 +124,6 @@ bool CreepDiagnostic::finishSession()
     testMassGrams_ = 0.0f;
     zeroBaseline_ = false;
     completedElapsedMs_ = 0;
-    pendingSensor_ = nullptr;
     sampleCount_ = 0;
     return true;
 }
@@ -160,14 +138,14 @@ void CreepDiagnostic::handleHostCommand(
     }
 
     if (
-        strcmp(line, "AL_HOST,HELLO,2") == 0
-        || strcmp(line, "AL_HOST,HEARTBEAT,2") == 0
+        strcmp(line, "AL_HOST,HELLO,3") == 0
+        || strcmp(line, "AL_HOST,HEARTBEAT,3") == 0
     ) {
         hostSeen_ = true;
         lastHostMessageTime_ = currentTime;
 
-        if (strcmp(line, "AL_HOST,HELLO,2") == 0) {
-            Serial.println("AL_DIAG,EVENT,HOST_READY,2");
+        if (strcmp(line, "AL_HOST,HELLO,3") == 0) {
+            Serial.println("AL_DIAG,EVENT,HOST_READY,3");
 
             if (state_ == State::AwaitingSave) {
                 replayBufferedRun();
@@ -175,7 +153,7 @@ void CreepDiagnostic::handleHostCommand(
         }
 
         if (state_ == State::WaitingForHost) {
-            beginTare();
+            beginReferenceCapture();
         }
 
         return;
@@ -245,10 +223,6 @@ void CreepDiagnostic::handleHostCommand(
         return;
     }
 
-    if (zeroBaseline_) {
-        setBaselineCaptured(side_, true);
-    }
-
     state_ = State::Complete;
 
     Serial.printf(
@@ -259,25 +233,6 @@ void CreepDiagnostic::handleHostCommand(
         static_cast<unsigned long>(runId_),
         sampleCount_
     );
-}
-
-void CreepDiagnostic::setBaselineCaptured(
-    DiagnosticSide side,
-    bool captured
-)
-{
-    if (side == DiagnosticSide::Left) {
-        leftBaselineCaptured_ = captured;
-    } else {
-        rightBaselineCaptured_ = captured;
-    }
-}
-
-bool CreepDiagnostic::baselineCaptured(DiagnosticSide side) const
-{
-    return side == DiagnosticSide::Left
-        ? leftBaselineCaptured_
-        : rightBaselineCaptured_;
 }
 
 void CreepDiagnostic::update(
@@ -308,10 +263,16 @@ void CreepDiagnostic::update(
 
     const LoadCellChannel &sensor = selectedSensor(left, right);
 
-    if (state_ == State::Taring) {
-        if (!sensor.tareComplete()) {
+    if (state_ == State::CapturingReference) {
+        referenceAccumulator_ += sensor.rawValue();
+        ++referenceSampleCount_;
+
+        if (referenceSampleCount_ < REFERENCE_SAMPLE_COUNT) {
             return;
         }
+
+        runReferenceRaw_ = static_cast<long>(
+            referenceAccumulator_ / REFERENCE_SAMPLE_COUNT);
 
         if (zeroBaseline_) {
             beginRunning(currentTime, sensor);
@@ -331,7 +292,7 @@ void CreepDiagnostic::update(
 
     if (state_ == State::AwaitingLoad) {
         if (
-            magnitude(sensor.zeroedValue())
+            magnitude(sensor.rawValue() - runReferenceRaw_)
             < LOAD_DETECT_THRESHOLD_COUNTS
         ) {
             loadConfirmSamples_ = 0;
@@ -460,14 +421,6 @@ uint8_t CreepDiagnostic::progressPercent(uint32_t currentTime) const
     );
 }
 
-LoadCellChannel &CreepDiagnostic::selectedSensor(
-    LoadCellChannel &left,
-    LoadCellChannel &right
-) const
-{
-    return side_ == DiagnosticSide::Left ? left : right;
-}
-
 const LoadCellChannel &CreepDiagnostic::selectedSensor(
     const LoadCellChannel &left,
     const LoadCellChannel &right
@@ -476,17 +429,15 @@ const LoadCellChannel &CreepDiagnostic::selectedSensor(
     return side_ == DiagnosticSide::Left ? left : right;
 }
 
-void CreepDiagnostic::beginTare()
+void CreepDiagnostic::beginReferenceCapture()
 {
-    if (pendingSensor_ == nullptr) {
-        return;
-    }
-
-    state_ = State::Taring;
-    pendingSensor_->startDiagnosticTare();
+    state_ = State::CapturingReference;
+    referenceAccumulator_ = 0;
+    referenceSampleCount_ = 0;
+    runReferenceRaw_ = 0;
 
     Serial.printf(
-        "AL_DIAG,EVENT,%s,%.3f,TARE_STARTED\n",
+        "AL_DIAG,EVENT,%s,%.3f,REFERENCE_STARTED\n",
         sideText(),
         testMassGrams_
     );
@@ -526,11 +477,7 @@ void CreepDiagnostic::captureSample(
     Sample &sample = samples_[sampleCount_];
     sample.elapsedMs = elapsed;
     sample.rawCount = sensor.rawValue();
-    sample.zeroedCount = sensor.zeroedValue();
-    // The operational/UI value is robustly filtered. Diagnostic evidence
-    // deliberately retains the unsmoothed conversion of this raw sample.
-    sample.calculatedGrams = sensor.rawGrams();
-    sample.calibrationFactor = sensor.calibrationFactor();
+    sample.deltaCount = sample.rawCount - runReferenceRaw_;
 
     if (hostConnected(millis())) {
         emitSample(sampleCount_, sample);
@@ -543,8 +490,7 @@ void CreepDiagnostic::emitHeader() const
 {
     Serial.println(
         "AL_DIAG,HEADER,boot_id,run_id,sample_index,side,run_type,"
-        "test_mass_g,elapsed_ms,raw_count,zeroed_count,"
-        "calculated_g,calibration_factor"
+        "test_mass_g,elapsed_ms,raw_count,run_reference_raw,delta_count"
     );
 }
 
@@ -554,7 +500,7 @@ void CreepDiagnostic::emitSample(
 ) const
 {
     Serial.printf(
-        "AL_DIAG,DATA,%lu,%lu,%u,%s,%s,%.3f,%lu,%ld,%ld,%.4f,%.6f\n",
+        "AL_DIAG,DATA,%lu,%lu,%u,%s,%s,%.3f,%lu,%ld,%ld,%ld\n",
         static_cast<unsigned long>(bootId_),
         static_cast<unsigned long>(runId_),
         sampleIndex,
@@ -563,9 +509,8 @@ void CreepDiagnostic::emitSample(
         testMassGrams_,
         static_cast<unsigned long>(sample.elapsedMs),
         sample.rawCount,
-        sample.zeroedCount,
-        sample.calculatedGrams,
-        sample.calibrationFactor
+        runReferenceRaw_,
+        sample.deltaCount
     );
 }
 

@@ -19,14 +19,15 @@ class Sample:
     test_mass_g: float
     elapsed_s: float
     raw_count: int
-    zeroed_count: int
-    calculated_g: float
+    delta_count: int
     calibration_factor: float
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Summarise ArrowLab legacy and protocol-v2 creep CSV files."
+        description=(
+            "Summarise ArrowLab raw-only protocol-v3 and legacy creep CSV files."
+        )
     )
     parser.add_argument("csv", nargs="+", type=Path, help="CSV files to analyse")
     return parser.parse_args()
@@ -51,9 +52,14 @@ def load_samples(path: Path) -> list[Sample]:
                     test_mass_g=mass,
                     elapsed_s=int(row["elapsed_ms"]) / 1000.0,
                     raw_count=int(row["raw_count"]),
-                    zeroed_count=int(row["zeroed_count"]),
-                    calculated_g=float(row["calculated_g"]),
-                    calibration_factor=float(row["calibration_factor"]),
+                    delta_count=int(
+                        row.get("delta_count")
+                        or row.get("zeroed_count")
+                        or 0
+                    ),
+                    calibration_factor=float(
+                        row.get("calibration_factor") or 0.0
+                    ),
                 )
             )
 
@@ -83,7 +89,7 @@ def theil_sen_slope(samples: list[Sample]) -> float:
             elapsed = right.elapsed_s - left.elapsed_s
             if elapsed > 0.0:
                 slopes.append(
-                    (right.zeroed_count - left.zeroed_count) / elapsed
+                    (right.delta_count - left.delta_count) / elapsed
                 )
     return median(slopes) if slopes else 0.0
 
@@ -99,12 +105,12 @@ def summarise(samples: list[Sample]) -> dict[str, float | int | str]:
     slope_counts_s = theil_sen_slope(analysis_samples)
     intercept = median(
         [
-            sample.zeroed_count - slope_counts_s * sample.elapsed_s
+            sample.delta_count - slope_counts_s * sample.elapsed_s
             for sample in analysis_samples
         ]
     )
     residuals = [
-        sample.zeroed_count
+        sample.delta_count
         - (intercept + slope_counts_s * sample.elapsed_s)
         for sample in analysis_samples
     ]
@@ -120,12 +126,12 @@ def summarise(samples: list[Sample]) -> dict[str, float | int | str]:
     )
 
     first_window = [
-        sample.zeroed_count
+        sample.delta_count
         for sample in analysis_samples
         if sample.elapsed_s <= 300.0
     ]
     last_window = [
-        sample.zeroed_count
+        sample.delta_count
         for sample in analysis_samples
         if sample.elapsed_s >= 1500.0
     ]
@@ -135,6 +141,10 @@ def summarise(samples: list[Sample]) -> dict[str, float | int | str]:
         if sample.calibration_factor != 0.0
     ]
     factor = median(factor_values) if factor_values else 0.0
+    if factor == 0.0 and ordered[0].test_mass_g > 0.0:
+        initial_loaded = median(first_window)
+        if initial_loaded != 0.0:
+            factor = initial_loaded / ordered[0].test_mass_g
     drift_counts = median(last_window) - median(first_window)
 
     return {
@@ -155,8 +165,8 @@ def summarise(samples: list[Sample]) -> dict[str, float | int | str]:
         "residual_p90_counts": percentile(residuals, 0.95)
         - percentile(residuals, 0.05),
         "gross_outliers": gross_outliers,
-        "zeroed_min": min(sample.zeroed_count for sample in analysis_samples),
-        "zeroed_max": max(sample.zeroed_count for sample in analysis_samples),
+        "delta_min": min(sample.delta_count for sample in analysis_samples),
+        "delta_max": max(sample.delta_count for sample in analysis_samples),
     }
 
 

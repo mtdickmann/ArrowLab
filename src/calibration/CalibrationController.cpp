@@ -1,8 +1,19 @@
 #include "CalibrationController.h"
 
+#include <climits>
+
+namespace
+{
+    long magnitude(long value)
+    {
+        if (value == LONG_MIN) return LONG_MAX;
+        return value < 0 ? -value : value;
+    }
+}
+
 CalibrationController::CalibrationController(
-    LoadCellChannel &left,
-    LoadCellChannel &right,
+    MeasurementChannel &left,
+    MeasurementChannel &right,
     InstrumentStorage &storage
 )
     : left_(left), right_(right), storage_(storage)
@@ -22,7 +33,7 @@ void CalibrationController::restore(CalibrationSide side)
         return;
     }
 
-    sensor(side).restoreCalibration(
+    measurement(side).restoreCalibration(
         record.factor,
         record.referenceGrams);
     workflow(side).referenceGrams = record.referenceGrams;
@@ -70,73 +81,92 @@ void CalibrationController::updateChannel(
     uint32_t currentTime
 )
 {
-    LoadCellChannel &loadCell = sensor(side);
+    MeasurementChannel &channel = measurement(side);
     ChannelWorkflow &state = workflow(side);
 
-    if (state.stage == Stage::Taring && loadCell.tareComplete()) {
+    if (state.stage == Stage::Taring && channel.tareComplete()) {
         state.stage = Stage::Ready;
-    }
-
-    if (
-        state.stage == Stage::AwaitingLoad
-        && loadCell.calibrationLoadDetected()
-    ) {
-        state.stage = Stage::ReadyToCalibrate;
     }
 
     if (
         state.stage == Stage::Settling
         && currentTime - state.settleStartedAt >= SETTLE_TIME_MS
     ) {
-        if (loadCell.startCalibration(state.referenceGrams)) {
-            state.stage = Stage::Sampling;
-            state.calibrationWasRunning = true;
-        } else {
-            state.stage = Stage::ReadyToCalibrate;
-        }
-    }
-
-    if (
-        state.stage == Stage::Sampling
-        && state.calibrationWasRunning
-        && !loadCell.calibrationInProgress()
-    ) {
-        state.calibrationWasRunning = false;
-
-        if (
-            loadCell.calibrationRunSucceeded()
-            && loadCell.calibrated()
-        ) {
-            state.stage = Stage::Ready;
-            const bool stored = storage_.saveCalibration(
-                storedSide(side),
-                loadCell.calibrationFactor(),
-                loadCell.calibrationReferenceGrams());
-            if (stored) {
-                Serial.printf(
-                    "Stored %s calibration in NVS\n",
-                    side == CalibrationSide::Left ? "LEFT" : "RIGHT");
-            } else {
-                Serial.printf(
-                    "WARNING: %s calibration is valid for this session "
-                    "but was not stored\n",
-                    side == CalibrationSide::Left ? "LEFT" : "RIGHT");
-            }
-        } else {
-            state.stage = Stage::ReadyToCalibrate;
-            Serial.printf(
-                "WARNING: %s calibration failed\n",
-                side == CalibrationSide::Left ? "LEFT" : "RIGHT");
-        }
+        state.stage = Stage::Sampling;
+        state.calibrationAccumulator = 0;
+        state.calibrationSamples = 0;
     }
 }
 
 void CalibrationController::onFreshReading(CalibrationSide side)
 {
-    if (workflow(side).stage == Stage::AwaitingLoad) {
-        sensor(side).updateCalibrationLoadDetection(
-            LOAD_THRESHOLD_COUNTS);
+    MeasurementChannel &channel = measurement(side);
+    ChannelWorkflow &state = workflow(side);
+
+    if (state.stage == Stage::AwaitingLoad) {
+        if (
+            magnitude(channel.filteredZeroedRaw())
+            >= LOAD_THRESHOLD_COUNTS
+        ) {
+            if (state.loadConfirmSamples < LOAD_CONFIRM_SAMPLES) {
+                ++state.loadConfirmSamples;
+            }
+            if (state.loadConfirmSamples >= LOAD_CONFIRM_SAMPLES) {
+                state.stage = Stage::ReadyToCalibrate;
+            }
+        } else {
+            state.loadConfirmSamples = 0;
+        }
+        return;
     }
+
+    if (state.stage != Stage::Sampling) {
+        return;
+    }
+
+    state.calibrationAccumulator += channel.filteredZeroedRaw();
+    ++state.calibrationSamples;
+
+    if (state.calibrationSamples >= CALIBRATION_SAMPLE_COUNT) {
+        finishCalibration(side);
+    }
+}
+
+void CalibrationController::finishCalibration(CalibrationSide side)
+{
+    MeasurementChannel &channel = measurement(side);
+    ChannelWorkflow &state = workflow(side);
+    const float averageCounts =
+        static_cast<float>(state.calibrationAccumulator)
+        / CALIBRATION_SAMPLE_COUNT;
+
+    if (averageCounts == 0.0f || state.referenceGrams <= 0.0f) {
+        state.stage = Stage::ReadyToCalibrate;
+        Serial.printf(
+            "WARNING: %s calibration failed: invalid span\n",
+            side == CalibrationSide::Left ? "LEFT" : "RIGHT");
+        return;
+    }
+
+    const float countsPerGram =
+        averageCounts / state.referenceGrams;
+    channel.applyCalibration(countsPerGram, state.referenceGrams);
+    state.stage = Stage::Ready;
+    state.loadConfirmSamples = 0;
+
+    const bool stored = storage_.saveCalibration(
+        storedSide(side),
+        countsPerGram,
+        state.referenceGrams);
+
+    Serial.printf(
+        "%s calibration complete: %.3f counts/g "
+        "(average=%.1f, reference=%.1f g, stored=%s)\n",
+        side == CalibrationSide::Left ? "LEFT" : "RIGHT",
+        countsPerGram,
+        averageCounts,
+        state.referenceGrams,
+        stored ? "yes" : "no");
 }
 
 void CalibrationController::requestTare(CalibrationSide side)
@@ -155,6 +185,7 @@ bool CalibrationController::startTare(CalibrationSide side)
         side == CalibrationSide::Left
             ? CalibrationSide::Right
             : CalibrationSide::Left);
+
     if (
         state.stage == Stage::Settling
         || state.stage == Stage::Sampling
@@ -164,11 +195,13 @@ bool CalibrationController::startTare(CalibrationSide side)
         return false;
     }
 
-    sensor(side).startUserTare();
+    measurement(side).startTare(true);
     state.stage = Stage::Taring;
-    state.referenceGrams = sensor(side).calibrationReferenceGrams();
+    state.referenceGrams = measurement(side).calibrationReferenceGrams();
     state.settleStartedAt = 0;
-    state.calibrationWasRunning = false;
+    state.loadConfirmSamples = 0;
+    state.calibrationAccumulator = 0;
+    state.calibrationSamples = 0;
     return true;
 }
 
@@ -192,20 +225,20 @@ bool CalibrationController::performCalibrationAction(
     uint32_t currentTime
 )
 {
-    LoadCellChannel &loadCell = sensor(side);
+    MeasurementChannel &channel = measurement(side);
     ChannelWorkflow &state = workflow(side);
     const ChannelWorkflow &other = workflow(
         side == CalibrationSide::Left
             ? CalibrationSide::Right
             : CalibrationSide::Left);
 
-    if (!loadCell.tareComplete() || !loadCell.userTareConfirmed()) {
+    if (!channel.userTareConfirmed()) {
         return false;
     }
 
     if (referenceGrams > 0.0f && state.stage == Stage::Ready) {
         state.referenceGrams = referenceGrams;
-        loadCell.resetCalibrationLoadDetection();
+        state.loadConfirmSamples = 0;
         state.stage = Stage::AwaitingLoad;
         return true;
     }
@@ -225,33 +258,17 @@ bool CalibrationController::performCalibrationAction(
     return false;
 }
 
-void CalibrationController::resetChannel(CalibrationSide side)
-{
-    sensor(side).clearCalibration();
-    sensor(side).resetCalibrationLoadDetection();
-    storage_.resetChannel(storedSide(side));
-    workflow(side) = ChannelWorkflow{};
-    if (side == CalibrationSide::Left) {
-        leftTareRequested_ = false;
-        leftCalibrationRequested_ = false;
-    } else {
-        rightTareRequested_ = false;
-        rightCalibrationRequested_ = false;
-    }
-}
-
 CalibrationController::ChannelStatus CalibrationController::status(
     CalibrationSide side,
     uint32_t currentTime
 ) const
 {
     const ChannelWorkflow &state = workflow(side);
-    const LoadCellChannel &loadCell = sensor(side);
+    const MeasurementChannel &channel = measurement(side);
     ChannelStatus result;
     result.stage = state.stage;
-    result.tareComplete =
-        loadCell.tareComplete() && loadCell.userTareConfirmed();
-    result.calibrated = loadCell.calibrated();
+    result.tareComplete = channel.userTareConfirmed();
+    result.calibrated = channel.calibrated();
     result.referenceGrams = state.referenceGrams;
 
     if (state.stage == Stage::Settling) {
@@ -270,12 +287,14 @@ CalibrationController::ChannelStatus CalibrationController::status(
     return result;
 }
 
-LoadCellChannel &CalibrationController::sensor(CalibrationSide side)
+MeasurementChannel &CalibrationController::measurement(
+    CalibrationSide side
+)
 {
     return side == CalibrationSide::Left ? left_ : right_;
 }
 
-const LoadCellChannel &CalibrationController::sensor(
+const MeasurementChannel &CalibrationController::measurement(
     CalibrationSide side
 ) const
 {

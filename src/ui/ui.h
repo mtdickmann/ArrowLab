@@ -10,21 +10,6 @@ namespace ArrowLabUI
         Right
     };
 
-    struct DiagnosticChannelState
-    {
-        bool baselineCaptured = false;
-        bool tareComplete = false;
-        bool tareInProgress = false;
-        bool userTareConfirmed = false;
-        bool calibrated = false;
-        bool calibrationSetupActive = false;
-        bool calibrationReady = false;
-        bool calibrationInProgress = false;
-        bool calibrationLoadDetected = false;
-        uint32_t settleRemainingSeconds = 0;
-        uint8_t settlePercent = 0;
-    };
-
     using TareCallback = void (*)(LoadSide side);
     using CalibrationCallback = void (*)(LoadSide side, float referenceGrams);
     using DiagnosticStartCallback = void (*)(
@@ -34,7 +19,15 @@ namespace ArrowLabUI
     );
     using DiagnosticCancelCallback = void (*)();
     using DiagnosticFinishCallback = void (*)();
-    using DiagnosticResetCallback = void (*)(LoadSide side);
+    using UnitCycleCallback = void (*)();
+    using SpineStartCallback = void (*)(uint8_t positionCount, float markedSpine);
+    using SpineControlCallback = void (*)();
+    using SpineMarkedCallback = void (*)(float markedSpine);
+    using WifiScanCallback = void (*)();
+    using WifiConnectCallback = void (*)(
+        const char *ssid,
+        const char *password);
+    using WifiForgetCallback = bool (*)(const char *ssid);
 
     /**
      * Creates the complete ArrowLab home screen.
@@ -48,12 +41,35 @@ namespace ArrowLabUI
      */
     void setTareCallback(TareCallback callback);
     void setCalibrationCallback(CalibrationCallback callback);
+    void setUnitCycleCallback(UnitCycleCallback callback);
+    void setSpineCallbacks(
+        SpineStartCallback startCallback,
+        SpineControlCallback cancelCallback,
+        SpineControlCallback confirmClearCallback,
+        SpineControlCallback confirmZeroCallback,
+        SpineControlCallback restartCallback,
+        SpineMarkedCallback markedCallback);
     void setCalibrationReferenceGrams(float grams);
+    void setWifiCallbacks(
+        WifiScanCallback scanCallback,
+        WifiConnectCallback connectCallback,
+        WifiForgetCallback forgetCallback);
+    void setWifiScanResults(
+        const char ssids[][33],
+        const int16_t *rssiDbm,
+        const bool *secured,
+        size_t count);
+    void setWifiScanBusy();
+    void setWifiSetupResult(
+        bool busy,
+        bool success,
+        const char *message);
+    void setWifiSavedCredentials(bool saved);
+
     void setDiagnosticCallbacks(
         DiagnosticStartCallback startCallback,
         DiagnosticCancelCallback cancelCallback,
-        DiagnosticFinishCallback finishCallback,
-        DiagnosticResetCallback resetCallback
+        DiagnosticFinishCallback finishCallback
     );
     void setDiagnosticStatus(
         const char *text,
@@ -61,13 +77,37 @@ namespace ArrowLabUI
         bool active,
         bool awaitingSave
     );
-    void setDiagnosticChannelState(
-        const DiagnosticChannelState &left,
-        const DiagnosticChannelState &right,
-        bool hostConnected
-    );
+    void setDiagnosticHostConnected(bool hostConnected);
     void setCalibrationValidity(bool leftCalibrated, bool rightCalibrated);
-    void setSensorHealth(bool leftLive, bool rightLive);
+    void setSensorHealth(
+        bool measurementNodeOnline,
+        bool leftLive,
+        bool rightLive);
+
+    void setFirmwareUpdateActive(bool active);
+    void setFirmwareUpdateFailed();
+    void setFirmwareVersions(
+        bool wroomOnline,
+        uint8_t wroomMajor,
+        uint8_t wroomMinor,
+        uint8_t wroomPatch,
+        const char *wroomStatus,
+        uint8_t protocolVersion);
+
+    void setNetworkStatus(
+        bool vieweConnected,
+        const char *vieweHostname,
+        const char *vieweSsid,
+        const char *vieweIp,
+        int16_t vieweRssiDbm,
+        const char *vieweMac,
+        bool wroomOnline,
+        bool wroomConnected,
+        const char *wroomHostname,
+        const char *wroomSsid,
+        const char *wroomIp,
+        int16_t wroomRssiDbm,
+        const char *wroomMac);
 
     /**
      * Update the displayed raw reading for the left sensor.
@@ -79,6 +119,23 @@ namespace ArrowLabUI
      */
     void setRightReading(const char *text);
     void setLoadUnit(LoadSide side, const char *text);
+    void setLoadConversions(LoadSide side, const char *text);
+    void setWeighDisplay(
+        const char *source,
+        const char *primary,
+        const char *unit,
+        const char *secondary,
+        const char *instruction);
+    void setSpineDisplay(
+        const char *state,
+        const char *detail,
+        const char *results,
+        const char *primaryAction,
+        uint8_t progressPercent,
+        bool active,
+        bool complete,
+        bool clearConfirmationRequired,
+        bool zeroConfirmationRequired);
 
     /**
      * Update the tare/calibration status shown for one load channel.

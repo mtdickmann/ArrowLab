@@ -2,20 +2,28 @@
  * ArrowLab firmware
  * Development firmware; version is defined only in Version.h.
  *
- * Top-level hardware, diagnostics and UI coordinator.
- * Tare/calibration workflow lives in CalibrationController.
+ * Top-level HMI and diagnostics coordinator.
+ * The separate WROOM measurement node owns HX711 acquisition, weighing,
+ * tare/calibration workflow and calibration persistence.
  */
 
 #include <Arduino.h>
+#include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
 
 #include "lvgl_v8_port.h"
+#include "ArrowLabConfig.h"
 #include "measurement/LoadCellChannel.h"
-#include "calibration/CalibrationController.h"
+#include "measurement/LoadAggregation.h"
+#include "measurement/MeasurementNodeClient.h"
+#include "network/NetworkService.h"
 #include "diagnostics/CreepDiagnostic.h"
-#include "storage/InstrumentStorage.h"
+#include "protocol/MeasurementProtocol.h"
+#include "spine/SpineCalculation.h"
+#include "ui/MassDisplay.h"
 #include "ui/ui.h"
 #include "Version.h"
 
@@ -25,27 +33,17 @@ using namespace esp_panel::board;
 namespace
 {
     constexpr uint32_t SENSOR_UPDATE_INTERVAL_MS = 100;
-    constexpr uint32_t SENSOR_TIMEOUT_MS = 1500;
     float calibrationReferenceGrams = 0.0f;
-    /*
-     * Final GPIO assignment:
-     *
-     * Left HX711:
-     *   DT  = GPIO13
-     *   SCK = GPIO10
-     *
-     * Right HX711:
-     *   DT  = GPIO11
-     *   SCK = GPIO12
-     */
-    LoadCellChannel leftSensor("Left", 13, 10);
-    LoadCellChannel rightSensor("Right", 11, 12);
+    ArrowLabConfig::MassUnit selectedMassUnit =
+        ArrowLabConfig::PRIMARY_MASS_UNIT;
+    volatile bool unitCycleRequested = false;
+    float requestedMarkedSpine = 0.0f;
+    // Raw-only mirrors retained for the hidden creep diagnostic. The Viewe
+    // never initializes an HX711 or performs measurement calculations.
+    LoadCellChannel leftSensor("Left remote", 0, 0);
+    LoadCellChannel rightSensor("Right remote", 0, 0);
+    MeasurementNodeClient measurementNode;
     CreepDiagnostic creepDiagnostic;
-    InstrumentStorage instrumentStorage;
-    CalibrationController calibrationController(
-        leftSensor,
-        rightSensor,
-        instrumentStorage);
 
     Board *displayBoard = nullptr;
 
@@ -57,25 +55,282 @@ namespace
         ArrowLabUI::LoadSide::Left;
     float diagnosticRequestedMassGrams = 0.0f;
     bool diagnosticRequestedZeroBaseline = false;
-    volatile bool diagnosticResetChannelRequested = false;
-    ArrowLabUI::LoadSide diagnosticMaintenanceSide =
-        ArrowLabUI::LoadSide::Left;
-    bool leftBaselineStored = false;
-    bool rightBaselineStored = false;
-
     char serialLine[128];
     size_t serialLineLength = 0;
 
-    CalibrationSide calibrationSide(ArrowLabUI::LoadSide side)
+    enum class WifiSetupStage
+    {
+        Idle,
+        TestingWroom,
+        TestingViewe,
+        VerifyingBoth
+    };
+    WifiSetupStage wifiSetupStage = WifiSetupStage::Idle;
+    char pendingWifiSsid[33] = {};
+    char pendingWifiPassword[65] = {};
+    uint32_t wifiSetupDeadline = 0;
+    uint32_t wifiBothConnectedSince = 0;
+    bool wifiScanPending = false;
+
+    ArrowLabProtocol::Side protocolSide(ArrowLabUI::LoadSide side)
     {
         return side == ArrowLabUI::LoadSide::Left
-            ? CalibrationSide::Left
-            : CalibrationSide::Right;
+            ? ArrowLabProtocol::Side::Left
+            : ArrowLabProtocol::Side::Right;
+    }
+
+    void handleOtaStart()
+    {
+        lvgl_port_lock(-1);
+        ArrowLabUI::setFirmwareUpdateActive(true);
+        lvgl_port_unlock();
+
+        // Give LVGL and the RGB panel enough time to present a deliberate
+        // update notice before flash writes can disrupt the display stream.
+        delay(3000);
+
+        auto backlight = displayBoard != nullptr
+            ? displayBoard->getBacklight()
+            : nullptr;
+        const bool off = backlight != nullptr && backlight->off();
+        Serial.printf(
+            "AL_HMI,OTA,BACKLIGHT_OFF=%s\n",
+            off ? "OK" : "FAILED");
+    }
+
+    void handleOtaFinish()
+    {
+        auto backlight = displayBoard != nullptr
+            ? displayBoard->getBacklight()
+            : nullptr;
+        const bool on = backlight != nullptr && backlight->on();
+        Serial.printf(
+            "AL_HMI,OTA,BACKLIGHT_RESTORE=%s\n",
+            on ? "OK" : "FAILED");
+
+        lvgl_port_lock(-1);
+        ArrowLabUI::setFirmwareUpdateFailed();
+        lvgl_port_unlock();
+    }
+
+    void requestWifiScan()
+    {
+        wifiScanPending = ArrowLabNetwork::startScan();
+        ArrowLabUI::setWifiScanBusy();
+    }
+
+    bool requestWifiForget(const char *ssid)
+    {
+        if (
+            ssid == nullptr
+            || ssid[0] == '\0'
+            || !measurementNode.connected(millis())
+        ) {
+            return false;
+        }
+
+        if (!measurementNode.forgetWifiProfile(ssid)) return false;
+        return ArrowLabNetwork::forgetSavedProfile(ssid);
+    }
+
+    void requestWifiConnect(const char *ssid, const char *password)
+    {
+        snprintf(
+            pendingWifiSsid,
+            sizeof(pendingWifiSsid),
+            "%s",
+            ssid != nullptr ? ssid : "");
+        snprintf(
+            pendingWifiPassword,
+            sizeof(pendingWifiPassword),
+            "%s",
+            password != nullptr ? password : "");
+
+        if (!measurementNode.testWifiCredentials(
+                pendingWifiSsid,
+                pendingWifiPassword)) {
+            ArrowLabUI::setWifiSetupResult(
+                false,
+                false,
+                "ArrowLab connection unavailable - try again");
+            return;
+        }
+
+        wifiSetupStage = WifiSetupStage::TestingWroom;
+        wifiSetupDeadline = millis() + 40000;
+        char connectionMessage[80];
+        snprintf(
+            connectionMessage,
+            sizeof(connectionMessage),
+            "Connecting to:\n%s",
+            pendingWifiSsid);
+        ArrowLabUI::setWifiSetupResult(
+            true,
+            false,
+            connectionMessage);
+    }
+
+    void processWifiSetup(uint32_t now)
+    {
+        if (wifiScanPending) {
+            const int scanState = ArrowLabNetwork::scanComplete();
+            if (scanState >= 0) {
+                constexpr size_t MAX_SCAN_RESULTS = 12;
+                ArrowLabNetwork::ScanResult results[MAX_SCAN_RESULTS];
+                const size_t count =
+                    ArrowLabNetwork::takeScanResults(
+                        results,
+                        MAX_SCAN_RESULTS);
+                char ssids[MAX_SCAN_RESULTS][33] = {};
+                int16_t rssi[MAX_SCAN_RESULTS] = {};
+                bool secured[MAX_SCAN_RESULTS] = {};
+                for (size_t index = 0; index < count; ++index) {
+                    snprintf(
+                        ssids[index],
+                        sizeof(ssids[index]),
+                        "%s",
+                        results[index].ssid);
+                    rssi[index] = results[index].rssiDbm;
+                    secured[index] = results[index].secured;
+                }
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiScanResults(
+                    ssids,
+                    rssi,
+                    secured,
+                    count);
+                lvgl_port_unlock();
+                wifiScanPending = false;
+            } else if (scanState == -2) {
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiScanResults(
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    0);
+                lvgl_port_unlock();
+                wifiScanPending = false;
+            }
+        }
+
+        if (wifiSetupStage == WifiSetupStage::Idle) return;
+
+        const auto &remote = measurementNode.status().network;
+        const bool remoteSucceeded =
+            remote.flags
+                & ArrowLabProtocol::NetworkCredentialTestSucceeded;
+        const bool remoteFailed =
+            remote.flags
+                & ArrowLabProtocol::NetworkCredentialTestFailed;
+        const ArrowLabNetwork::Info local = ArrowLabNetwork::info();
+
+        if (wifiSetupStage == WifiSetupStage::TestingWroom) {
+            if (remoteSucceeded) {
+                if (ArrowLabNetwork::testCredentials(
+                        pendingWifiSsid,
+                        pendingWifiPassword)) {
+                    wifiSetupStage = WifiSetupStage::TestingViewe;
+                    wifiSetupDeadline = now + 40000;
+                    lvgl_port_lock(-1);
+                    ArrowLabUI::setWifiSetupResult(
+                        true,
+                        false,
+                        "Completing ArrowLab\nconnection...");
+                    lvgl_port_unlock();
+                }
+            } else if (
+                remoteFailed
+                || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+            ) {
+                measurementNode.revertWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    false,
+                    "Connection failed - check password and retry");
+                lvgl_port_unlock();
+            }
+            return;
+        }
+
+        if (wifiSetupStage == WifiSetupStage::TestingViewe) {
+            if (
+                local.credentialTest
+                    == ArrowLabNetwork::CredentialTestState::Succeeded
+            ) {
+                wifiSetupStage = WifiSetupStage::VerifyingBoth;
+                wifiSetupDeadline = now + 40000;
+                wifiBothConnectedSince = 0;
+            } else if (
+                local.credentialTest
+                        == ArrowLabNetwork::CredentialTestState::Failed
+                || static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+            ) {
+                ArrowLabNetwork::revertCredentialTest();
+                measurementNode.revertWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    false,
+                    "Connection failed - check password and retry");
+                lvgl_port_unlock();
+            }
+            return;
+        }
+
+        const bool localOnTarget =
+            local.connected
+            && strcmp(local.ssid, pendingWifiSsid) == 0;
+        const bool remoteOnTarget =
+            measurementNode.connected(now)
+            && (remote.flags & ArrowLabProtocol::NetworkConnected)
+            && strcmp(remote.ssid, pendingWifiSsid) == 0;
+        if (localOnTarget && remoteOnTarget) {
+            if (wifiBothConnectedSince == 0) {
+                wifiBothConnectedSince = now;
+            }
+            if (now - wifiBothConnectedSince >= 1200) {
+                const bool localSaved =
+                    ArrowLabNetwork::commitTestedCredentials();
+                const bool remoteSaved =
+                    measurementNode.commitWifiCredentials();
+                wifiSetupStage = WifiSetupStage::Idle;
+                wifiBothConnectedSince = 0;
+                lvgl_port_lock(-1);
+                ArrowLabUI::setWifiSetupResult(
+                    false,
+                    localSaved && remoteSaved,
+                    localSaved && remoteSaved
+                        ? "Connected - Wi-Fi profile saved"
+                        : "Connected, but saving failed - retry");
+                lvgl_port_unlock();
+            }
+        } else {
+            wifiBothConnectedSince = 0;
+        }
+
+        if (
+            wifiSetupStage == WifiSetupStage::VerifyingBoth
+            && static_cast<int32_t>(now - wifiSetupDeadline) >= 0
+        ) {
+            ArrowLabNetwork::revertCredentialTest();
+            measurementNode.revertWifiCredentials();
+            wifiSetupStage = WifiSetupStage::Idle;
+            wifiBothConnectedSince = 0;
+            lvgl_port_lock(-1);
+            ArrowLabUI::setWifiSetupResult(
+                false,
+                false,
+                "ArrowLab could not complete the connection - retry");
+            lvgl_port_unlock();
+        }
     }
 
     void requestTare(ArrowLabUI::LoadSide side)
     {
-        calibrationController.requestTare(calibrationSide(side));
+        measurementNode.requestTare(protocolSide(side));
     }
 
     void requestCalibration(
@@ -87,9 +342,247 @@ namespace
             ArrowLabUI::setCalibrationReferenceGrams(referenceGrams);
         }
 
-        calibrationController.requestCalibration(
-            calibrationSide(side),
-            referenceGrams);
+        if (referenceGrams > 0.0f) {
+            measurementNode.prepareCalibration(
+                protocolSide(side),
+                referenceGrams);
+        } else {
+            measurementNode.startCalibration(protocolSide(side));
+        }
+    }
+
+    void requestMassUnitCycle()
+    {
+        unitCycleRequested = true;
+    }
+
+    void requestSpineStart(uint8_t positionCount, float markedSpine)
+    {
+        requestedMarkedSpine = markedSpine;
+        measurementNode.startSpineTest(positionCount);
+    }
+
+    void requestSpineCancel()
+    {
+        measurementNode.cancelSpineTest();
+    }
+
+    void requestSpineClearConfirmation()
+    {
+        measurementNode.confirmSpineClear();
+    }
+
+    void requestSpineZeroConfirmation()
+    {
+        measurementNode.confirmSpineZero();
+    }
+
+    void requestSpineRestart()
+    {
+        measurementNode.restartSpineAttempt();
+    }
+
+    void requestMarkedSpine(float markedSpine)
+    {
+        requestedMarkedSpine = markedSpine;
+    }
+
+    void updateSpineDisplay(
+        const ArrowLabProtocol::StatusPacket &status,
+        uint32_t currentTime)
+    {
+        using SpineStage = ArrowLabProtocol::SpineStage;
+        const SpineStage stage = static_cast<SpineStage>(status.spineStage);
+        const uint8_t position = status.spineCurrentPosition;
+        const uint8_t positionCount = status.spinePositionCount == 4 ? 4 : 1;
+        const float arrowGrams = status.arrowMilliGrams / 1000.0f;
+        const float appliedGrams = status.appliedMilliGrams / 1000.0f;
+        const char *state = "READY";
+        char detail[96] = "Empty both supports, then press START";
+        char results[160] = "";
+        bool active = false;
+        bool complete = false;
+        bool clearConfirmationRequired = false;
+        bool zeroConfirmationRequired = false;
+        const char *primaryAction = "START TEST";
+
+        switch (stage) {
+        case SpineStage::AwaitingClear:
+            state = "CLEAR";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Raise plunger; remove arrow; empty both supports");
+            snprintf(
+                results,
+                sizeof(results),
+                "When clear, press TARE NOW");
+            active = true;
+            clearConfirmationRequired = true;
+            primaryAction = "TARE NOW";
+            break;
+        case SpineStage::TaringLeft:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Automatic empty tare: LEFT");
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::TaringRight:
+            state = "READ";
+            snprintf(detail, sizeof(detail), "Automatic empty tare: RIGHT");
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingArrow:
+            state = "READ";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Place arrow on both supports | live mass %.2f g",
+                arrowGrams);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::StabilizingArrow:
+            state = "READ";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Keep arrow still | live mass %.2f g",
+                arrowGrams);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingPlungerZero:
+            state = "SET ZERO";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Bring plunger to arrow top | arrow %.2f g",
+                arrowGrams);
+            snprintf(
+                results,
+                sizeof(results),
+                "Establish exactly 12.7 mm travel, then press ZERO SET");
+            active = true;
+            zeroConfirmationRequired = true;
+            primaryAction = "ZERO SET";
+            break;
+        case SpineStage::ReadyToPress:
+            state = position > 0 ? "ROTATE + PUSH" : "PUSH";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u/%u | arrow %.2f g | press to hard stop",
+                position + 1,
+                positionCount,
+                arrowGrams);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::Holding:
+            state = "HOLD";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u/%u | applied %.1f g | keep steady",
+                position + 1,
+                positionCount,
+                appliedGrams);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingRetryRelease:
+            state = "RELEASE";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Incomplete plunge - release fully to retry position %u/%u",
+                position + 1,
+                positionCount);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::AwaitingRelease:
+            state = "CAPTURED";
+            snprintf(
+                detail,
+                sizeof(detail),
+                "Position %u captured - RELEASE fully",
+                position + 1);
+            active = true;
+            primaryAction = "RESTART";
+            break;
+        case SpineStage::Complete: {
+            state = "COMPLETE";
+            complete = true;
+            primaryAction = "RUN AGAIN";
+            float values[4] = {};
+            float minimum = 100000.0f;
+            float maximum = 0.0f;
+            for (uint8_t index = 0; index < positionCount; ++index) {
+                values[index] = SpineCalculation::equivalentSpine(
+                    status.positionMilliGrams[index] / 1000.0f);
+                if (values[index] < minimum) minimum = values[index];
+                if (values[index] > maximum) maximum = values[index];
+            }
+            if (positionCount == 1) {
+                snprintf(results, sizeof(results), "MEASURED SPINE: %.0f", values[0]);
+                if (requestedMarkedSpine > 0.0f) {
+                    snprintf(
+                        detail,
+                        sizeof(detail),
+                        "Marked %.0f | delta %+.0f (%+.1f%%) | arrow %.2f g",
+                        requestedMarkedSpine,
+                        SpineCalculation::markedDifference(values[0], requestedMarkedSpine),
+                        SpineCalculation::markedDifferencePercent(values[0], requestedMarkedSpine),
+                        arrowGrams);
+                } else {
+                    snprintf(detail, sizeof(detail), "Arrow %.2f g | single orientation", arrowGrams);
+                }
+            } else {
+                const float range = maximum - minimum;
+                snprintf(
+                    results,
+                    sizeof(results),
+                    "P1 %.0f  P2 %.0f  P3 %.0f  P4 %.0f\nSTIFF %.0f  WEAK %.0f  RANGE %.0f / SAS %.3f in",
+                    values[0], values[1], values[2], values[3],
+                    minimum, maximum, range, range / 1000.0f);
+                if (requestedMarkedSpine > 0.0f) {
+                    snprintf(
+                        detail,
+                        sizeof(detail),
+                        "Worst vs marked %.0f: %+.0f (%+.1f%%) | arrow %.2f g",
+                        requestedMarkedSpine,
+                        SpineCalculation::markedDifference(maximum, requestedMarkedSpine),
+                        SpineCalculation::markedDifferencePercent(maximum, requestedMarkedSpine),
+                        arrowGrams);
+                } else {
+                    snprintf(detail, sizeof(detail), "Best = stiffest; worst = weakest | arrow %.2f g", arrowGrams);
+                }
+            }
+            break;
+        }
+        case SpineStage::Fault:
+            state = "FAULT";
+            snprintf(detail, sizeof(detail), "Restore both calibrated load channels");
+            break;
+        case SpineStage::Idle:
+        default:
+            break;
+        }
+
+        ArrowLabUI::setSpineDisplay(
+            state,
+            detail,
+            results,
+            primaryAction,
+            status.spineHoldPercent,
+            active,
+            complete,
+            clearConfirmationRequired,
+            zeroConfirmationRequired);
+        (void)currentTime;
     }
 
     void requestDiagnosticStart(
@@ -111,12 +604,6 @@ namespace
     void requestDiagnosticFinish()
     {
         diagnosticFinishRequested = true;
-    }
-
-    void requestDiagnosticResetChannel(ArrowLabUI::LoadSide side)
-    {
-        diagnosticMaintenanceSide = side;
-        diagnosticResetChannelRequested = true;
     }
 
     void processSerialInput(uint32_t currentTime)
@@ -150,26 +637,6 @@ namespace
 
     void processDiagnosticRequests(uint32_t currentTime)
     {
-        if (diagnosticResetChannelRequested) {
-            diagnosticResetChannelRequested = false;
-            const DiagnosticSide side =
-                diagnosticMaintenanceSide == ArrowLabUI::LoadSide::Left
-                    ? DiagnosticSide::Left
-                    : DiagnosticSide::Right;
-            creepDiagnostic.setBaselineCaptured(side, false);
-            calibrationController.resetChannel(
-                calibrationSide(diagnosticMaintenanceSide));
-            if (side == DiagnosticSide::Left) {
-                leftBaselineStored = false;
-            } else {
-                rightBaselineStored = false;
-            }
-            Serial.printf(
-                "AL_DIAG,EVENT,%s,CHANNEL_STATE_RESET\n",
-                side == DiagnosticSide::Left ? "LEFT" : "RIGHT"
-            );
-        }
-
         if (diagnosticCancelRequested) {
             diagnosticCancelRequested = false;
             diagnosticStartRequested = false;
@@ -202,8 +669,6 @@ namespace
                 side,
                 diagnosticRequestedMassGrams,
                 diagnosticRequestedZeroBaseline,
-                leftSensor,
-                rightSensor,
                 currentTime
             )) {
             Serial.println(
@@ -215,7 +680,7 @@ namespace
     void formatReading(
         char *buffer,
         size_t bufferSize,
-        const LoadCellChannel &sensor,
+        const ArrowLabProtocol::ChannelStatus &channel,
         bool live
     )
     {
@@ -224,18 +689,19 @@ namespace
             return;
         }
 
-        if (!sensor.tareComplete()) {
+        if (!(channel.flags & ArrowLabProtocol::TareComplete)) {
             snprintf(buffer, bufferSize, "TARE");
             return;
         }
 
-        if (sensor.calibrated()) {
-            snprintf(
+        if (channel.flags & ArrowLabProtocol::Calibrated) {
+            const float grams =
+                static_cast<float>(channel.heldMilliGrams) / 1000.0f;
+            MassDisplay::formatPrimary(
                 buffer,
                 bufferSize,
-                "%.1f",
-                sensor.grams()
-            );
+                grams,
+                selectedMassUnit);
             return;
         }
 
@@ -243,53 +709,106 @@ namespace
             buffer,
             bufferSize,
             "%ld",
-            sensor.filteredZeroedValue()
+            static_cast<long>(channel.heldRawCounts)
         );
+    }
+
+    void formatConversions(
+        char *buffer,
+        size_t bufferSize,
+        const ArrowLabProtocol::ChannelStatus &channel,
+        bool live)
+    {
+        if (
+            !live
+            || !(channel.flags & ArrowLabProtocol::TareComplete)
+            || !(channel.flags & ArrowLabProtocol::Calibrated)
+        ) {
+            buffer[0] = '\0';
+            return;
+        }
+
+        const float grams =
+            static_cast<float>(channel.heldMilliGrams) / 1000.0f;
+        MassDisplay::formatSecondary(
+            buffer,
+            bufferSize,
+            grams,
+            selectedMassUnit);
     }
 
     void updateDisplay(uint32_t currentTime)
     {
-        const bool leftLive =
-            leftSensor.isLive(currentTime, SENSOR_TIMEOUT_MS);
+        using Stage = ArrowLabProtocol::CalibrationStage;
+        if (unitCycleRequested) {
+            unitCycleRequested = false;
+            selectedMassUnit = MassDisplay::nextUnit(selectedMassUnit);
+        }
 
-        const bool rightLive =
-            rightSensor.isLive(currentTime, SENSOR_TIMEOUT_MS);
+        const bool nodeConnected = measurementNode.connected(currentTime);
+        const ArrowLabProtocol::ChannelStatus &left =
+            measurementNode.channel(ArrowLabProtocol::Side::Left);
+        const ArrowLabProtocol::ChannelStatus &right =
+            measurementNode.channel(ArrowLabProtocol::Side::Right);
+        const bool leftLive = nodeConnected
+            && (left.flags & ArrowLabProtocol::ChannelLive);
+        const bool rightLive = nodeConnected
+            && (right.flags & ArrowLabProtocol::ChannelLive);
+        const Stage leftStage = static_cast<Stage>(left.stage);
+        const Stage rightStage = static_cast<Stage>(right.stage);
+        const bool leftCalibrated =
+            left.flags & ArrowLabProtocol::Calibrated;
+        const bool rightCalibrated =
+            right.flags & ArrowLabProtocol::Calibrated;
+        const bool leftUserTare =
+            left.flags & ArrowLabProtocol::UserTareConfirmed;
+        const bool rightUserTare =
+            right.flags & ArrowLabProtocol::UserTareConfirmed;
 
         char leftText[24];
         char rightText[24];
+        char leftConversions[48];
+        char rightConversions[48];
 
         formatReading(
             leftText,
             sizeof(leftText),
-            leftSensor,
+            left,
             leftLive
         );
 
         formatReading(
             rightText,
             sizeof(rightText),
-            rightSensor,
+            right,
             rightLive
         );
 
-        const CalibrationController::ChannelStatus leftCalibration =
-            calibrationController.status(CalibrationSide::Left, currentTime);
-        const CalibrationController::ChannelStatus rightCalibration =
-            calibrationController.status(CalibrationSide::Right, currentTime);
+        formatConversions(
+            leftConversions,
+            sizeof(leftConversions),
+            left,
+            leftLive
+        );
+        formatConversions(
+            rightConversions,
+            sizeof(rightConversions),
+            right,
+            rightLive
+        );
 
-        const auto setupActive = [](CalibrationController::Stage stage) {
-            return stage == CalibrationController::Stage::AwaitingLoad
-                || stage == CalibrationController::Stage::ReadyToCalibrate
-                || stage == CalibrationController::Stage::Settling
-                || stage == CalibrationController::Stage::Sampling;
+        const auto setupActive = [](Stage stage) {
+            return stage == Stage::AwaitingLoad
+                || stage == Stage::ReadyToCalibrate
+                || stage == Stage::Settling
+                || stage == Stage::Sampling;
         };
-        const auto calibrationBusy = [](CalibrationController::Stage stage) {
-            return stage == CalibrationController::Stage::Settling
-                || stage == CalibrationController::Stage::Sampling;
+        const auto calibrationBusy = [](Stage stage) {
+            return stage == Stage::Settling
+                || stage == Stage::Sampling;
         };
         const bool tareInProgress =
-            leftCalibration.stage == CalibrationController::Stage::Taring
-            || rightCalibration.stage == CalibrationController::Stage::Taring;
+            leftStage == Stage::Taring || rightStage == Stage::Taring;
 
         lvgl_port_lock(-1);
 
@@ -303,7 +822,7 @@ namespace
         const bool diagnosticActive =
             diagnosticState == CreepDiagnostic::State::WaitingForHost
             ||
-            diagnosticState == CreepDiagnostic::State::Taring
+            diagnosticState == CreepDiagnostic::State::CapturingReference
             || diagnosticState == CreepDiagnostic::State::AwaitingLoad
             || diagnosticState == CreepDiagnostic::State::Running;
 
@@ -315,11 +834,11 @@ namespace
                 "NEXT: Start PC logger and wait for CONNECTED");
             break;
 
-        case CreepDiagnostic::State::Taring:
+        case CreepDiagnostic::State::CapturingReference:
             snprintf(
                 diagnosticStatus,
                 sizeof(diagnosticStatus),
-                "WAIT: Taring %s - keep setup stable",
+                "WAIT: Capturing %s raw reference",
                 diagnosticSideText);
             break;
 
@@ -374,107 +893,164 @@ namespace
             diagnosticActive,
             creepDiagnostic.awaitingSave()
         );
-        ArrowLabUI::DiagnosticChannelState leftDiagnosticState;
-        leftDiagnosticState.baselineCaptured =
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Left);
-        leftDiagnosticState.tareComplete = leftSensor.tareComplete();
-        leftDiagnosticState.tareInProgress =
-            leftCalibration.stage == CalibrationController::Stage::Taring;
-        leftDiagnosticState.userTareConfirmed =
-            leftSensor.userTareConfirmed();
-        leftDiagnosticState.calibrated = leftSensor.calibrated();
-        leftDiagnosticState.calibrationSetupActive =
-            setupActive(leftCalibration.stage);
-        leftDiagnosticState.calibrationReady =
-            leftCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate;
-        leftDiagnosticState.calibrationInProgress =
-            calibrationBusy(leftCalibration.stage);
-        leftDiagnosticState.calibrationLoadDetected =
-            leftSensor.calibrationLoadDetected();
-        leftDiagnosticState.settleRemainingSeconds =
-            leftCalibration.settleRemainingSeconds;
-        leftDiagnosticState.settlePercent =
-            leftCalibration.settlePercent;
-
-        ArrowLabUI::DiagnosticChannelState rightDiagnosticState;
-        rightDiagnosticState.baselineCaptured =
-            creepDiagnostic.baselineCaptured(DiagnosticSide::Right);
-        rightDiagnosticState.tareComplete = rightSensor.tareComplete();
-        rightDiagnosticState.tareInProgress =
-            rightCalibration.stage == CalibrationController::Stage::Taring;
-        rightDiagnosticState.userTareConfirmed =
-            rightSensor.userTareConfirmed();
-        rightDiagnosticState.calibrated = rightSensor.calibrated();
-        rightDiagnosticState.calibrationSetupActive =
-            setupActive(rightCalibration.stage);
-        rightDiagnosticState.calibrationReady =
-            rightCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate;
-        rightDiagnosticState.calibrationInProgress =
-            calibrationBusy(rightCalibration.stage);
-        rightDiagnosticState.calibrationLoadDetected =
-            rightSensor.calibrationLoadDetected();
-        rightDiagnosticState.settleRemainingSeconds =
-            rightCalibration.settleRemainingSeconds;
-        rightDiagnosticState.settlePercent =
-            rightCalibration.settlePercent;
-
-        ArrowLabUI::setDiagnosticChannelState(
-            leftDiagnosticState,
-            rightDiagnosticState,
+        ArrowLabUI::setDiagnosticHostConnected(
             creepDiagnostic.hostConnected(currentTime));
 
         ArrowLabUI::setLeftReading(leftText);
         ArrowLabUI::setRightReading(rightText);
-        ArrowLabUI::setSensorHealth(leftLive, rightLive);
+        ArrowLabUI::setLoadConversions(
+            ArrowLabUI::LoadSide::Left,
+            leftConversions);
+        ArrowLabUI::setLoadConversions(
+            ArrowLabUI::LoadSide::Right,
+            rightConversions);
+        ArrowLabUI::setSensorHealth(
+            nodeConnected,
+            leftLive,
+            rightLive);
+
+        const ArrowLabNetwork::Info vieweNetwork =
+            ArrowLabNetwork::info();
+        const ArrowLabProtocol::NetworkStatus &wroomNetwork =
+            measurementNode.status().network;
+        ArrowLabUI::setNetworkStatus(
+            vieweNetwork.connected,
+            vieweNetwork.hostname,
+            vieweNetwork.ssid,
+            vieweNetwork.ip,
+            vieweNetwork.rssiDbm,
+            vieweNetwork.mac,
+            nodeConnected,
+            nodeConnected
+                && (wroomNetwork.flags
+                    & ArrowLabProtocol::NetworkConnected),
+            wroomNetwork.hostname,
+            wroomNetwork.ssid,
+            wroomNetwork.ip,
+            wroomNetwork.rssiDbm,
+            wroomNetwork.mac);
+
+        const ArrowLabProtocol::StatusPacket &nodeStatus =
+            measurementNode.status();
+        ArrowLabUI::setFirmwareVersions(
+            nodeConnected,
+            nodeStatus.firmwareMajor,
+            nodeStatus.firmwareMinor,
+            nodeStatus.firmwarePatch,
+            nodeStatus.firmwareStatus,
+            ArrowLabProtocol::VERSION);
+
+        ArrowLabUI::setWifiSavedCredentials(
+            vieweNetwork.savedCredentials);
         ArrowLabUI::setCalibrationValidity(
-            leftSensor.calibrated(),
-            rightSensor.calibrated()
+            leftCalibrated,
+            rightCalibrated
         );
 
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Left,
-            leftSensor.calibrated() ? "g" : "RAW"
+            leftCalibrated
+                ? MassDisplay::unitText(selectedMassUnit)
+                : "RAW"
         );
         ArrowLabUI::setLoadUnit(
             ArrowLabUI::LoadSide::Right,
-            rightSensor.calibrated() ? "g" : "RAW"
+            rightCalibrated
+                ? MassDisplay::unitText(selectedMassUnit)
+                : "RAW"
         );
+
+        const bool leftReady =
+            leftLive && leftCalibrated && leftUserTare;
+        const bool rightReady =
+            rightLive && rightCalibrated && rightUserTare;
+        const LoadAggregation::Result weighResult =
+            LoadAggregation::combine(
+                {
+                    leftReady,
+                    left.heldRawCounts,
+                    left.heldMilliGrams
+                },
+                {
+                    rightReady,
+                    right.heldRawCounts,
+                    right.heldMilliGrams
+                });
+
+        const float weighGrams =
+            static_cast<float>(weighResult.totalMilliGrams) / 1000.0f;
+        const char *weighInstruction =
+            "Place load on LEFT, RIGHT, or both cassettes";
+
+        if (weighResult.source == LoadAggregation::Source::NotReady) {
+            weighInstruction = "Tare and calibrate a live cassette first";
+        }
+
+        char weighPrimary[24];
+        char weighSecondary[48];
+        if (weighResult.source == LoadAggregation::Source::NotReady) {
+            snprintf(weighPrimary, sizeof(weighPrimary), "---");
+            weighSecondary[0] = '\0';
+        } else {
+            MassDisplay::formatPrimary(
+                weighPrimary,
+                sizeof(weighPrimary),
+                weighGrams,
+                selectedMassUnit);
+            MassDisplay::formatSecondary(
+                weighSecondary,
+                sizeof(weighSecondary),
+                weighGrams,
+                selectedMassUnit);
+        }
+
+        ArrowLabUI::setWeighDisplay(
+            LoadAggregation::sourceText(weighResult.source),
+            weighPrimary,
+            MassDisplay::unitText(selectedMassUnit),
+            weighSecondary,
+            weighInstruction);
+
+        updateSpineDisplay(measurementNode.status(), currentTime);
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Left,
-            leftSensor.tareComplete(),
-            leftCalibration.stage == CalibrationController::Stage::Taring,
-            leftSensor.userTareConfirmed(),
-            leftCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate,
-            calibrationBusy(leftCalibration.stage),
-            leftSensor.calibrated(),
-            setupActive(leftCalibration.stage),
-            leftCalibration.settleRemainingSeconds,
-            leftCalibration.settlePercent
+            left.flags & ArrowLabProtocol::TareComplete,
+            leftStage == Stage::Taring,
+            leftUserTare,
+            leftStage == Stage::ReadyToCalibrate,
+            calibrationBusy(leftStage),
+            leftCalibrated,
+            setupActive(leftStage),
+            left.settleRemainingSeconds,
+            left.settlePercent
         );
 
         ArrowLabUI::setLoadStatus(
             ArrowLabUI::LoadSide::Right,
-            rightSensor.tareComplete(),
-            rightCalibration.stage == CalibrationController::Stage::Taring,
-            rightSensor.userTareConfirmed(),
-            rightCalibration.stage
-                == CalibrationController::Stage::ReadyToCalibrate,
-            calibrationBusy(rightCalibration.stage),
-            rightSensor.calibrated(),
-            setupActive(rightCalibration.stage),
-            rightCalibration.settleRemainingSeconds,
-            rightCalibration.settlePercent
+            right.flags & ArrowLabProtocol::TareComplete,
+            rightStage == Stage::Taring,
+            rightUserTare,
+            rightStage == Stage::ReadyToCalibrate,
+            calibrationBusy(rightStage),
+            rightCalibrated,
+            setupActive(rightStage),
+            right.settleRemainingSeconds,
+            right.settlePercent
         );
 
         const bool calibrationInProgress =
-            calibrationBusy(leftCalibration.stage)
-            || calibrationBusy(rightCalibration.stage);
+            calibrationBusy(leftStage) || calibrationBusy(rightStage);
 
-        if (tareInProgress) {
+        if (!nodeConnected) {
+            ArrowLabUI::setStatus(
+                "Check node power and UART wiring"
+            );
+            ArrowLabUI::setState(
+                "NODE OFFLINE",
+                lv_color_hex(0xFF4D4D)
+            );
+        } else if (tareInProgress) {
             ArrowLabUI::setStatus(
                 "Taring load cell - keep setup stable"
             );
@@ -485,7 +1061,7 @@ namespace
             );
         } else if (calibrationInProgress) {
             ArrowLabUI::setStatus(
-                calibrationBusy(leftCalibration.stage)
+                calibrationBusy(leftStage)
                     ? "Calibrating LEFT - keep weight stable"
                     : "Calibrating RIGHT - keep weight stable"
             );
@@ -496,55 +1072,49 @@ namespace
             );
         } else if (leftLive && rightLive) {
             if (
-                leftCalibration.stage
-                    == CalibrationController::Stage::AwaitingLoad
+                leftStage == Stage::AwaitingLoad
             ) {
                 char nextAction[72];
                 snprintf(
                     nextAction,
                     sizeof(nextAction),
                     "NEXT: Place %.1f g calibration weight on LEFT",
-                    leftCalibration.referenceGrams);
+                    static_cast<float>(left.referenceMilliGrams) / 1000.0f);
                 ArrowLabUI::setStatus(nextAction);
             } else if (
-                rightCalibration.stage
-                    == CalibrationController::Stage::AwaitingLoad
+                rightStage == Stage::AwaitingLoad
             ) {
                 char nextAction[72];
                 snprintf(
                     nextAction,
                     sizeof(nextAction),
                     "NEXT: Place %.1f g calibration weight on RIGHT",
-                    rightCalibration.referenceGrams);
+                    static_cast<float>(right.referenceMilliGrams) / 1000.0f);
                 ArrowLabUI::setStatus(nextAction);
             } else if (
-                leftCalibration.stage
-                    == CalibrationController::Stage::ReadyToCalibrate
+                leftStage == Stage::ReadyToCalibrate
             ) {
                 ArrowLabUI::setStatus(
                     "NEXT: Press LEFT CAL to start 30 s stabilization");
             } else if (
-                rightCalibration.stage
-                    == CalibrationController::Stage::ReadyToCalibrate
+                rightStage == Stage::ReadyToCalibrate
             ) {
                 ArrowLabUI::setStatus(
                     "NEXT: Press RIGHT CAL to start 30 s stabilization");
             } else if (
-                leftSensor.calibrated()
-                && rightSensor.calibrated()
+                leftCalibrated && rightCalibrated
             ) {
                 ArrowLabUI::setStatus(
                     "Both load channels calibrated"
                 );
             } else if (
-                leftSensor.userTareConfirmed()
-                && rightSensor.userTareConfirmed()
+                leftUserTare && rightUserTare
             ) {
-                if (leftSensor.calibrated()) {
+                if (leftCalibrated) {
                     ArrowLabUI::setStatus(
                         "Calibrate RIGHT with reference weight"
                     );
-                } else if (rightSensor.calibrated()) {
+                } else if (rightCalibrated) {
                     ArrowLabUI::setStatus(
                         "Calibrate LEFT with reference weight"
                     );
@@ -553,11 +1123,11 @@ namespace
                         "Both loads ready for calibration"
                     );
                 }
-            } else if (leftSensor.userTareConfirmed()) {
+            } else if (leftUserTare) {
                 ArrowLabUI::setStatus(
                     "Tare RIGHT before calibration"
                 );
-            } else if (rightSensor.userTareConfirmed()) {
+            } else if (rightUserTare) {
                 ArrowLabUI::setStatus(
                     "Tare LEFT before calibration"
                 );
@@ -573,7 +1143,7 @@ namespace
             );
         } else if (leftLive) {
             ArrowLabUI::setStatus(
-                "Left live - waiting for right HX711"
+                "Left live - WROOM reports right HX711 offline"
             );
 
             ArrowLabUI::setState(
@@ -582,7 +1152,7 @@ namespace
             );
         } else if (rightLive) {
             ArrowLabUI::setStatus(
-                "Right live - waiting for left HX711"
+                "Right live - WROOM reports left HX711 offline"
             );
 
             ArrowLabUI::setState(
@@ -591,7 +1161,7 @@ namespace
             );
         } else {
             ArrowLabUI::setStatus(
-                "Waiting for HX711 data"
+                "Measurement node online - waiting for HX711 data"
             );
 
             ArrowLabUI::setState(
@@ -616,9 +1186,7 @@ void setup()
         Version::STATUS
     );
 
-    if (!instrumentStorage.begin()) {
-        Serial.println("WARNING: persistent instrument storage unavailable");
-    }
+    ArrowLabNetwork::begin("arrowlab-viewe");
 
     displayBoard = new Board();
     displayBoard->init();
@@ -646,6 +1214,11 @@ void setup()
 
     assert(displayBoard->begin());
 
+    // Production measurement link: one-wire half-duplex on VIEWE GPIO17
+    // to WROOM GPIO8. GPIO11/GPIO12 remain free for the restored onboard SD
+    // interface and are reserved only as the documented UART fallback.
+    measurementNode.begin();
+
     Serial.println("Initializing LVGL");
 
     lvgl_port_init(
@@ -656,15 +1229,29 @@ void setup()
     lvgl_port_lock(-1);
 
     ArrowLabUI::create();
+    ArrowLabNetwork::setUpdateCallbacks(
+        handleOtaStart,
+        handleOtaFinish);
     ArrowLabUI::setTareCallback(requestTare);
+    ArrowLabUI::setWifiCallbacks(
+        requestWifiScan,
+        requestWifiConnect,
+        requestWifiForget);
     ArrowLabUI::setCalibrationCallback(
         requestCalibration
     );
+    ArrowLabUI::setUnitCycleCallback(requestMassUnitCycle);
+    ArrowLabUI::setSpineCallbacks(
+        requestSpineStart,
+        requestSpineCancel,
+        requestSpineClearConfirmation,
+        requestSpineZeroConfirmation,
+        requestSpineRestart,
+        requestMarkedSpine);
     ArrowLabUI::setDiagnosticCallbacks(
         requestDiagnosticStart,
         requestDiagnosticCancel,
-        requestDiagnosticFinish,
-        requestDiagnosticResetChannel
+        requestDiagnosticFinish
     );
     ArrowLabUI::setCalibrationReferenceGrams(
         calibrationReferenceGrams
@@ -672,7 +1259,7 @@ void setup()
     ArrowLabUI::setLeftReading("---");
     ArrowLabUI::setRightReading("---");
     ArrowLabUI::setStatus(
-        "Starting dual HX711 system"
+        "Connecting to WROOM measurement node"
     );
 
     ArrowLabUI::setState(
@@ -682,29 +1269,16 @@ void setup()
 
     lvgl_port_unlock();
 
-    leftSensor.begin();
-    rightSensor.begin();
-    calibrationController.begin();
-
-    leftBaselineStored = instrumentStorage.baselineCaptured(
-        StoredLoadSide::Left);
-    rightBaselineStored = instrumentStorage.baselineCaptured(
-        StoredLoadSide::Right);
-    creepDiagnostic.setBaselineCaptured(
-        DiagnosticSide::Left,
-        leftBaselineStored);
-    creepDiagnostic.setBaselineCaptured(
-        DiagnosticSide::Right,
-        rightBaselineStored);
-
     Serial.println(
-        "Dual HX711 initialization complete - starting independent tare"
+        "Viewe HMI ready - awaiting WROOM measurement data"
     );
 }
 
 void loop()
 {
     const uint32_t now = millis();
+    ArrowLabNetwork::handle();
+    processWifiSetup(now);
 
     // Serial commands must be serviced even between HX711 UI refreshes so
     // heartbeat/ACK traffic cannot be starved by the 100 ms sensor cadence.
@@ -724,28 +1298,30 @@ void loop()
         diagnosticStartRequested
         || diagnosticCancelRequested
         || diagnosticFinishRequested
-        || diagnosticResetChannelRequested
     ) {
         processDiagnosticRequests(now);
     }
 
-    /*
-     * Each channel is tested independently.
-     * One missing sensor cannot prevent the other from working.
-     */
-    const bool leftFresh = leftSensor.read(now);
+    measurementNode.poll(now);
+    const bool packetFresh = measurementNode.freshPacket();
+    const bool nodeConnected = measurementNode.connected(now);
+    const ArrowLabProtocol::ChannelStatus &left =
+        measurementNode.channel(ArrowLabProtocol::Side::Left);
+    const ArrowLabProtocol::ChannelStatus &right =
+        measurementNode.channel(ArrowLabProtocol::Side::Right);
+    const bool leftFresh = packetFresh
+        && nodeConnected
+        && (left.flags & ArrowLabProtocol::ChannelLive);
+    const bool rightFresh = packetFresh
+        && nodeConnected
+        && (right.flags & ArrowLabProtocol::ChannelLive);
 
     if (leftFresh) {
-        calibrationController.onFreshReading(CalibrationSide::Left);
+        leftSensor.acceptRemoteRaw(left.rawCount, now);
     }
-
-    const bool rightFresh = rightSensor.read(now);
-
     if (rightFresh) {
-        calibrationController.onFreshReading(CalibrationSide::Right);
+        rightSensor.acceptRemoteRaw(right.rawCount, now);
     }
-
-    calibrationController.update(now);
 
     creepDiagnostic.update(
         now,
@@ -754,22 +1330,6 @@ void loop()
         leftSensor,
         rightSensor
     );
-
-    const bool leftBaselineNow = creepDiagnostic.baselineCaptured(
-        DiagnosticSide::Left);
-    if (leftBaselineNow && !leftBaselineStored) {
-        leftBaselineStored = instrumentStorage.setBaselineCaptured(
-            StoredLoadSide::Left,
-            true);
-    }
-
-    const bool rightBaselineNow = creepDiagnostic.baselineCaptured(
-        DiagnosticSide::Right);
-    if (rightBaselineNow && !rightBaselineStored) {
-        rightBaselineStored = instrumentStorage.setBaselineCaptured(
-            StoredLoadSide::Right,
-            true);
-    }
 
     updateDisplay(now);
 
